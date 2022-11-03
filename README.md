@@ -71,10 +71,10 @@ I would also like to personally thank:
 manager (pytq-manage) and on the library resilience (pytq.lib).
 
 And also to all people of GMT Science team who believe in this project and have
-made it possible: Edi Prifti, Michel Laborde, Florian Plaza-Oñate, Vadim Püller,
-Baptiste Hennecart (our more active user, thank you, Baptiste!). Last and not least
-big up to Benjamin Duplan who by his enthusiasm and commitment has helped us
-in lots of ways to achieve this project.
+made it possible: Edi Prifti, Michel Laborde, Florian Plaza-Oñate, Vadim Puller,
+Baptiste Hennecart (our more active user, thank you, Baptiste!) and Thomas Moncion.
+Last and not least big up to Benjamin Duplan who by his enthusiasm and commitment
+has helped us in lots of ways to achieve this project.
 
 Many thanks also to the OVH startup team who accepted us in their program and
 have thus helped this project in a major way. Special thanks to Christopher Apédo!
