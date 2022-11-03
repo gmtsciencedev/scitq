@@ -36,7 +36,7 @@ remembered.
 ### Quick start
 
 ```bash
-cd flasq
+cd flaskq
 python ./setup.py install
 ```
 Now in one shell, run the server:
