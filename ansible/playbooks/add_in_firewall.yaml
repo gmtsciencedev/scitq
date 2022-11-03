@@ -1,0 +1,20 @@
+- name: Update the firewall with node IPv4
+  ansible.builtin.iptables:
+    chain: INPUT
+    source: "{{ hostvars[nodename].ipv4 }}"
+    jump: ACCEPT
+    protocol: all
+    action: insert
+    comment: "pytq : {{ nodename }}"
+  become: yes
+- name: Update the firewall with node IPv6
+  ansible.builtin.iptables:
+    chain: INPUT
+    source: "{{ hostvars[nodename].ipv6 }}"
+    jump: ACCEPT
+    protocol: all
+    action: insert
+    comment: "pytq : {{ nodename }}"
+    ip_version: ipv6
+  become: yes
+  when: hostvars[nodename].ipv6 is defined

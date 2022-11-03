@@ -1,0 +1,12 @@
+[Unit]
+Description=pytq-worker
+After=multi-user.target
+
+[Service]
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=AWS_ENDPOINT_URL={{ s3_url|default('') }}
+Type=simple
+ExecStart=pytq-worker -s {{ status }} {{ target }} {{ concurrency }}
+
+[Install]
+WantedBy=multi-user.target

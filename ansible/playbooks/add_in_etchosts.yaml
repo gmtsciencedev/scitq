@@ -1,0 +1,6 @@
+- name: Update the /etc/hosts file with node IPv4
+  lineinfile:
+    dest: "/etc/hosts"
+    regexp: ".*\t{{ nodename }}$"
+    line: "{{ hostvars[nodename].ipv4 }}\t{{ nodename }}"
+    state: present

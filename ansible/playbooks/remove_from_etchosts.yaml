@@ -1,0 +1,5 @@
+- name: Remove node from /etc/hosts
+  lineinfile:
+    dest: "/etc/hosts"
+    regexp: ".*\t{{ nodename }}"
+    state: absent

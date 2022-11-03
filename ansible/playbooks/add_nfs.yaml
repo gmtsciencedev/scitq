@@ -1,0 +1,30 @@
+- name: Wait for automatic system updates
+  become: true
+  shell: timeout=300; while [ $timeout -gt 0 ] && sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do timeout=$(echo $timeout-1|bc); sleep 1; done;
+- name: Add NFS packages
+  apt:
+    name: nfs-common
+    state: present
+  become: yes
+  when: nfs_server is defined
+- name: Add /data dir
+  file:
+    path: /data
+    state: directory
+  become: yes
+- name: Add in /etc/fstab
+  lineinfile:
+    dest: "/etc/fstab"
+    regexp: "{{ nfs_server_address }}.*"
+    line: "{{ nfs_server_address }}:/data /data nfs 0 0"
+    state: present
+  become: yes
+  when: nfs_server is defined
+- name: Mount
+  ansible.posix.mount:
+    src: "{{ nfs_server_address }}:/data"
+    path: /data
+    state: mounted
+    fstype: nfs
+  become: yes
+  when: nfs_server is defined

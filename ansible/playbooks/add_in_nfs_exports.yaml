@@ -1,0 +1,14 @@
+- name: Add node to NFS /etc/exports.d/
+  template:
+    dest: "/etc/exports.d/{{ nodename }}.exports"
+    src: add_in_nfs_exports.j2
+  when: nfs_server is defined and nfs_server==ansible_host and hostvars[nodename].ipv6 is defined
+- name: Add node to NFS /etc/exports.d/
+  template:
+    dest: "/etc/exports.d/{{ nodename }}.exports"
+    src: add_in_nfs_exports2.j2
+  when: nfs_server is defined and nfs_server==ansible_host and hostvars[nodename].ipv6 is not defined
+- name: Exportfs (reload NFS exports)
+  shell:
+    cmd: "exportfs -a"
+  when: nfs_server is defined and nfs_server==ansible_host

@@ -1,0 +1,35 @@
+- name: Wait for automatic system updates
+  become: true
+  shell: timeout=300; while [ $timeout -gt 0 ] && sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do timeout=$(echo $timeout-1|bc); sleep 1; done;
+- name: Add python setup tools
+  apt:
+    name:
+    - python3-setuptools
+    - python3-pip
+    state: present
+  become: true
+- name: Install PYTQ dependency manually to avoid pip trouble
+  ansible.builtin.shell:
+    cmd: cd /opt/flaskq && pip3 install -r requirements.txt
+    warn: no
+  become: true
+- name: Install pytq
+  ansible.builtin.shell:
+    chdir: /opt/flaskq/
+    cmd: python3 ./setup.py install
+    warn: no
+  become: true
+- name: Add pytq-worker service template
+  vars:
+    concurrency: 1
+    status: paused
+  template:
+    dest: "/etc/systemd/system/pytq-worker.service"
+    src: add_pytq.j2
+  become: true
+- name: Add pytq-worker service
+  systemd:
+    name: pytq-worker
+    enabled: yes
+    state: started
+  become: true

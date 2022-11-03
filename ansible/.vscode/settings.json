@@ -1,0 +1,24 @@
+{
+    "yaml.schemas": {
+        "https://raw.githubusercontent.com/ansible-community/schemas/main/f/ansible-playbook.json": [
+            "file:///Users/lahondes/devel/ansible/playbooks/add_in_static_inventory.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/add_in_firewall.yaml"
+        ],
+        "https://raw.githubusercontent.com/ansible-community/schemas/main/f/ansible-tasks.json": [
+            "file:///Users/lahondes/devel/ansible/playbooks/remove_from_nfs_exports.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/deploy_one_vm.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/add_in_nfs_exports.yaml",
+            "file:///Users/lahondes/devel/ansible/add_in_firewall.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/add_docker.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/remove_from_static_inventory.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/add_in_etchosts.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/remove_from_firewall.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/remove_from_etchosts.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/add_pytq.yaml"
+        ],
+        "https://raw.githubusercontent.com/ansible-community/schemas/main/f/ansible.json#/definitions/tasks": [
+            "file:///Users/lahondes/devel/ansible/playbooks/add_nfs.yaml",
+            "file:///Users/lahondes/devel/ansible/playbooks/add_scratch.yaml"
+        ]
+    }
+}

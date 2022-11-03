@@ -1,0 +1,9 @@
+- name: Remove node from NFS /etc/exports.d/
+  file:
+    path: "/etc/exports.d/{{ nodename }}.exports"
+    state: absent
+  when: nfs_server is defined and nfs_server==ansible_host
+- name: Exportfs (reload NFS exports)
+  shell:
+    cmd: "exportfs -a"
+  when: nfs_server is defined and nfs_server==ansible_host

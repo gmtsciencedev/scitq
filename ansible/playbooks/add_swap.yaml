@@ -1,0 +1,46 @@
+
+- name: check if swap file exists
+  stat:
+    path: /scratch/swapfile
+  register: swap_file_check
+
+- name: size of scratch
+  shell: df -k --output=size /scratch|perl -ne 'print int($_*{{swap_proportion}}) if /^\s*[0-9]+$/'
+  register: swap_size_command
+
+- name: compute swap_size
+  set_fact:
+    swap_size: "{{ swap_size_command.stdout }}" 
+
+- name: create swap file
+  command: fallocate -l "{{ swap_size }}"k /scratch/swapfile
+  become: yes
+  when: not swap_file_check.stat.exists
+
+- name: set permissions on swap file
+  file:
+    path: /scratch/swapfile
+    mode: 0600
+  become: yes
+
+- name: format swap file
+  command: mkswap /scratch/swapfile
+  when: not swap_file_check.stat.exists
+  become: yes
+
+- name: add to fstab
+  lineinfile:
+    dest: /etc/fstab
+    regexp: "/scratch/swapfile"
+    line: "/scratch/swapfile none swap sw 0 0"
+  become: yes
+
+- name: turn on swap
+  command: swapon -a
+  become: yes
+
+- name: set swapiness
+  sysctl:
+    name: vm.swappiness
+    value: "1"
+  become: yes

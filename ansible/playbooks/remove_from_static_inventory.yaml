@@ -1,0 +1,5 @@
+- name: Remove from static inventory
+  lineinfile:
+         dest: "/etc/ansible/inventory/{{ hostvars[nodename]['group_names'][0] }}"
+         regexp: "{{ nodename }}"
+         state: absent

@@ -1,0 +1,10 @@
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+region = {{ s3_region }}
+s3 =
+  endpoint_url = {{ s3_url }}
+  signature_version = s3v4
+s3api =
+  endpoint_url = {{ s3_url }}

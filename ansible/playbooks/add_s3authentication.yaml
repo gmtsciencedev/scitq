@@ -1,0 +1,18 @@
+- name: Add aws root config directory
+  file:
+    path: /root/.aws
+    state: directory
+  become: yes
+  when: s3_key_id is defined and s3_access_key is defined
+- name: Add s3 authentication 
+  template:
+    dest: "/root/.aws/credentials"
+    src: add_s3authentication_credentials.j2
+  become: true
+  when: s3_key_id is defined and s3_access_key is defined
+- name: Add s3 authentication 
+  template:
+    dest: "/root/.aws/config"
+    src: add_s3authentication_config.j2
+  become: true
+  when: s3_region is defined and s3_url is defined

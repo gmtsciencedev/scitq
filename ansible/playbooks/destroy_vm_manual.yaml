@@ -1,0 +1,16 @@
+- name: Prepare managing servers
+  hosts: managers
+  tasks:
+          - include_tasks: remove_from_firewall.yaml      
+- name: Prepare storage servers
+  hosts: managers
+  tasks:
+          - include_tasks: remove_from_nfs_exports.yaml
+- name: Cleaning Ansible
+  hosts: localhost
+  tasks:
+          - include_tasks: remove_from_etchosts.yaml
+          - name: Remove from inventory
+            ansible.builtin.script:
+                cmd: /etc/ansible/inventory/sqlite_inventory.py --del-host "{{ nodename }}"
+

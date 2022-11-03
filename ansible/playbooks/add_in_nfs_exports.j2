@@ -1,0 +1,2 @@
+/data {{ hostvars[nodename].ipv4 }}(rw,sync,no_subtree_check,no_root_squash) \
+      {{ hostvars[nodename].ipv6 }}(rw,sync,no_subtree_check,no_root_squash)

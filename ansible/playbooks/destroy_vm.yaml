@@ -1,0 +1,27 @@
+- name: Destroy a compute instance
+  hosts: localhost
+  vars:
+        proxy_env:
+                OS_REGION_NAME: "{{ hostvars[nodename].region }}"
+  tasks:
+          - name: Destroy a VM
+            environment: "{{ proxy_env }}"
+            openstack.cloud.server:
+                    name: "{{ nodename }}"
+                    state: absent
+- name: Prepare managing servers
+  hosts: managers
+  tasks:
+          - include_tasks: remove_from_firewall.yaml      
+- name: Prepare storage servers
+  hosts: managers
+  tasks:
+          - include_tasks: remove_from_nfs_exports.yaml
+- name: Cleaning Ansible
+  hosts: localhost
+  tasks:
+          - include_tasks: remove_from_etchosts.yaml
+          - name: Remove from inventory
+            ansible.builtin.script:
+                cmd: /etc/ansible/inventory/sqlite_inventory.py --del-host "{{ nodename }}"
+

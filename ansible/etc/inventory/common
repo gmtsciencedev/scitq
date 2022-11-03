@@ -1,0 +1,8 @@
+[all:vars]
+nfs_server=bioit
+nfs_server_address=bioit.gmt.bio
+pytq_src=/root/pytq
+
+[managers]
+bioit
+localhost ansible_connection=local keyname=alpha

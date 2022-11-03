@@ -1,0 +1,25 @@
+- name: Add /scratch dir
+  file:
+    path: /scratch
+    state: directory
+  become: yes
+- name: Assemble NVMe RAID if needed
+  include_role:
+    name: rolehippie.mdadm
+    apply:
+      become: yes
+  vars:
+    mdadm_arrays:
+    - number: 0
+      level: 0
+      filesystem: 'xfs'
+      mountpoint: '/scratch'
+      devices:
+        - '/dev/nvme0n1'
+        - '/dev/nvme1n1'
+        - '/dev/nvme2n1'
+        - '/dev/nvme3n1'
+  when: hostvars[nodename].flavor is defined and hostvars[nodename].flavor == "i1-180"
+- name: Changing perm of /scratch, all+rwx
+  file: dest=/scratch mode=a+rwx
+  become: yes
