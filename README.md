@@ -76,6 +76,10 @@ Baptiste Hennecart (our more active user, thank you, Baptiste!). Last and not le
 big up to Benjamin Duplan who by his enthusiasm and commitment has helped us
 in lots of ways to achieve this project.
 
+Many thanks also to the OVH startup team who accepted us in their program and
+have thus helped this project in a major way. Special thanks to Christopher Apédo!
+Thanks also to OVH support team for their help.
+
 For GMT Science team, Raynald
 
 
