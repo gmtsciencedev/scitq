@@ -62,19 +62,14 @@ about the different options.
 
 ### Special thanks
 
-This code is made available to you by GMT Science, a startup with limited resources
-and strong convictions, and this has been possible because Etienne Formstecher, GMT 
-Science CEO, and Bernard Millet (Biocodex) accepted it, many thanks to them.
-
-I would also like to personally thank:
-- Rémi Tan who did a great job on the UI of PYTQ, and also on the command line
+Special thanks to Rémi Tan who did a great job on the UI of PYTQ, and also on the command line
 manager (pytq-manage) and on the library resilience (pytq.lib).
 
 And also to all people of GMT Science team who believe in this project and have
-made it possible: Edi Prifti, Michel Laborde, Florian Plaza-Oñate, Vadim Puller,
-Baptiste Hennecart (our more active user, thank you, Baptiste!) and Thomas Moncion.
-Last and not least big up to Benjamin Duplan who by his enthusiasm and commitment
-has helped us in lots of ways to achieve this project.
+made it possible: Etienne Formstecher, Edi Prifti, Michel Laborde, Florian Plaza-Oñate,
+Vadim Puller, Baptiste Hennecart (our more active user, thank you, Baptiste!) and 
+Thomas Moncion. Last and not least big up to Benjamin Duplan who by his enthusiasm 
+and commitment has helped us in lots of ways to achieve this project.
 
 Many thanks also to the OVH startup team who accepted us in their program and
 have thus helped this project in a major way. Special thanks to Christopher Apédo!
