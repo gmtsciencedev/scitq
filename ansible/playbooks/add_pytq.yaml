@@ -10,12 +10,12 @@
   become: true
 - name: Install PYTQ dependency manually to avoid pip trouble
   ansible.builtin.shell:
-    cmd: cd /opt/flaskq && pip3 install -r requirements.txt
+    cmd: cd /opt/pytq && pip3 install -r requirements.txt
     warn: no
   become: true
 - name: Install pytq
   ansible.builtin.shell:
-    chdir: /opt/flaskq/
+    chdir: /opt/pytq/
     cmd: python3 ./setup.py install
     warn: no
   become: true

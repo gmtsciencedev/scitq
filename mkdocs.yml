@@ -1,0 +1,14 @@
+site_name: PYTQ
+theme:
+  name: readthedocs
+  highlightjs: true
+nav:
+  - home: index.md
+  - install: install.md
+  - parameters: parameters.md
+  - usage: usage.md
+  - specific configurations: specific.md
+markdown_extensions:
+  - markdown_include.include:
+      base_path: .
+  - admonition

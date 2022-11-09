@@ -1,4 +1,4 @@
-# PYTQ overall README
+# PYthon Task Queue, PYTQ : a distributed task queue
 
 PYTQ is a simple task queue in python: PYthon Task Queue. It is a distributed task
 queue system. It was primarily designed for scientific jobs, that is relatively
@@ -181,35 +181,3 @@ Flask package: Flask-SocketIO)
 
 For now, UI and server live in the same Flask application which makes deploy
 very easy.
-
-
-## Overall environment
-
-PYTQ is designed to orchestrate some scientific jobs in a mixed environment. 
-
-
-## Server preparation
-
-A plain Ubuntu install is advised. In fact any server with python3 and pip should
-do. In Ubuntu this is done with that:
-```bash
-apt install python3 python3-pip
-```
-And make sure typing `python` launch python3, may be like this:
-```bash
-ln -s /usr/bin/python3 /usr/local/bin/python
-```
-(this is notably required for sqlite_inventory.py script in ansible)
-
-Next PYTQ is split into two components, a Rest client/server application and an
-ansible code [ansible code is only required if you use the cloud instance life cycle management system]. You should look in both README.md to see how to install this, but 
-this is pretty simple. Be aware that workers are supposed to use Ubuntu so some
-adaptation of the ansible code will be required if you use another distribution.
-However this should not be too difficult.
-
-Clone the source as root in /root directory, so that the root of this repository
-is /root/pytq. If you change this, you will have to adapt your /etc/ansible/inventory/common
-file (see ansible README.md, this file is in ansible/etc folder that you are
-supposed to copy in /etc as /etc/ansible). There is also another convention that
-is that /root/ansible should be a link to /root/pytq/ansible. As for now it is
-hardcoded that playbooks are in /root/ansible/playbooks.
