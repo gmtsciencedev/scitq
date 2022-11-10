@@ -73,6 +73,9 @@ mkdir /var/log/pytq
 
 Go to the `src` directory of the code and just do *as root*:
 ```bash
+cd /root/
+git clone https://github.com/gmtsciencedev/pytq.git
+cd pytq/src
 pyton ./setup.py install
 ```
 
@@ -191,9 +194,94 @@ When we deploy a new worker there are a lot of information we must remember in A
 
 PYTQ Ansible code is really about deploying in the cloud, so you should set up a [provider](specific.md#providers-configuration).
 
+You should set up the [security](#security): first it is a reasonable idea when operating in a public cloud, second PYTQ Ansible has not been tested *at all* without, so it is very likely to fail at some point: You have been warned.
 
 ## Manual worker deployment
 
 !!! note
 
-    As explained for Ansible, this step is not mandatory. It may be ignored completely if all your workers are deployed in the cloud using Ansible, it may replace completely Ansible configuration if you deploy completely manually or it may be used aside ansible to have some permanent work force available and yet recruit additional work force when needed.
+    As explained for Ansible, this step is not mandatory. It may be ignored completely if all your workers are deployed in the cloud using Ansible, it may replace completely Ansible configuration if you deploy completely manually or it may be used aside Ansible to have some permanent work force available and yet recruit additional work force when needed.
+
+### Install PYTQ package
+
+Just like for pytq-server you need simply the python setuptools. With a Ubuntu distribution just do that:
+```bash
+apt install python3 python3-pip
+```
+
+Next download and install PYTQ package:
+
+```bash
+git clone https://github.com/gmtsciencedev/pytq.git
+cd pytq/src
+pyton ./setup.py install
+```
+
+### Configure and start pytq-worker service
+
+Next copy the service template to systemd directory:
+```bash
+cp templates/template_worker_service.tpl /etc/systemd/system/pytq-worker.service
+```
+
+And edit `/etc/systemd/system/pytq-worker.service` to suit your needs.
+
+In this file you will find these lines under the `[Service]` section:
+```ini
+[Service]
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=AWS_ENDPOINT_URL=https://s3.gra.perf.cloud.ovh.net
+Environment=PYTQ_SERVER=127.0.0.1
+```
+PYTQ_SERVER *must* be modified to your pytq-server IP address or DNS name (not the URL, the name or address). It may even be a good idea to set this PYTQ_SERVER variable into your /etc/environment global setting so that PYTQ commands on the system can reach the right PYTQ server automatically (not mandatory, whereas PYTQ_SERVER is mandatory in `/etc/systemd/system/pytq-worker.service`)
+
+PATH can be safely left as it is (unless you have an alternative PATH when you deployed the PYTQ package), AWS_ENDPOINT_URL is only needed if you use [S3](specific.md#aws-or-others-s3).
+
+See [worker parameters](parameters.md#pytq-worker-parameters) for details.
+
+Next reload and launch the worker:
+```bash
+systemctl daemon-reload
+systemctl enable pytq-worker
+systemctl start pytq-worker
+```
+
+See how it goes with `systemctl status pytq-worker`. The journal/log can be consulted with `journalctl -u pytq-worker` (better pipe that in a less, it may be quite long).
+
+## Security
+
+PYTQ approach to security is very simple. It relies completely on iptables, so it is quite well secured from any outsider and completely trust any insider. An insider is root on all PYTQ server (at least on any worker he has access to), he may rent any number of instance available in your provider account, etc.
+
+Being secure against outsiders is pretty obvious, so we will not explain that, but we would like to explain why we did nothing for the insiders. The reason for that are the following (we did not start like that):
+- first, once you have an install working, cloning an independant setup is very easy, so that is what we do to restrict access: for instance we have data falling under "Health Data Storage" requirement - a French law (Hébergement de Données de Santé -  very much like the future European EHDS regulation) that must have a limited access and we have a separate PYTQ server, a separate public cloud projet, and a separate S3 storage and that's it. 
+- second, most publicly available docker are built thinking root user will be used, changing them is work, sometimes relatively hard work, it is costly and not really interesting if you do not reuse frequently this particular docker. Beeing root into the docker makes you very powerful, and the plasticity requirement for the tasks render user power restrictions in that context exceptionnally difficult to implement.
+
+So much for explanations, let us dive into it.
+
+### initial security setup
+
+The idea is to prevent all access except from fixed IP addresses. Typicalling we use a rerooting OpenVPN setup (an SSH bastion would do the same) and access to this machine grant access to PYTQ related servers (that is PYTQ server and NFS server or permanent workers if you have any). All these machines should be included in the list of trusted IPs.  
+
+Once you are clear on this list of trusted IPs, adapt the script `manage-firewall.sh` in the `script` folder.
+Once your script is fine, on all the PYTQ related servers, do:
+```bash
+sh manage-firewall.sh
+apt install iptables-persistent
+```
+
+Upon the package install you will be proposed to save current rules, answer yes. You're done.
+
+If you want to resave the rules after install:
+```bash
+iptables-save > /etc/iptables/rules.v4
+ip6tables-save > /etc/iptables/rules.v6
+```
+
+## Define a storage component
+
+If your tasks generate some kind of data output, which is very likely this is the last mandatory step of the install. With current PYTQ version, you have two choices: [S3](specific.md#aws-or-others-s3) or [NFS](specific.md#using-nfs). S3 is recommanded, it is cheaper and does not have NFS bottleneck issue, but if you have a nice NFS (with a generous bandwidth and low latency disks), it is perfectly fine.
+
+
+## What's next?
+
+Well, juste [use it](usage.md) !

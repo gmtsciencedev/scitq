@@ -1,4 +1,4 @@
- #!/bin/sh
+#!/bin/sh
 
 # Set default policies for all three default chains
 iptables -P INPUT DROP
@@ -22,6 +22,8 @@ iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 ip6tables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 #iptables -A INPUT -p tcp --dport 22 -m state --state NEW -s 0.0.0.0/0 -j ACCEPT
 
-# Accept inbound packets from certain IPs
-iptables -A INPUT -p all -s 51.210.122.37/32 -j ACCEPT
+# Accept inbound packets from the trusted IPs
+iptables -A INPUT -p all -s X.X.X.X/32 -j ACCEPT
+iptables -A INPUT -p all -s Y.Y.Y.Y/32 -j ACCEPT
+iptables -A INPUT -p all -s Z.Z.Z.Z/32 -j ACCEPT
 

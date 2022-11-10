@@ -2,7 +2,7 @@
 
 ## pytq-server parameters
 
-These parameters are environment variable that should be defined when launching `pytq-server`. Unless a specific install was done, this is done in `/etc/systemd/system/pytq-server.service` service file (an exemple is provided is `templates` directory) in `[Service]` section, using `Environment=...` so for instance the [PATH](#path) parameter will be defined like this:
+These parameters are environment variable that should be defined when launching `pytq-server`. Unless a specific install was done, this is done in `/etc/systemd/system/pytq.service` service file (an exemple is provided is `templates` directory) in `[Service]` section, using `Environment=...` so for instance the [PATH](#path) parameter will be defined like this:
 ```ini
 [...]
 
@@ -62,4 +62,38 @@ These variables are defined in Horizon rc file that is provided by OVH - when yo
 
 Only the password must be set up manually as it is not included in the file associated to OS_PASSWORD variable.
 
+
+## pytq-worker parameters
+
+These parameters are environment variable that should be defined when launching `pytq-worker`. Unless a specific install was done, this is done in `/etc/systemd/system/pytq-worker.service` service file (an exemple is provided is `templates` directory) in `[Service]` section, using `Environment=...`.
+
+Note that these parameters are only available when deploying the worker manually, see [installation](install.md#manual-worker-deployment). With Ansible automated deployment, this is set using `add_pytq.j2` template and it should not be modified.
+
+### PATH
+see [pytq-server](#path). Do not change that.
+
+### PYTQ_SERVER
+The IP address or name (not the URL) where pytq-server can be reached. This is the one parameter that should always be changed. On a permanent server, it is even advised to set PYTQ_SERVER environment variable globally at system level so that all PYTQ commands executed on the system know where to go.
+
+### AWS_ENDPOINT_URL
+This is due to a bug in Python boto3 AWS client library: when using a non standard endpoint for AWS (that is mainly for non-AWS S3), the AWS CLI (awscli) requires a plugin (awscli-plugin-endpoint) and a specific parameter file, `.aws/config` and it works. `.aws/config` typically looks like this:
+
+```ini
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+region = gra
+s3 =
+  endpoint_url = https://s3.gra.perf.cloud.ovh.net
+  signature_version = s3v4
+s3api =
+  endpoint_url = https://s3.gra.perf.cloud.ovh.net
+```
+
+However boto3 does not work when using this, the environment variable AWS_ENDPOINT_URL must be set to `https://s3.gra.perf.cloud.ovh.net`, the same value as `endpoint_url` in `.aws/config` file.
+
+So to sumarise, this is required if you use OVH S3 (and has nothing to do with using OVH as an instance provider), in which case  `https://s3.gra.perf.cloud.ovh.net` is the right value for GRA region.
+
+See [S3](specific.md#aws-or-others-s3) for details.
 

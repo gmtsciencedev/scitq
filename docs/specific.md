@@ -64,6 +64,35 @@ Don't forget to apply `/etc/exports` changes with:
 exportfs -a
 ```
 
+### AWS (or other's) S3
+
+S3 is the new *de facto* standard for data exchange. It is recommanded as it can be purchased from a variety of places (AWS obviously, but almost everybody (but Microsoft...) is selling S3 now, notably OVH has much cheaper options than AWS) and it scales remarkably. 
+
+Be careful not to be too cheap, the cheapest providers (e.g. [Wasabi](https://wasabi.com/)) were never tested, they never answered our demands to know if their model fit our usage which is not very clear. They should work for what we know.
+
+Here we will focus on worker access to S3 and we suppose you have already setup some standard access to your S3 on some computers (maybe your own computer), as this will prove useful to finally get the results of your workers or to push some resources or inputs (covered in [usage](usage.md)).
+
+
+#### With Ansible
+
+Just open the `/etc/ansible/inventory` file matching your provider, let's say for instance `/etc/ansible/inventory/ovh` and configure s3 variables in `[ovh:vars]` section:
+
+```
+[ovh:vars]
+[...]
+s3_key_id=xxxxx
+s3_access_key=xxxx
+s3_region=gra
+s3_url=https://s3.gra.perf.cloud.ovh.net
+```
+
+You must also setup S3 access on your permanent workers, and be careful to set your AWS_ENDPOINT_URL variable in pytq-worker service `/etc/systemd/system/pytq-worker.service` definition as stated in [parameters](parameters.md#aws_endpoint_url). If you change this file do not forget to reload and apply:
+
+```bash
+systemctl daemon-reload
+systemctl restart pytq-worker
+```
+
 ## Providers configuration
 
 ### OVH
