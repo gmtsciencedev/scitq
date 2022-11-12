@@ -93,6 +93,57 @@ systemctl daemon-reload
 systemctl restart pytq-worker
 ```
 
+## Docker private image: registry management
+
+Docker private registry management comes with two options, the authenticated and the insecure option. 
+Note that these two options are incompatible.
+### authenticated registry
+The authenticated option is recommanded, because you can find it off the shelf. The OVH option is very good in our experience, just check "Private Registry" in your public cloud project, it uses Harbor under the hood which is very straight forward. That said, there should not be any major difference between any type of private registry, so feel free.
+
+In case you are unfamiliar with a private registry, this work like that: let us pretend that the URL of your registry is `3jfz86dz8.gra7.container-registry.ovh.net`:
+
+```bash
+docker login 3jfz86dz8.gra7.container-registry.ovh.net
+```
+
+You will be asked for your login and password, and this will generate an encrypted token from your login/pass which is stored in `~/.docker/config.json`:
+
+```json
+{
+        "auths": {
+                "3jfz86dz8.gra7.container-registry.ovh.net": {
+                        "auth": "Wm9tTUtqTllkejo1MzdHNkI4MGtvMVAyNGQ5"
+                }
+        }
+}
+```
+
+Now you can replicate this file to any server you wish to open the gates of your registry, and that's it.
+
+To have the configuration deployed automatically with Ansible, in your provider file, like usual, the `/etc/ansible/inventory` file matching your provider, let's say for instance `/etc/ansible/inventory/ovh` and configure docker variables in `[ovh:vars]` section:
+
+```ini
+[ovh:vars]
+docker_registry=3jfz86dz8.gra7.container-registry.ovh.net
+docker_authentication=Wm9tTUtqTllkejo1MzdHNkI4MGtvMVAyNGQ5
+[...]
+```
+
+### Insecure registry
+
+That is the way to go with the default registry provided by Docker, but it is unadvised, mainly because this will create a bottleneck. 
+
+First, as this is insecure, you should register the server where this registry `[managers]` in `/etc/ansible/inventory/common` (like for the NFS server), include it in the trusted IP list in the `manage-firewall.sh` and apply the security script on it as mentionned in [security](install.md#security).
+
+Second, in your provider configuration, like above, you must add a specific docker variable:
+
+```ini
+[ovh:vars]
+docker_insecure_registry=myprivateregistry.my.domain:5000
+[...]
+```
+
+
 ## Providers configuration
 
 ### OVH

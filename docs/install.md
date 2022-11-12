@@ -253,7 +253,9 @@ See how it goes with `systemctl status pytq-worker`. The journal/log can be cons
 PYTQ approach to security is very simple. It relies completely on iptables, so it is quite well secured from any outsider and completely trust any insider. An insider is root on all PYTQ server (at least on any worker he has access to), he may rent any number of instance available in your provider account, etc.
 
 Being secure against outsiders is pretty obvious, so we will not explain that, but we would like to explain why we did nothing for the insiders. The reason for that are the following (we did not start like that):
+
 - first, once you have an install working, cloning an independant setup is very easy, so that is what we do to restrict access: for instance we have data falling under "Health Data Storage" requirement - a French law (Hébergement de Données de Santé -  very much like the future European EHDS regulation) that must have a limited access and we have a separate PYTQ server, a separate public cloud projet, and a separate S3 storage and that's it. 
+
 - second, most publicly available docker are built thinking root user will be used, changing them is work, sometimes relatively hard work, it is costly and not really interesting if you do not reuse frequently this particular docker. Beeing root into the docker makes you very powerful, and the plasticity requirement for the tasks render user power restrictions in that context exceptionnally difficult to implement.
 
 So much for explanations, let us dive into it.
@@ -281,6 +283,7 @@ ip6tables-save > /etc/iptables/rules.v6
 
 If your tasks generate some kind of data output, which is very likely this is the last mandatory step of the install. With current PYTQ version, you have two choices: [S3](specific.md#aws-or-others-s3) or [NFS](specific.md#using-nfs). S3 is recommanded, it is cheaper and does not have NFS bottleneck issue, but if you have a nice NFS (with a generous bandwidth and low latency disks), it is perfectly fine.
 
+In case you have specific docker images that you would want to use, configure a [private registry](specific.md#docker-private-image-registry-management).
 
 ## What's next?
 

@@ -7,8 +7,11 @@ nav:
   - install: install.md
   - parameters: parameters.md
   - usage: usage.md
+  - using the GUI: gui.md
+  - pytq-manage: pytq-manage.md
   - specific configurations: specific.md
 markdown_extensions:
   - markdown_include.include:
       base_path: .
   - admonition
+  - def_list
