@@ -46,3 +46,17 @@ You should see a line `node1` coming up quickly, but with a grey dot, sign that 
 ![ui-recruit2](img/ui-recruit2.png)
 
 Note the small red message at the bottom of the screen "done for node1". What happen under the hood is that Ansible playbook `deploy_one_vm.yaml` was played and this is the end message.
+
+### Managing workers
+
+Here are the different options to manage interactively workers. 
+
+!!! note
+    Workers are also manage automatically by PYTQ *if you recruited them like we just did*: once they have started working (they have started a first task), if their batch becomes empty and they stay idle for 5 minutes, they will launch the idle callback and PYTQ will delete them - delete them from the worker screen and PYTQ database and also delete them in the provider space. This does not happen with permanent workers (i.e. manually deployed workers).
+
+#### Changing the batch
+![edit batch](img/ui-edit-batch.png)
+You can edit the batch. This will instruct the worker to accept tasks from a new batch (if some tasks remain (accepted or running) from previous batch, they will finish normally).
+
+#### Concurrency
+Just right of batch, you will find the concurrency +/- buttons. Concurrency is the number of tasks allowed to run simultaneously on the worker. Increasing the concurrency will have an instant effect: it is always easy to accept more tasks. But decreasing the concurrency will not be instant: this will just prevent some new tasks to replace the finishing tasks so as to adjust the number of running tasks to the new concurrency. If you want to kill the running tasks, you should go to task management.

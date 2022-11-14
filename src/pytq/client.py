@@ -16,6 +16,8 @@ import tempfile
 from .fetch import get,put,pathjoin
 import traceback
 import shutil
+import subprocess
+from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -35,7 +37,7 @@ DEFAULT_RESOURCE_DIR = '/resource'
 DEFAULT_TEMP_DIR = '/tmp'
 
 if os.path.exists('/data'):
-    CONTAINER_LAUNCH_COMMAND = f'docker run --rm -v /data:/data \
+    CONTAINER_LAUNCH_COMMAND = f'docker run --rm -d -v /data:/data \
         -v {{input_dir}}:{DEFAULT_INPUT_DIR} \
         -v {{output_dir}}:{DEFAULT_OUTPUT_DIR} \
         -v {{temp_dir}}:{DEFAULT_TEMP_DIR} \
@@ -43,13 +45,15 @@ if os.path.exists('/data'):
         -e "CPU={{cpu}}" \
         {{extra_options}} {{container}} {{command}}'
 else:
-    CONTAINER_LAUNCH_COMMAND = f'docker run --rm \
+    CONTAINER_LAUNCH_COMMAND = f'docker run --rm -d \
         -v {{input_dir}}:{DEFAULT_INPUT_DIR} \
         -v {{output_dir}}:{DEFAULT_OUTPUT_DIR} \
         -v {{temp_dir}}:{DEFAULT_TEMP_DIR} \
         -v {{resource_dir}}:{DEFAULT_RESOURCE_DIR} \
         -e "CPU={{cpu}}" \
         {{extra_options}} {{container}} {{command}}'
+CONTAINER_ATTACH_COMMAND = 'docker attach {container_id}'
+
 def create_dir(base_dir, sub_dir):
     """A small helper function to create a subdirectory and return its name.
     Add a final slash (or backslash with windows) to makes things clear it is a directory"""
@@ -71,6 +75,7 @@ def final_slash(path):
     if not path.endswith('/'):
         path += '/'
     return path
+
 class Executor:
     """Executor represent the process in which the task is launched, it is also
     designed to monitor the task and grab its output to push it regularly to the
@@ -103,6 +108,7 @@ class Executor:
         self.resource=resource
         self.resources_db=resources_db
         self.run_slots=run_slots
+        self.container_id=None
         asyncio.run(self.run())
 
     # via: https://stackoverflow.com/questions/10756383/timeout-on-subprocess-readline-in-python/34114767?noredirect=1#comment55978734_10756738
@@ -113,17 +119,27 @@ class Executor:
         while self.run_slots.value<=0:
             log.warning(f'Overalocation, worker is out of run slot, have to wait...')
             sleep(POLLING_TIME)
-        self.process = await asyncio.create_subprocess_shell(command,
-                stdout=PIPE, stderr=PIPE, env={
-                    'CPU':str(self.cpu),
-                    'INPUT':self.input_dir,
-                    'OUTPUT':self.output_dir,
-                    'TEMP': self.temp_dir,
-                    'RESOURCE': self.resource_dir})
+
+        if not self.container:
+            self.process = await asyncio.create_subprocess_shell(command,
+                    stdout=PIPE, stderr=PIPE, env={
+                        'CPU':str(self.cpu),
+                        'INPUT':self.input_dir,
+                        'OUTPUT':self.output_dir,
+                        'TEMP': self.temp_dir,
+                        'RESOURCE': self.resource_dir})
+        else:
+            # this is the safe way to keep docker process attached while still getting its container id
+            self.container_id = subprocess.run(command, shell=True, check=True,
+                                    capture_output=True).stdout.encode('utf-8').strip()
+            self.process = await asyncio.create_subprocess_shell(
+                    CONTAINER_ATTACH_COMMAND.format(container_id=self.container_id),
+                    stdout=PIPE, stderr=PIPE)
+
         self.run_slots.value -= 1
         self.s.execution_update(execution_id, pid=self.process.pid, status='running')
 
-   
+
 
 
     async def get_output(self, execution_id):
@@ -260,6 +276,7 @@ class Executor:
             log.error(f'Execution {self.execution_id} was cancelled.')
             self.clean()
             return None
+        
         log.warning(f'Launching job {self.execution_id}: {contained_command}')
         await self.execute(execution_id=self.execution_id, 
                     command=contained_command)
@@ -292,8 +309,24 @@ class Executor:
             else:
                 try:
                     signal=self.execution_queue.get(block=False)
+                    if self.container:
+                        # sending a signal on the docker run process itself will not have any effect
+                        # we must launch another process to send the signal to docker service instead
+                        if self.container_id:
+                            if signal == SIGTERM:
+                                subprocess.run(['docker','stop',self.container_id])
+                            elif signal == SIGKILL:
+                                subprocess.run(['docker','kill',self.container_id])
+                            elif signal == SIGTSTP:
+                                subprocess.run(['docker','pause',self.container_id])
+                            elif signal == SIGCONT:
+                                subprocess.run(['docker','unpause',self.container_id])
+                            else:
+                                log.warning(f'Cannot launch signal {signal} with docker...')
+                    else:
+                        self.process.send_signal(signal)
                     log.warning(f'...signal {signal} sent')    
-                    self.process.send_signal(signal)
+
                 except queue.Empty:
                     pass
 
