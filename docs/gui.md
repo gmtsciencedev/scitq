@@ -56,7 +56,93 @@ Here are the different options to manage interactively workers.
 
 #### Changing the batch
 ![edit batch](img/ui-edit-batch.png)
+
 You can edit the batch. This will instruct the worker to accept tasks from a new batch (if some tasks remain (accepted or running) from previous batch, they will finish normally).
 
 #### Concurrency
 Just right of batch, you will find the concurrency +/- buttons. Concurrency is the number of tasks allowed to run simultaneously on the worker. Increasing the concurrency will have an instant effect: it is always easy to accept more tasks. But decreasing the concurrency will not be instant: this will just prevent some new tasks to replace the finishing tasks so as to adjust the number of running tasks to the new concurrency. If you want to kill the running tasks, you should go to task management.
+
+#### Prefetch
+Just right of concurrency is the prefetch parameter. Prefetch is an optimisation for tasks that have a long input fetching time (like some public data that may take a long time to download). Prefetch is the number of supplementary tasks that will be assigned to the worker, in addition to the currently running tasks, so that the worker may download input for this tasks in advance.
+
+!!! note
+    Increasing prefetch can really be helpful when input download is slow but it has a drawback: if the execution time of tasks is not homogenous, you may end with some idle workers while others have a certain number of prefetched tasks not yet launched. Just like before, decreasing the prefetch setting will not free those prefetched tasks, you will have to cancel them and relaunch them manually so that they maybe distributed to idle workers.
+
+#### Destroy (trash icon)
+Last, on the right end of each worker a button with a trash icon may trigger the worker deletion. On a cloud deployed worker, this will delete the worker in base, unlink - but not delete - the jobs related to that worker, and trigger the Ansible code to destroy the instance in your provider cloud infrastructure.
+
+On a manually deployed worker this is not recommanded and it will not do much. It will delete the worker in base, but as the worker cannot be uninstalled by Ansible, it will keep working, and will automatically redeclare itself to PYTQ - thus reappearing instantly.
+
+## batch screen (http://.../ui/batch)
+
+The batch screen can be reached by clicking on the "Batch view" button on the top right part of the worker screen.
+
+![batch screen](img/ui-batch.png)
+
+This screen may likely be blank for you, unless you already [queued some tasks](usage.md#queuing-a-task). It shows a sumary of your batches states. For each batch, a progression bar is shown with a green part matching succeeded task proportion and a red part for failed tasks. Only batches with tasks will show in that screen (so here having a worker within the batch does not enable it to appear in that screen).
+
+!!! note
+    In the database, there is a task table and a worker table (managed through SQLAlchemy) but no batch tables: in other words, batches are not proper objects in PYTQ model, just a field in task and worker models. Thus a batch only "exists" if a task with that batch exists.
+
+## task screen (http://.../ui/task)
+The task screen may be reached clicking on one of the button in the top bar of the worker screen:
+![task screen access](img/ui-worker-task.png)
+
+Please, keep both worker and batch screen available in different tabs, as we will need to switch to these different screens to pilot what is going on.
+
+It looks like this and is a fairly sophisticated screen that enable a lot of actions:
+![task screen](img/ui-task1.png)
+
+Just to explain what is going on, we will launch a task in the "test" batch (no worker there) to see what is going on. To keep things simple we will queue a simple shell command:
+
+```bash
+sh -c 'sleep 10 && echo One && sleep 20 && echo Two && sleep 40 && echo Three'
+```
+This wait 10 seconds then display "One", wait another 20 seconds and display "Two" then another 30 seconds and display "Three".
+
+To launch it (for details see [usage](usage.md#queuing-a-task)), simply:
+```bash
+pytq-launch -b test -d ubuntu:latest sh -c 'sleep 10 && echo One && sleep 20 && echo Two && sleep 40 && echo Three'
+```
+
+NB: this command will work if the environment variable PYTQ_SERVER is set and points to your actual PYTQ server, if not add `-s <name or address of PYTQ server>` before sh. If it is not properly set you will get this exception:
+```python
+WARNING:root:Exception when trying to post: HTTPConnectionPool(host='127.0.0.1', port=5000): Max retries exceeded with url: /tasks/ (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff09ffbf430>: Failed to establish a new connection: [Errno 61] Connection refused'))
+```
+Now, if you click on "All" tab in the task screen (and you wait a maximum of 5 seconds) you should see this:
+![waiting task](img/ui-task2.png)
+
+This task has a grey dot, which means it is in pending state (which will show if you hover the mouse abobe the grey dot). The reason for this is that there is no worker in its batch and it cannot be assigned. To change that, we have to move our existing worker to its batch, like it was explain in [worker screen](#changing-the-batch):
+
+![edit worker](img/ui-worker-edit1.png)
+
+Valid with enter (it may take 1 seconds or 2 to show the change) and go back to the task, the dot turned blue (running):
+![task step 3](img/ui-task3.png)
+
+And very soon, something comes up in the error column:
+![task step 4](img/ui-task4.png)
+
+If you click on the V shaped arrow right of the error text, you will expand the text:
+![task step 5](img/ui-task5.png)
+If you do that quickly enough, you'll notice the text is (almost) live. It is updated every 5 seconds or so. This is not really an error, it just displays the stderr (standard error) flow from the docker command, which is reporting the download of the docker image we have chosen.
+
+You can expand the stdout (standar output) flow of the command as well, and you will see the One Two Three words we can expect. And at one point the blue dot will turn green (succeeded).
+![task step 6](img/ui-task6.png)
+ 
+If we leave things like that, in 5 minutes, PYTQ will destroy our worker: the worker is idle and there are no more tasks in the batch.
+
+In case you did not see properly the texts change, let's re-run the task, which is done clicking here:
+![task step 7](img/ui-task7.png)
+
+You should see the dot cycling once more through grey, blue (then the text appear, and you'll see it better if you expand the output cell), and green. But no more error flow because our docker image was already there so it need no download this time.
+
+There are three other thing that can be done in that screen:
+![task step 8](img/ui-task8.png)
+First as highlighted with 1/2 numbers you can expand the command to see it completely and modify it. Modification will also reset the task in pending state which can be handy notably if the task failed (red dot). You can experience with that by mispelling `echo` (remove the o for instance) command for instance in the shell script.
+Second, you have two icons (squarred in red in the above screenshot), a download option to download the outputs (stdout and stderr) of the task, and a delete icon to delete the task.
+
+Another thing you can do is play with the colored tabs with the different possible states of the task, they will only display the tasks with the corresponding color of the dot (se green tab should display the green dotted task).
+
+When the task is running, you have three extra action button: 
+![task step 9](img/ui-task9.png)
+The pause button is to pause the task, the second button is to stop the task, and the third 

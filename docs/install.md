@@ -1,13 +1,15 @@
 # Installation
 
-PYTQ is simple system and the [quick start](../#quick-start) can really be used. However in a production
+PYTQ is simple system as the [quick start](../#quick-start) shows, however in a production
 environment you will want to do a little more than that:
 
 - install pytq-server as a service,
-- deploy and configure the ansible code to connect to your provider.
+- deploy and configure the ansible code to connect to your provider,
+- set up some extra services like an S3 or NFS storage and maybe a docker registry.
+
+This sounds a lot more complex than the quick start, but this is really explained carefully here and together it brings a really efficient setup. None of it is mandatory and you can start very simply.
 
 !!! note
-
 
     Unless specifically mentionned, all the following commands must be done *as root*.
 
@@ -163,19 +165,19 @@ Ansible configurable parts are in `/etc/ansible/inventory` (that should be the s
 
 #### Adapt /etc/ansible/inventory/common
 
-In `[all:vars]`, you will find `nfs_...` variables and `pytq_src` variable. If you do not plan to setup a common NFS server between your workers, you may safely remove `nfs_...` lines. For some details, please read [Using NFS](specific.md#using-nfs).
+In short, the only thing to do in principle in this file is to change the `keyname` parameter that is defined in the `localhost` line in the `[managers]` section. 
 
-`pytq_src` must be set to the path where the repository is setup, it default to `/root/pytq` (so that the `src` directory is in `/root/pytq`). It is advised to let it like that. It will be used by Ansible to distribute the worker package to the different workers.
+This `keyname` is linked to the SSH key we just created above. You will need to deploy this key in your cloud provider console, as explained in more detail in [Providers configuration](specific.md#providers-configuration), so as to let Ansible gain access to newly deployed workers. The `keyname` is just some short name under which this key will be called in your cloud provider infrastructure. We use the shortname of our PYTQ server for this, but any name will do.
 
-In `[managers]` section, the PYTQ server definition for Ansible, which looks like that:
-`localhost ansible_connection=local keyname=mykeyname` 
-should be changed for the `keyname` parameter. This point is covered more in detail in [Providers configuration](specific.md#providers-configuration) but this is simple logic. We need to gain SSH access on our workers for Ansible to be able to reach them, thus the SSH key that we created above must be deployed on our workers when creating a new instance, which is very classic in cloud deploy. This requires that the SSH key is uploaded on the provider console and is given a specific name - likely the shortname of your PYTQ server - which should then be assigned to this keyname variable.
+In `[all:vars]`, you will find `pytq_src` variable. If you followed this guide and installed PYTQ source in `/root/pytq`, you can leave the variable as it is. Otherwise this variable should point to the place where sources are (the directory that contain the `src` folder).
+
+Last, this `[all:vars]` section is also where NFS parameters can be set if you plan to use NFS, see [using NFS](specific.md#using-nfs) for details.
 
 #### Adapt `/etc/ansible/inventory/ovh` and others
 
 Have a quick look at the other files in `/etc/ansible/inventory`. Overall these files are pretty safe to be left unchanged unless you need a specific feature. 
 
-The followin options should not be changed to avoid Python and SSH trouble in Ansible with Ubuntu:
+The following options should not be changed to avoid Python and SSH trouble in Ansible with Ubuntu:
 
 ```
 [...:vars]
@@ -192,15 +194,20 @@ When we deploy a new worker there are a lot of information we must remember in A
 
 ### What's next?
 
-PYTQ Ansible code is really about deploying in the cloud, so you should set up a [provider](specific.md#providers-configuration).
+There are four optional tasks which are recommanded and all require some modification of Ansible `/etc/ansible/inventory` files `common` or your cloud providers files (`ovh` and so on):
+- PYTQ Ansible code is really about deploying in the cloud, so you should set up a [provider](specific.md#providers-configuration).
+- You should set up the [security](#security) as it is a reasonable idea when operating in a public cloud.
+- You should add some [storage](#define-a-storage-component).
+- You should deploy a docker [private registry](specific.md#docker-private-image-registry-management).
 
-You should set up the [security](#security): first it is a reasonable idea when operating in a public cloud, second PYTQ Ansible has not been tested *at all* without, so it is very likely to fail at some point: You have been warned.
+
+In this file we will finish with manual worker deployment and security.
 
 ## Manual worker deployment
 
 !!! note
 
-    As explained for Ansible, this step is not mandatory. It may be ignored completely if all your workers are deployed in the cloud using Ansible, it may replace completely Ansible configuration if you deploy completely manually or it may be used aside Ansible to have some permanent work force available and yet recruit additional work force when needed.
+    This step is not mandatory, not even particularly recommanded: it all depends on your needs. It may be ignored completely if all your workers are deployed in the cloud using Ansible, it may replace completely Ansible configuration if you deploy completely manually or it may be used aside Ansible to have some permanent work force available and yet recruit additional cloud work force when needed.
 
 ### Install PYTQ package
 
@@ -252,9 +259,9 @@ See how it goes with `systemctl status pytq-worker`. The journal/log can be cons
 
 PYTQ approach to security is very simple. It relies completely on iptables, so it is quite well secured from any outsider and completely trust any insider. An insider is root on all PYTQ server (at least on any worker he has access to), he may rent any number of instance available in your provider account, etc.
 
-Being secure against outsiders is pretty obvious, so we will not explain that, but we would like to explain why we did nothing for the insiders. The reason for that are the following (we did not start like that):
+Being secure against outsiders is pretty obvious, but we would like to explain why we did nothing for the insiders:
 
-- first, once you have an install working, cloning an independant setup is very easy, so that is what we do to restrict access: for instance we have data falling under "Health Data Storage" requirement - a French law (Hébergement de Données de Santé -  very much like the future European EHDS regulation) that must have a limited access and we have a separate PYTQ server, a separate public cloud projet, and a separate S3 storage and that's it. 
+- first, once you have an install working, cloning an independant setup is very easy, so that is what we do to restrict access: we have data falling under "Health Data Storage" requirement - a French law (Hébergement de Données de Santé -  very much like the future European EHDS regulation) that must have a limited access and we have a separate PYTQ server, a separate public cloud projet, and a separate S3 storage and that's it. 
 
 - second, most publicly available docker are built thinking root user will be used, changing them is work, sometimes relatively hard work, it is costly and not really interesting if you do not reuse frequently this particular docker. Beeing root into the docker makes you very powerful, and the plasticity requirement for the tasks render user power restrictions in that context exceptionnally difficult to implement.
 

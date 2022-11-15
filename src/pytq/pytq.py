@@ -1257,8 +1257,6 @@ def handle_task_action(json):
     if json['action']=='modify': 
         #Changing the command for a task in the data base and moving it in the task queue. It doesn't create a new task.
         for t in Task.query.filter(Task.task_id==task):
-            for e in Execution.query.filter(Execution.task_id==task):
-                db.session.delete(e)
             t.command =json["modification"]
             t.status='pending'
         db.session.commit()

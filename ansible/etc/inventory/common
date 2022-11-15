@@ -1,8 +1,5 @@
 [all:vars]
-nfs_server=mynfsserver
-nfs_server_address=mynfsserver.my.domain
 pytq_src=/root/pytq
 
 [managers]
-mynfsserver
 localhost ansible_connection=local keyname=mykeyname
