@@ -1,12 +1,16 @@
 {!README.md!}
 
-## Commands
+## Content
 
-* `pytq-server`     - Launch the main server (the program that distribute the tasks).
-    - It also includes the GUI and the API.
-* `pytq-worker`     - Launch the worker (the program that does the tasks).
-* `pytq-launch`     - Add a new task to the queue.
-* `pytq-manage`     - A command line utility to monitor, change tasks, etc.
+How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) and read the [usage](usage.md). Sure it is what you need but unsure what you will need? Look at [installation](install.md) and [specific settings](specific.md).
+
+* [installation](install.md): straight to business, install PYTQ.
+* [specific settings](specific.md): extra things you should consider and set up.
+* [parameters](parameters.md): detail of all the parameters than can be set.
+* [usage](usage.md): now that is properly set up, use PYTQ and queue your first tasks.
+* [GUI](gui.md): monitor (and tune) what's going on in PYTQ.
+* [pytq-manage](pytq-manage.md): same as above but for command line lovers.
+* [model](model.md): some insights about the underlying model, API and database.
 
 ## Project layout
 

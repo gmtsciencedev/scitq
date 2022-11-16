@@ -35,17 +35,22 @@ pytq-manage has an extensive inline documentation, you can launch
 - `pytq-manage <object> <verb> -h` to get some help on the options for a certain action (for instance `pytq-manage worker list -h`)
 
 So this documentation will not go in all the details that comes with the inline help and are more accurate. The idea is just to give some examples.
-## worker verbs
+## worker
 
 ### list 
 
 This will list the different worker in the manner of the [worker screen](gui.md#worker-screen-httpui). The handy `-L` option will display all the attributes (prefetch, and the different counters for the task success or failures).
 
 ```bash
-% pytq-manage worker list   
+pytq-manage worker list   
+
   worker_id  name          status      concurrency  creation_date               last_contact_date           batch
           1  epeire.local  running               1  2022-11-16 08:25:25.747354  2022-11-16 08:28:14.738917  Default
-% pytq-manage worker list -L
+```
+
+```bash
+pytq-manage worker list -L
+
   worker_id  name          status      concurrency  creation_date               last_contact_date           batch      prefetch  assigned    accepted    running    failed    succeeded
           1  epeire.local  running               1  2022-11-16 08:25:25.747354  2022-11-16 08:27:42.418281  Default           0
 ```
@@ -56,6 +61,7 @@ This will recruit a new worker using Ansible (with the same options as in the GU
 
 For instance this will deploy the same simple worker as in the GUI document:
 ```bash
+
 pytq-manage worker deploy -f s1-2 -r GRA11 -b mybatch
 ```
 
@@ -78,3 +84,79 @@ pytq-manage worker update -b test -n node1
 !!! note
     To launch a task, use `pytq-launch`, cf [usage](usage.md#queuing-a-task). The reason is practical: pytq-manage use python package argparse which makes syntax and inline documentation clear and simple. 
 ### list
+
+Same as with worker list, use -L option to see all the parameters of the task and the complete command (which will be truncated otherwise)
+```bash
+pytq-manage task list -L      
+
+  task_id  name    status    command     creation_date               modification_date           batch    container    container_options    input    output    resource
+        1          running   sleep 1000  2022-11-16 13:30:19.733077  2022-11-16 13:30:24.114657  test
+```
+
+### relaunch
+
+Like [relaunching with the GUI](gui.md#task-screen-httpuitask):
+
+```bash
+pytq-manage task relaunch -i 1
+```
+NB here no choice, our task has no name so we cannot use the `-n` option, we must use the task id with `-i`. You must use one of them.
+
+
+### output
+
+See the output of a task (stderr and stdout by default, but you can specify `-o` to see only stdout or `-e` to see only stderr):
+
+```bash
+pytq-manage task output -i 1
+```
+
+### update
+
+Change a property of the task, like the command (`-c`) or the docker image (`-d`):
+
+```bash
+pytq-manage task update -i 1 -d ubuntu:latest
+```
+
+Unlike the GUI and you can change any property of the task - including the status, thus you can also relaunch a task using:
+```bash
+pytq-manage task update -i 1 -S pending
+```
+
+
+### delete
+
+Just delete the task:
+
+```bash
+pytq-manage task delete -i 1
+```
+
+
+## batch
+
+This mimics the [batch screen](gui.md#batch-screen-httpuibatch) of the GUI.
+### list
+
+Contrarily to the other list no option for this one.
+
+```bash
+pytq-manage batch list
+
+batch    pending    accepted    running    failed      succeeded  workers
+test                                                           1  epeire.local
+```
+
+### stop/go
+
+This will pause the batch (the simple pause only) and relaunch the batch.
+
+```bash
+pytq-manage batch stop -n test
+```
+
+### delete
+
+This will just delete a batch (and all the corresponding tasks)
+
