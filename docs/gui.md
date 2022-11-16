@@ -2,6 +2,8 @@
 
 This option is more simple than the [pytq-manage](pytq-manage.md) option but requires a browser access to PYTQ server (and thus require that you have access to a trusted IP as defined in [security](install.md#security), maybe a VPN or a proxy or an SSH tunnel).
 
+!!! note
+    You will notice there is no way to add a new task with the GUI: this is a design choice, a task is basically a command from the command line (an non interactive program), thus the command line is the ideal place to test and hence queue this command.
 ## Reaching the GUI
 
 If the PYTQ server name is `pytq.mycompany.com`, then the GUI URL is `http://pytq.mycompany.com:5000/ui/`.
@@ -73,22 +75,11 @@ Last, on the right end of each worker a button with a trash icon may trigger the
 
 On a manually deployed worker this is not recommanded and it will not do much. It will delete the worker in base, but as the worker cannot be uninstalled by Ansible, it will keep working, and will automatically redeclare itself to PYTQ - thus reappearing instantly.
 
-## batch screen (http://.../ui/batch)
-
-The batch screen can be reached by clicking on the "Batch view" button on the top right part of the worker screen.
-
-![batch screen](img/ui-batch.png)
-
-This screen may likely be blank for you, unless you already [queued some tasks](usage.md#queuing-a-task). It shows a sumary of your batches states. For each batch, a progression bar is shown with a green part matching succeeded task proportion and a red part for failed tasks. Only batches with tasks will show in that screen (so here having a worker within the batch does not enable it to appear in that screen).
-
-!!! note
-    In the database, there is a task table and a worker table (managed through SQLAlchemy) but no batch tables: in other words, batches are not proper objects in PYTQ model, just a field in task and worker models. Thus a batch only "exists" if a task with that batch exists.
-
 ## task screen (http://.../ui/task)
 The task screen may be reached clicking on one of the button in the top bar of the worker screen:
 ![task screen access](img/ui-worker-task.png)
 
-Please, keep both worker and batch screen available in different tabs, as we will need to switch to these different screens to pilot what is going on.
+Please, keep the worker screen available in a different tab (this should be the case automatically), as we will need to switch back to it at one point.
 
 It looks like this and is a fairly sophisticated screen that enable a lot of actions:
 ![task screen](img/ui-task1.png)
@@ -145,4 +136,27 @@ Another thing you can do is play with the colored tabs with the different possib
 
 When the task is running, you have three extra action button: 
 ![task step 9](img/ui-task9.png)
-The pause button is to pause the task, the second button is to stop the task, and the third 
+
+The three buttons can respectively: 
+
+- pause the task, 
+- stop the task (SIGTERM or `docker stop`), 
+- and kill the task. (SIGKILL or `docker kill`)
+
+## batch screen (http://.../ui/batch)
+
+The batch screen can be reached by clicking on the "Batch view" button on the top right part of the worker screen.
+
+![batch screen](img/ui-batch.png)
+
+The batch screen is meant to be a sumary of the global state of the different tasks. It can also perform several actions:
+
+![batch action](img/ui-batch-action.png)
+
+The pause action enable to pause the batch: it pauses all the workers and the tasks. There are two kind of pauses: the simple pause (batch only pause) or the complete pause (batch and task pause). The simple pause simply prevents pending tasks from being attributed and launched, letting running tasks end normally, the batch and task pause will also send the pause signal (SIGTSTP or `docker pause`) to the different running tasks. 
+
+The go action do the reverse of the pause action.
+
+The stop and kill action will send the corresponding signals to all running task.
+
+The last action is the delete action. This will remove delete all tasks (without stoping running tasks). Once all your tasks are done, no need to clutter the database with the past, you can clean.
