@@ -7,11 +7,6 @@
     state: present
     update_cache: yes
   become: yes
-- name: Add docker registry settings
-  template:
-    dest: "/etc/docker/daemon.json"
-    src: add_docker.j2
-  become: yes
 - name: Add docker root config directory
   file:
     path: /root/.docker
