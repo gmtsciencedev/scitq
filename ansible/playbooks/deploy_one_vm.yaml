@@ -39,11 +39,11 @@
           - include_tasks: add_in_etchosts.yaml
           - name: Clean source 1
             ansible.builtin.file:
-                    path: /root/pytq/flaskq/build
+                    path: "{{ pytq_src }}/src/build"
                     state: absent
           - name: Clean source 2
             ansible.builtin.file:
-                    path: /root/pytq/flaskq/dist
+                    path: "{{ pytq_src }}src/dist"
                     state: absent
                     
 - name: Prepare managing servers
@@ -66,7 +66,7 @@
           - name: Copy pytq source
             copy:
               remote_src: no
-              src: "{{ pytq_src }}/flaskq"
+              src: "{{ pytq_src }}/src"
               dest: /opt/
             become: true
           - include_tasks: add_docker.yaml

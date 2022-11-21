@@ -20,11 +20,11 @@
           - include_tasks: add_in_etchosts.yaml
           - name: Clean source 1
             ansible.builtin.file:
-                    path: /root/pytq/src/build
+                    path: "{{ pytq_src }}/src/build"
                     state: absent
           - name: Clean source 2
             ansible.builtin.file:
-                    path: /root/pytq/src/dist
+                    path: "{{ pytq_src }}/src/dist"
                     state: absent
                     
 - name: Prepare managing servers
