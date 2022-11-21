@@ -131,7 +131,7 @@ class Executor:
         else:
             # this is the safe way to keep docker process attached while still getting its container id
             self.container_id = subprocess.run(command, shell=True, check=True,
-                                    capture_output=True).stdout.encode('utf-8').strip()
+                                    capture_output=True).stdout.decode('utf-8').strip()
             self.process = await asyncio.create_subprocess_shell(
                     CONTAINER_ATTACH_COMMAND.format(container_id=self.container_id),
                     stdout=PIPE, stderr=PIPE)
