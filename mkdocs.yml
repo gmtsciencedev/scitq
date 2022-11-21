@@ -11,6 +11,7 @@ nav:
   - pytq-manage: pytq-manage.md
   - model and API: model.md
   - specific settings: specific.md
+  - troubleshooting: troubleshoot.md
 plugins:
   - search
   - mkdocstrings:

@@ -1298,7 +1298,8 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
             region=regions[0]
             len(f'Splitting regions and using region {region}')
         retry=WORKER_CREATE_RETRY
-        while retry>=0:
+        db_session = Session(db.engine)
+        while retry>=0 and worker_exists(w.worker_id, db_session):
             log.warning(f'''Command is {WORKER_CREATE.format(
                 hostname=hostname,
                 concurrency=concurrency,
@@ -1336,6 +1337,10 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
         socketio.emit('worker_created', f'error for {hostname}: {e}',broadcast=True)
         log.exception(f'Creation failed for {hostname}...')
         raise
+
+def worker_exists(worker_id, db_session):
+    """Return true if this worker_id is in database"""
+    return db_session.query(Worker).filter(Worker.worker_id==worker_id).count()>0
 
 #@app.route('/ui/get/')
 #def ui_get():
@@ -1423,12 +1428,16 @@ def background():
             while len(worker_create_process_waiting_queue)>0 \
                     and len(worker_create_process_queue)<WORKER_CREATE_CONCURRENCY:
                 new_worker = worker_create_process_waiting_queue.pop(0)
-                log.warning(f'Launching creation process for worker {new_worker.hostname}.')
-                worker_create_process = PropagatingThread(
-                    target = create_worker_process,
-                    kwargs = new_worker.__dict__)
-                worker_create_process.start()
-                worker_create_process_queue.append((new_worker, worker_create_process))
+                # verifying that the object is still in db to prevent recreation
+                if worker_exists(new_worker.w.worker_id, session):
+                    log.warning(f'Launching creation process for worker {new_worker.hostname}.')
+                    worker_create_process = PropagatingThread(
+                        target = create_worker_process,
+                        kwargs = new_worker.__dict__)
+                    worker_create_process.start()
+                    worker_create_process_queue.append((new_worker, worker_create_process))
+                else:
+                    log.warning(f'Not queuing {new_worker.hostname} for creation as it was deleted')
             for new_worker,worker_create_process in list(worker_create_process_queue):
                 try:
                     if not worker_create_process.is_alive():

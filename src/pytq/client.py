@@ -296,7 +296,7 @@ class Executor:
                         traceback.format_exc())
                     returncode=-1000
                 if returncode!=0:
-                    log.error('... task failed with error code {returncode}')
+                    log.error(f'... task failed with error code {returncode}')
                 log.warning(f'Run slots: {self.run_slots.value}')
 
                 self.s.execution_update(self.execution_id, 

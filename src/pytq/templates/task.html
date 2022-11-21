@@ -204,13 +204,13 @@
                         if(filter.get('status')===tasks[i][11] ||filter.get('status')===null ||filter.get('status')==='' ){
                             if(filter.get('batch')===tasks[i][3] ||filter.get('batch')===null ||filter.get('batch')===''){
                                 j++;
-                                var date_started = new Date(tasks[i][4]);
+                                var date_started = new Date(tasks[i][4]+"+00");
                                 if(tasks[i][11] === 'running'){
                                     date_end = new Date();
                                 }
                                 else{
-                                    var date_end = new Date(tasks[i][5]);}
-                                var diff_in_second= Math.round((date_end.getTime()- (tasks[i][11]==='running'?3600000*2 : 0 )  - date_started.getTime())/(1000));
+                                    var date_end = new Date(tasks[i][5]+"+00");}
+                                var diff_in_second= Math.round((date_end.getTime()- date_started.getTime())/(1000));
                                 
                             //Change the color of the status' circle according to the task's status
                             switch(tasks[i][11]){
