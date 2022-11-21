@@ -23,7 +23,7 @@
     src: add_docker2.j2
   become: yes
   when: docker_authentication is defined and docker_registry is defined
-- name: Add docker authentication settings
+- name: Add docker registry exception
   template:
     dest: "/root/.docker/config.json"
     src: add_docker.j2
