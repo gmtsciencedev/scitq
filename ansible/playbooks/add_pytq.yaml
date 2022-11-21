@@ -15,7 +15,7 @@
   become: true
 - name: Install pytq
   ansible.builtin.shell:
-    chdir: /opt/pytq/
+    chdir: /opt/pytq/src/
     cmd: python3 ./setup.py install
     warn: no
   become: true

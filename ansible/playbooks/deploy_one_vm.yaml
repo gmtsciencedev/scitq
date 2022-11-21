@@ -67,7 +67,7 @@
             copy:
               remote_src: no
               src: "{{ pytq_src }}/src"
-              dest: /opt/
+              dest: /opt/pytq/
             become: true
           - include_tasks: add_docker.yaml
           - include_tasks: add_nfs.yaml
