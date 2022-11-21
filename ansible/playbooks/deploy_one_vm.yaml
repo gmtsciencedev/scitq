@@ -7,6 +7,14 @@
         proxy_env:
             OS_REGION_NAME: "{{ region }}"
   tasks:
+          - name: Add host and host related variables
+            ansible.builtin.script:
+                cmd: > 
+                 /etc/ansible/inventory/sqlite_inventory.py
+                 --add-host "{{ nodename }}" --in-group ovh 
+                 --variable region --value "{{ region }}"
+                 --variable flavor --value "{{ flavor }}"
+                 --variable target --value "{{ target }}"
           - name: Launch a VM
             environment: "{{ proxy_env }}"
             openstack.cloud.server:
@@ -24,17 +32,14 @@
                     name: "{{ nodename }}"
                     ansible_host: "{{ ovhvm.server.public_v4 }}"
                     groups: ovh
-          - name: Add host and host related variables
+          - name: Complete host related variables
             ansible.builtin.script:
                 cmd: > 
                  /etc/ansible/inventory/sqlite_inventory.py
-                 --add-host "{{ nodename }}" --in-group ovh 
+                 --for-host "{{ nodename }}"
                  --variable ansible_host --value "{{ ovhvm.server.public_v4 }}"
                  --variable ipv4 --value "{{ ovhvm.server.public_v4 }}" 
                  --variable ipv6 --value "{{ ovhvm.server.public_v6 }}"
-                 --variable region --value "{{ region }}"
-                 --variable flavor --value "{{ flavor }}"
-                 --variable target --value "{{ target }}"
           - meta: refresh_inventory
           - include_tasks: add_in_etchosts.yaml
           - name: Clean source 1
