@@ -229,6 +229,12 @@
                                 case 'pending':
                                     task_status='secondary';
                                     break;
+                                case 'assigned':
+                                    task_status='secondary';
+                                    break;
+                                case 'accepted':
+                                    task_status='secondary';
+                                    break;
                                 }
                             table+='<tr><td><h6 class="d-flex col-md-12"><h6>t:'+tasks[i][0]+'</h6><h6> e:'+(tasks[i][6]==null?'':tasks[i][6])
                                 +'</h6></td><td width ="5%" class="text-center">'+(tasks[i][1]==null?'':tasks[i][1])

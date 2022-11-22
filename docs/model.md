@@ -74,15 +74,50 @@ pprint(s.workers())
 
 The function are available in a consistent style:
 
-#### worker functions
+#### Server class functions
 
 `workers`
 :   list the workers
 
-`worker_callback`
+`worker_create_signal`
+:   send a signal (like pause, term, kill) for a task on this worker
 
-worker_create_signal(  s.worker_deploy(         s.worker_get(            s.worker_signals(        s.workers(               
-s.worker_create(         s.worker_delete(         s.worker_executions(     s.worker_ping(           s.worker_update(         s.workers_tasks(     
+`worker_deploy`
+:   deploy a new worker
 
+`worker_get`
+:   retrieve a worker detail
 
+`worker_create`
+:   low level create worker (used internally, prefer worker_deploy)
+
+`worker_delete`
+:   delete a worker
+
+`worker_executions`
+:   list executions on a certain worker
+
+`worker_update`
+:   modify (update) a worker
+
+`workers_tasks`
+:   list tasks for a worker
+
+The different function on other objects use the same consistent logic (`tasks`, `task_update`, `task_create`, etc... for tasks, `executions`, `execution_update`, etc... for executions).
 The technical documentation of pytq.lib is [here](pytq-lib.md)
+
+#### Server style : object or dict
+
+The server object is a simple proxy to the different REST functions that call the API. The answer is provided as is natural in Python JSON in dictionary objects. However in some cases, object style, that is argparse.Namespace, provides a more natural way of coding:
+
+```python
+from pytq.lib import Server
+from pprint import pprint
+
+s = Server('127.0.0.1', style='object')
+for worker in s.workers():
+    print(worker.name)
+```
+NB: style parameter 
+
+#### Asynchronous 

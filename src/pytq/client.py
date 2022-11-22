@@ -132,14 +132,20 @@ class Executor:
                         'RESOURCE': self.resource_dir})
         else:
             # this is the safe way to keep docker process attached while still getting its container id
-            self.container_id = subprocess.run(command, shell=True, check=True,
-                                    capture_output=True).stdout.decode('utf-8').strip()
-            self.process = await asyncio.create_subprocess_shell(
-                    CONTAINER_ATTACH_COMMAND.format(container_id=self.container_id),
-                    stdout=PIPE, stderr=PIPE)
+            docker_launch_process = subprocess.run(command, shell=True,
+                                    capture_output=True)
+            if docker_launch_process.returncode!=0:
+                self.s.execution_error_write(execution_id,
+                        docker_launch_process.stderr.decode('utf-8'))
+                self.s.execution_update(execution_id, pid=self.process.pid, status='failed')
+            else:
+                self.container_id = docker_launch_process.stdout.decode('utf-8').strip()
+                self.process = await asyncio.create_subprocess_shell(
+                        CONTAINER_ATTACH_COMMAND.format(container_id=self.container_id),
+                        stdout=PIPE, stderr=PIPE)
 
-        self.run_slots.value -= 1
-        self.s.execution_update(execution_id, pid=self.process.pid, status='running')
+                self.run_slots.value -= 1
+                self.s.execution_update(execution_id, pid=self.process.pid, status='running')
 
 
 
@@ -287,7 +293,8 @@ class Executor:
         
         log.warning(f'Launching job {self.execution_id}: {contained_command}')
         await self.execute(execution_id=self.execution_id, 
-                    command=contained_command)
+                   command=contained_command)
+                    
         log.warning('Launched')
         while True:
             log.warning(f"... {self.execution_id} ...")
