@@ -290,7 +290,7 @@
         function download(id_task,i) {
             var element = document.createElement('a');
             // I used this code https://www.delftstack.com/fr/howto/javascript/javascript-download/ with some modifications
-            if (tasks[i][7] !== '' and task[i][7] !== null){
+            if (tasks[i][7] !== '' && task[i][7] !== null){
                 element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(tasks[i][7]));
                 element.setAttribute('download', 'output-std-'+id_task+'-execution-'+tasks[i][6]);
                 element.style.display = 'none';
@@ -298,7 +298,7 @@
                 element.click();
                 document.body.removeChild(element);
             }
-            if (tasks[i][8] !== '' and task[i][8] !== null){
+            if (tasks[i][8] !== '' && task[i][8] !== null){
                 element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(tasks[i][8]));
                 element.setAttribute('download', 'output-err-'+id_task+'-execution-'+tasks[i][6]);
                 element.style.display = 'none';
@@ -318,10 +318,10 @@
                     if(filter.get('worker')==(tasks[i][10]==null?'':tasks[i][10].toString())||filter.get('worker')==''||filter.get('worker')==null){
                         if(filter.get('batch')==tasks[i][3]||filter.get('batch')==''||filter.get('batch')==null){
                             zip.folder("output-"+tasks[i][0]);
-                            if (tasks[i][7] !== '' and task[i][7] !== null){
+                            if (tasks[i][7] !== '' && task[i][7] !== null){
                                 zip.file("output-"+tasks[i][0]+"/output-std-"+tasks[i][0]+"-execution-"+tasks[i][6]+".txt",tasks[i][7]);
                             }
-                            if (tasks[i][8] !== '' and task[i][8] !== null){
+                            if (tasks[i][8] !== '' && task[i][8] !== null){
                                 zip.file("output-"+tasks[i][0]+"/output-err-"+tasks[i][0]+"-execution-"+tasks[i][6]+".txt",tasks[i][8]);
                             }
                         }
