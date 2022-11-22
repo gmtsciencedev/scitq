@@ -22,6 +22,7 @@ from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
 READ_TIMEOUT = 5
+QUEUE_SIZE_THRESHOLD = 2
 IDLE_TIMEOUT = 600
 DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
@@ -109,6 +110,7 @@ class Executor:
         self.resources_db=resources_db
         self.run_slots=run_slots
         self.container_id=None
+        self.dynamic_read_timeout = READ_TIMEOUT
         asyncio.run(self.run())
 
     # via: https://stackoverflow.com/questions/10756383/timeout-on-subprocess-readline-in-python/34114767?noredirect=1#comment55978734_10756738
@@ -149,9 +151,9 @@ class Executor:
         while True:
             try:
                 output.append(
-                    await asyncio.wait_for(self.process.stdout.readline(), READ_TIMEOUT)
+                    await asyncio.wait_for(self.process.stdout.readline(), self.dynamic_read_timeout)
                 )
-                if time()-now>READ_TIMEOUT:
+                if time()-now>self.dynamic_read_timeout:
                     break
             except asyncio.TimeoutError:
                 break
@@ -162,14 +164,20 @@ class Executor:
         while True:
             try:
                 error.append(
-                    await asyncio.wait_for(self.process.stderr.readline(), READ_TIMEOUT)
+                    await asyncio.wait_for(self.process.stderr.readline(), self.dynamic_read_timeout)
                 )
-                if time()-now>READ_TIMEOUT:
+                if time()-now>self.dynamic_read_timeout:
                     break
             except asyncio.TimeoutError:
                 break
         self.s.execution_error_write(execution_id,
             (b''.join(error)).decode('utf-8'))
+
+        qsize = self.s.queue_size()
+        if qsize > QUEUE_SIZE_THRESHOLD:
+            self.dynamic_read_timeout += READ_TIMEOUT
+        elif qsize == 0 and self.dynamic_read_timeout > READ_TIMEOUT:
+            self.dynamic_read_timeout -= READ_TIMEOUT
 
         return self.process.returncode
 

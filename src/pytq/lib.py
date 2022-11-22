@@ -173,7 +173,10 @@ class Server:
             self.query_thread_semaphore.acquire(blocking=False)
             self.send_queue= queue.Queue()
             self.query_thread=threading.Thread(target=query_thread,args=(self.query_thread_semaphore,self.send_queue,))
-        
+
+    def queue_size(self):
+        """A method to estimate send queue size"""
+        return self.send_queue.qsize()        
 
     def get(self, url):
         """A wrapper used for all get operations.

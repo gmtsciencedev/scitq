@@ -19,6 +19,8 @@ import signal
 import json
 from sqlalchemy.dialects import sqlite
 from .util import PropagatingThread
+from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
+
 
 MAIN_THREAD_SLEEP = 5
 WORKER_OFFLINE_DELAY = 15
@@ -70,7 +72,10 @@ app = Flask(__name__, instance_relative_config=True)
 app.config.from_object('pytq.default_settings')
 #app.config.from_pyfile("pytq.cfg", silent=True)
 #app.config.from_prefixed_env()
-db = SQLAlchemy(app)
+if SQLALCHEMY_POOL_SIZE is not None:
+    db = SQLAlchemy(app, engine_options={'pool_size': int(SQLALCHEMY_POOL_SIZE)})
+else:
+    db = SQLAlchemy(app)
 socketio = SocketIO(app)
 
 class Task(db.Model):
@@ -1288,7 +1293,7 @@ def create_worker_object(concurrency, flavor, region, batch, prefetch, db_sessio
     
     
 def create_worker_process(hostname, concurrency, flavor, region, batch, w, 
-        prefetch=None):
+        db_session, prefetch=None):
     """Deploy a worker - can be called parallely up to a certain limit
     (WORKER_CREATE_CONCURRENCY)
     """
@@ -1298,7 +1303,6 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
             region=regions[0]
             len(f'Splitting regions and using region {region}')
         retry=WORKER_CREATE_RETRY
-        db_session = Session(db.engine)
         while retry>=0 and worker_exists(w.worker_id, db_session):
             log.warning(f'''Command is {WORKER_CREATE.format(
                 hostname=hostname,
@@ -1315,6 +1319,7 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
             if process.returncode == 0:
                 log.warning(f'worker created: done for {hostname}')
                 socketio.emit('worker_created', f'done for {hostname}',broadcast=True)
+                db_session.close()
                 break
             else:
                 log.warning(f'worker not created: error for {hostname}: {process.stdout.strip()} {process.stderr.strip()}')
@@ -1323,6 +1328,8 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
                 if retry>=0:
                     log.warning('Retrying...')
                     sleep(WORKER_CREATE_RETRY_SLEEP)
+                else:
+                    db_session.close()
             #if w.idle_callback:
             #    log.warning(f'Worker {w.name} called idle callback, launching: '+w.idle_callback.format(**(worker.__dict__)))
             #    process = run([w.idle_callback.format(**(w.__dict__))],shell=True,capture_output=True, encoding='utf-8')
@@ -1428,6 +1435,7 @@ def background():
             while len(worker_create_process_waiting_queue)>0 \
                     and len(worker_create_process_queue)<WORKER_CREATE_CONCURRENCY:
                 new_worker = worker_create_process_waiting_queue.pop(0)
+                new_worker.db_session = Session(db.engine)
                 # verifying that the object is still in db to prevent recreation
                 if worker_exists(new_worker.w.worker_id, session):
                     log.warning(f'Launching creation process for worker {new_worker.hostname}.')
