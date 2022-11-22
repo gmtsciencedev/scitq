@@ -1303,7 +1303,9 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
             region=regions[0]
             len(f'Splitting regions and using region {region}')
         retry=WORKER_CREATE_RETRY
-        while retry>=0 and worker_exists(w.worker_id, db_session):
+        # be careful with lazy objects in case they got deleted
+        worker_id,worker_name = w.worker_id,w.name
+        while retry>=0 and worker_exists(worker_id, db_session):
             log.warning(f'''Command is {WORKER_CREATE.format(
                 hostname=hostname,
                 concurrency=concurrency,
@@ -1324,7 +1326,7 @@ def create_worker_process(hostname, concurrency, flavor, region, batch, w,
             else:
                 log.warning(f'worker not created: error for {hostname}: {process.stdout.strip()} {process.stderr.strip()}')
                 socketio.emit('worker_created', f'error for {hostname}: {process.stdout.strip()} {process.stderr.strip()}',broadcast=True)
-                log.warning(f'Broadcast message sent for {w.name} failure')
+                log.warning(f'Broadcast message sent for {worker_name} failure')
                 if retry>=0:
                     log.warning('Retrying...')
                     sleep(WORKER_CREATE_RETRY_SLEEP)
