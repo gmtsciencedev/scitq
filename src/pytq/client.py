@@ -137,7 +137,7 @@ class Executor:
             if docker_launch_process.returncode!=0:
                 self.s.execution_error_write(execution_id,
                         docker_launch_process.stderr.decode('utf-8'))
-                self.s.execution_update(execution_id, pid=self.process.pid, status='failed')
+                self.s.execution_update(execution_id, status='failed')
             else:
                 self.container_id = docker_launch_process.stdout.decode('utf-8').strip()
                 self.process = await asyncio.create_subprocess_shell(
