@@ -9,7 +9,7 @@ from argparse import Namespace
 import logging as log
 
 
-TIMEOUT = 10
+TIMEOUT = 100
 QUERY_THREAD_TIMEOUT = 10
 JOIN_DYNAMIC_SLEEP_TIME_INCREMENT = 10
 

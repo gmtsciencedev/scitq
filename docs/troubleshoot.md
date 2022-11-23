@@ -10,3 +10,8 @@
 
 `error for nodeX: PLAY [Launch a compute instance] *********************************************** TASK [Gathering Facts] ********************************************************* ok: [localhost] TASK [Add host and host related variables] ************************************* changed: [localhost] TASK [Launch a VM] ************************************************************* fatal: [localhost]: FAILED! => {"changed": false, "extra_data": {"data": null, "details": "None", "response": "None"}, "msg": "Timeout waiting for the server to come up."} PLAY RECAP ********************************************************************* localhost : ok=2 changed=1 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0 `
 :   This error occurs generally when you delete a worker before it had the chance to try three times to be deployed. You can ignore it safely if you deleted such a worker.
+
+## PYTQ task output
+
+`You cannot attach to a stopped container, start it first`
+:   This error occurs when a docker accept to start (the binary called launch) but fails immediately after (a fraction second before python attach the docker process to a collecting thread). That is hopefully quite rare: look into the worker logs with `journalctl -u pytq-worker`, find the faulty docker launch, and launch it manually in the worker replacing -d option (detach) by -it (interactive), this will show the error.
