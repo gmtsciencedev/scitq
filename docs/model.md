@@ -118,6 +118,35 @@ s = Server('127.0.0.1', style='object')
 for worker in s.workers():
     print(worker.name)
 ```
-NB: style parameter 
+NB: style parameter default to dictionary style, `style='dict'`.
 
 #### Asynchronous 
+
+pytq.lib has several goodies upon a basic REST client, and one of the best is that it is partially asynchronous. If the connection to the server is correct it will work in synchronous mode (and block on each query), but when a timeout occurs it will transparently switch to asynchronous mode (unless the server object was called with `asynchronous=False` option).
+
+Asynchronous mode means that a special query thread will be opened and that all queries sending some information will be sent (in the same order as initially designed) whenever possible (but the call instruction, like `s.worker_update(...)` will be non-blocking) and the objects or dictionaries (depending on style) returned by such queries will be lazy. Lazy means the object hold no real information, only trying to access to an attribute will trigger the real query - and will be blocking.
+
+The get queries are always synchronous (as it is likely you'll need the information very soon after querying) and will block and retry as much as necessary, but not fail, if the server is down. 
+
+This makes any code using pytq.lib very resilient to a server crash.
+
+
+There are two parameters to be more or less aggressive, in the Server object creator:
+
+`put_timeout`
+: the time in second before switching to asynchronous when sending information (and also how frequently the query should be retried) (default to 30sec)
+
+`get_timeout`
+: the time in second before retrying when getting information (default to 150sec)
+
+!!! note
+    Lowering those times will make your code more aggressive. It can be counter-productive, notably for gets. The server will gather some resource, begin to compute what is required to answer you and... you're already gone and, worse, you will try again later... If the server is already a bit saturated, this is likely to worsen the problem.
+
+So for instance if you want to have a resilient but very unaggressive code, you could:
+```python
+from pytq.lib import Server
+
+s = Server('127.0.0.1', put_timeout=60, get_timeout=300)
+```
+
+

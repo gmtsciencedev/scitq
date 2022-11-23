@@ -5,7 +5,7 @@ pytq-manage is meant as a command line solution to do all the actions that can b
 ## syntax
 
 ```bash
-pytq-manage <object> <verb> <options>
+pytq-manage [<global options>] <object> <verb> [<verb options>]
 ```
 
 The command takes two words, a first word that define the type of object you want to address, the second the action that must be performed. 
@@ -35,6 +35,16 @@ pytq-manage has an extensive inline documentation, you can launch
 - `pytq-manage <object> <verb> -h` to get some help on the options for a certain action (for instance `pytq-manage worker list -h`)
 
 So this documentation will not go in all the details that comes with the inline help and are more accurate. The idea is just to give some examples.
+
+## global options
+
+There are only two of them:
+`-s`
+: only usefull if you do not have PYTQ_SERVER environment variable set, or if you can reach several servers. This is the server IP address or FQDN (not the URL, do not say :5000, the 5000 port is known)
+
+`-t`
+: timeout. By default there is a 150s timeout to get the result to a certain query. This is almost ever much more than required. However for some very specific heavy task involving large data management, increasing the timeout is a good idea (see [troubleshooting](troubleshoot.md#big-outputs)).
+
 ## worker
 
 ### list 
