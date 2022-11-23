@@ -32,7 +32,9 @@ def main():
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-s','--server', help=F"Define a server, by default {DEFAULT_SERVER} this default value comes from the PYTQ_SERVER environment variable",type=str,default=DEFAULT_SERVER)
-    
+    parser.add_argument('-t','--timeout', type=int,
+            help='Specify the get timeout for complex queries (default to 150s)' )
+
     subparser=parser.add_subparsers(help='sub-command help',dest='object')
     worker_parser = subparser.add_parser('worker', help='The following options will only concern workers')
     subsubparser=worker_parser.add_subparsers(dest='action')
@@ -125,7 +127,7 @@ def main():
     
 
     args=parser.parse_args()
-    s = Server(args.server)
+    s = Server(args.server, get_timeout=args.timeout)
     if args.object=='worker':
         if args.action =='list':
             info_worker=['worker_id','name','status','concurrency','creation_date','last_contact_date','batch']

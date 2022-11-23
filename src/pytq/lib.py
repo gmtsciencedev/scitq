@@ -9,7 +9,8 @@ from argparse import Namespace
 import logging as log
 
 
-TIMEOUT = 100
+PUT_TIMEOUT = 30
+GET_TIMEOUT = 150
 QUERY_THREAD_TIMEOUT = 10
 JOIN_DYNAMIC_SLEEP_TIME_INCREMENT = 10
 
@@ -89,7 +90,7 @@ class LazyObject:
         return str(self._o)
 
 
-def query_thread(semaphore,send_queue):
+def query_thread(semaphore,send_queue, put_timeout):
         """A Query-thread which treats all the queries with a while loop until the object is there, then it put the result in the returning queue
         """
         while True :
@@ -107,9 +108,9 @@ def query_thread(semaphore,send_queue):
             if type == 'put':
                 while not task_done:
                     try:
-                        sleep(TIMEOUT) 
+                        sleep(put_timeout) 
                         result = self._wrap(requests.put(
-                                self.url+url, json=data, timeout=TIMEOUT))
+                                self.url+url, json=data, timeout=put_timeout))
                         task_done = True
                     except (ConnectionError,Timeout) as e:
                         log.warning(f'Exception when trying to put: {e}')
@@ -117,9 +118,9 @@ def query_thread(semaphore,send_queue):
             elif type == 'post':
                 while not task_done:
                     try:
-                        sleep(TIMEOUT)
+                        sleep(put_timeout)
                         result = self._wrap(requests.post(
-                                self.url+url, json=data, timeout=TIMEOUT))
+                                self.url+url, json=data, timeout=put_timeout))
                         task_done = True
                     except (ConnectionError,Timeout) as e:
                         log.warning(f'Exception when trying to post: {e}') 
@@ -127,9 +128,9 @@ def query_thread(semaphore,send_queue):
             elif type == 'delete':
                 while not task_done:
                     try:
-                        sleep(TIMEOUT)
+                        sleep(put_timeout)
                         result = self._wrap(requests.delete(
-                                self.url+url, timeout=TIMEOUT))
+                                self.url+url, timeout=put_timeout))
                         task_done = True
                     except (ConnectionError,Timeout) as e:
                         log.warning(f'Exception when trying to post: {e}') 
@@ -149,7 +150,8 @@ class Server:
         'object', dict are passed to Namespace to produce real Python objects.
     """
 
-    def __init__(self, ip, style='dict', asynchronous=True):
+    def __init__(self, ip, style='dict', asynchronous=True, 
+            put_timeout=PUT_TIMEOUT, get_timeout=GET_TIMEOUT):
         """initialise the object with IP or name of the server
         
         Arguments:
@@ -172,7 +174,10 @@ class Server:
             self.query_thread_semaphore = threading.Semaphore()
             self.query_thread_semaphore.acquire(blocking=False)
             self.send_queue= queue.Queue()
-            self.query_thread=threading.Thread(target=query_thread,args=(self.query_thread_semaphore,self.send_queue,))
+            self.query_thread=threading.Thread(target=query_thread,
+                args=(self.query_thread_semaphore,self.send_queue,put_timeout))
+        self.get_timeout = get_timeout
+        self.put_timeout = put_timeout
 
     def queue_size(self):
         """A method to estimate send queue size"""
@@ -185,11 +190,11 @@ class Server:
         return the objects according to Server style (see style in class doc)"""
         try:
             return self._wrap(requests.get(
-                self.url+url, timeout=TIMEOUT
+                self.url+url, timeout=self.get_timeout
             ))
         except (ConnectionError,Timeout) as e:
             log.warning(f'Exception when trying to get: {e}')
-            sleep(TIMEOUT)
+            sleep(self.get_timeout)
             return self.get(url)
 
     def put(self,url, data):
@@ -201,13 +206,13 @@ class Server:
         (in asynchronous mode, return a lazy object)"""
         try:
             return self._wrap(requests.put(
-                self.url+url, json=data, timeout=TIMEOUT
+                self.url+url, json=data, timeout=self.put_timeout
             ))
         except (ConnectionError,Timeout) as e:
             if not self.query_thread.is_alive():
                 self.query_thread.start()
             log.warning(f'Exception when trying to put: {e}')
-            sleep(TIMEOUT)
+            sleep(self.put_timeout)
             return_queue=queue.Queue()
             self.send_queue.put((self,'put',(url, data),return_queue))
             return LazyObject(return_queue)
@@ -222,7 +227,7 @@ class Server:
         return the objects according to Server style (see style in class doc)"""
         try:
             return self._wrap(requests.post(
-                url=self.url+url, json=data, timeout=TIMEOUT
+                url=self.url+url, json=data, timeout=self.put_timeout
             ))
         except (ConnectionError,Timeout) as e:
             if not self.query_thread.is_alive():
@@ -241,13 +246,13 @@ class Server:
         (in asynchronous mode, return a lazy object)"""
         try:
             return self._wrap(requests.delete(
-                self.url+url, timeout=TIMEOUT
+                self.url+url, timeout=self.put_timeout
             ))
         except (ConnectionError,Timeout) as e:
             if not self.query_thread.is_alive():
                 self.query_thread.start()
             log.warning(f'Exception when trying to put: {e}')
-            sleep(TIMEOUT)
+            sleep(self.put_timeout)
             return_queue=queue.Queue()
             self.send_queue.put((self,'delete',(url, None),return_queue))
             return LazyObject(return_queue)
