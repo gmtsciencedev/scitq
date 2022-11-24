@@ -2,4 +2,4 @@ mkdocs
 mkdocstrings 
 mkdocstrings-python 
 pygments==2.12 
-markdown_include
+markdown-include
