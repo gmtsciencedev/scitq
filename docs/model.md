@@ -149,4 +149,57 @@ from pytq.lib import Server
 s = Server('127.0.0.1', put_timeout=60, get_timeout=300)
 ```
 
+#### Example
+
+This is an almost literal example of a real use case of PYTQ at GMT Science, using [CAMISIM](https://github.com/CAMI-challenge/CAMISIM).
+
+This suppose that:
+
+- all the input files of CAMISIM were uploaded on `s3://rnd/camisim/camisim1/<samplename>`:
+  - config.ini,
+  - composition.tsv,
+  - metadata.tsv
+  - and id_to_genome.tsv
+- the genomes (.fa files) were archived with tar and (pi)gzipped and uploaded to `s3://rnd/resource/mygenomes.tgz`,
+- a private registry was set up and a docker (mainly CAMISIM public docker but with resources pre-downloaded) was uploaded to it.
+
+We could generate almost 400 2x10M read samples in a few days with that.
+
+Note the `s.join()` instruction at the end of the script. This instruction is reminiscent of `threading.join()` except it takes a list of tasks (such as returned by s.task_create) and can take a retry argument to relanch tasks a certain number of time.
+
+```python
+import pandas as pd
+from pytq.lib import Server
+
+s=Server('myserver')
+name='camisim1'
+genome_source='s3://rnd/resource/mygenomes.tgz'
+DOCKER_IMAGE='privateregistry01.container-registry.ovh.net/library/camisim-shared:1.3.0.7'
+
+with open('samples.tsv','r') as sample_file:
+  samples = pd.read_csv(sample_file, sep='\t', index_col=0)
+tasks = []
+for sample in samples.columns:
+    s3base = f's3://rnd/camisim/{name}/{sample}'
+    tasks.append(
+        s.task_create(
+            command=f'sh -c "metagenomesimulation.py /input/config.ini > /output/output.log"',
+            name=sample,
+            batch=name,
+            input=' '.join([f'{s3base}/{item}' for item in [
+                    'composition.tsv','metadata.tsv','config.ini','id_to_genome.tsv']]),
+            resource=f"{genome_source}|untar",
+            output=f's3://rnd/results/camisim/{name}/{sample}/',
+            container=DOCKER_IMAGE
+        )
+    )
+
+s.worker_deploy(number=5,
+    batch=name,
+    region='UK1',
+    flavor='i1-180',
+    concurrency=9)
+
+s.join(tasks, retry=2)
+```
 

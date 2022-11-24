@@ -2,6 +2,7 @@
 
 ## Ansible
 
+### Specific Ansible errors
 `error for nodeX: PLAY [Launch a compute instance] *********************************************** TASK [Gathering Facts] ********************************************************* ok: [localhost] TASK [Launch a VM] ************************************************************* fatal: [localhost]: FAILED! => {"changed": false, "extra_data": {"data": null, "details": "Invalid key_name provided.", "response": "{\"badRequest\": {\"code\": 400, \"message\": \"Invalid key_name provided.\"}}"}, "msg": "BadRequestException: 400: Client Error for url: https://compute.gra11.cloud.ovh.net/v2.1/XXXXXXXXXXXXXXXXXXXXXXX/servers, Invalid key_name provided."} PLAY RECAP ********************************************************************* localhost : ok=1 changed=0 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0 `
 :   The `keyname` parameter is wrong: either your forgot to change it in `/etc/ansible/inventory/common` or you forgot to deploy it on your provider console. Or maybe you deployed it but not on this region or not with this name.
 
@@ -13,6 +14,97 @@
 
 `error for nodeX: PLAY [Launch a compute instance] *********************************************** TASK [Gathering Facts] ********************************************************* ok: [localhost] TASK [Add host and host related variables] ************************************* changed: [localhost] TASK [Launch a VM] ************************************************************* fatal: [localhost]: FAILED! => {"changed": false, "extra_data": {"data": null, "details": "None", "response": "None"}, "msg": "Timeout waiting for the server to come up."} PLAY RECAP ********************************************************************* localhost : ok=2 changed=1 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0 `
 :   This error occurs generally when you delete a worker before it had the chance to try three times to be deployed. You can ignore it safely if you deleted such a worker.
+
+### Calling Ansible scripts manually
+
+There are several things that can prove useful when using Ansible out of PYTQ automatic management:
+
+#### Deploying a worker
+
+A worker will automatically declare itself to the server when it is up, so recruiting manually a server out of PYTQ will work fine except when your tasks are done: such manually recruited workers will never be automatically deleted, you'll need to delete them manually.
+
+If deploy fails (it will be tried 3 times in automatic mode) and you want to understand what is happening, this is also a good option.
+
+```bash
+source 7624350872955771-openrc.sh
+cd /root/ansible/playbooks
+ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=node5 concurrency=1 status=running flavor=c2-180 region=GRA7 target=mypytq.server.dom"
+```
+The first line is loading OpenStack credentials (this file is provided by your cloud provider).
+The second line put you in the standard place where Ansible playbooks should be when you have done the [install](install.md).
+The third line is the deploying command, the same that pytq-server is using. The `target` variable is the FQDN of your PYTQ server. The other variables are usual variable for a worker.
+
+#### Passing a specific command to a worker or a group of worker
+
+Sometimes, it is very convenient to launch specific commands to some nodes:
+
+```bash
+cd /root/ansible/playbooks
+ansible "node2 node6" -m shell -a "sudo docker ps"
+```
+
+#### Connecting to a node
+
+Of course as node are deployed with PYTQ server root SSH key, if you are already root on your PYTQ server, this is rather obvious. However there are two tricks that can make your life a lot easier there:
+
+- First, the node are automatically inserted in (and removed from) `/etc/hosts`,
+- Second, you should add this alias to your bash configuration: 
+```bash
+alias sssh="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+```
+
+As we keep having nodes that are called the same (node1, node2, etc.) and that IP address and SSH identity is continually changing checking the host identity is very useless here and will requires a permanent and tedious management of `.ssh/known_hosts`. Now using `sssh` instead of `ssh` will enable you not to manage at all this file. So to go to node1, your command will just be:
+
+```bash
+sssh ubuntu@node6
+```
+
+
+#### Destroying a node manually with Ansible
+
+Just in case, but you should not need that.
+
+```bash
+source 7624350872955771-openrc.sh
+cd /root/ansible/playbooks
+ansible-playbook destroy_vm.yaml --extra-vars "nodename=node5"
+```
+
+
+#### Playing with Ansible inventory (/etc/ansible/inventory/sqlite_inventory.py)
+
+Just query the file with 
+```bash
+/etc/ansible/inventory/sqlite_inventory.py -h
+```
+
+```bash
+usage: sqlite_inventory.py [-h] [--list] [--host HOST] [--add-host ADD_HOST] [--in-group IN_GROUP]
+                           [--for-host FOR_HOST] [--variable VARIABLE] [--value VALUE]
+                           [--del-host DEL_HOST]
+
+(yaf) Ansible SQLite inventory script
+
+optional arguments:
+  -h, --help           show this help message and exit
+  --list               List all hosts
+  --host HOST          List one host in particular
+  --add-host ADD_HOST  Add a host (in group Default unless --in-group is used)
+  --in-group IN_GROUP  Specify in which group a host should be added
+  --for-host FOR_HOST  Specify a host where to add variables
+  --variable VARIABLE  Add a host variable (requires the host to be known, either with --add-host or with
+                       --for-host, and requires a value set with --value), can be used several times
+  --value VALUE        Add a host variable value (requires --variable, and thus the host to be known -
+                       with --add-host or --for-host), can be used several times
+  --del-host DEL_HOST  Delete a host
+```
+
+This is a very simple script but it can give you all the details you need on PYTQ Ansible managed workers. The very basic command is :
+```bash
+/etc/ansible/inventory/sqlite_inventory.py --list
+```
+
+
 
 ## PYTQ task output
 
