@@ -18,11 +18,9 @@ plugins:
       handlers:
         # See: https://mkdocstrings.github.io/python/usage/
         python:
+          paths: [src]
           options:
             docstring_style: sphinx
-          setup_commands:
-            - import sys
-            - sys.path.append('src')
 markdown_extensions:
   - markdown_include.include:
       base_path: src
