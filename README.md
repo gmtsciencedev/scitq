@@ -65,6 +65,8 @@ about the different options.
 Special thanks to Rémi Tan who did a great job on the UI of PYTQ, and also on the command line
 manager (pytq-manage) and on the library resilience (pytq.lib).
 
+Special thanks to Sibylle de Lahondès, my daughter, who created PYTQ favicon and logo.
+
 And also to all people of GMT Science team who believe in this project and have
 made it possible: Etienne Formstecher, Edi Prifti, Michel Laborde, Florian Plaza-Oñate,
 Vadim Puller, Baptiste Hennecart (our more active user, thank you, Baptiste!) and 
