@@ -1,0 +1,4 @@
+mkdocs 
+mkdocstrings 
+mkdocstrings-python 
+pygments==2.12 
