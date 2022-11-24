@@ -1,7 +1,8 @@
 <!doctype html>
 
 <head>
-<link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
+    <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
+    <link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
 <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
 <script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
 <script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
@@ -407,10 +408,11 @@
 </head>
 <body>
     <title>Tasks view</title>
-    <h1>Tasks view</h1>
-    <div class="container">
+    <img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left; margin-bottom:2px;"/>
+    <h1 style="float:left;">Tasks view</h1>
+    <div class="container" style="margin-bottom: -37px;">
         <div class="row">
-            <div class="col-md-7">
+            <div class="col-md-7" style="float:left;">
                 
                 <form class="row g-2">
                     <h3 class="col-md-2 p-2">Filter</h3>
@@ -421,7 +423,7 @@
                     <p class="col-md-2 p-2" id="filter_by_worker"></p>
                     <p class="col-md-2 p-2" id="filter_by_batch"></p>
 
-                    <div class="align-self-center p-2 col-md-2">
+                    <div class="align-self-center p-2 col-md-2" style="margin-top: 23px;">
                       <button class="btn btn-primary " type="submit">Apply</button>
                     </div>
                   </form> 

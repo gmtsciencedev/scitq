@@ -2,6 +2,7 @@
 
 <head>
     <link href={{ url_for("static", filename="css/ui.css") }} rel="stylesheet">
+    <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
 <!-- <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script> -->
 <link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
 <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
@@ -130,7 +131,7 @@
 </head>
 
 <title>PYTQ UI</title>
-<h1>PYTQ UI</h1>
+<img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left;"/><h1 style="float:left;">PYTQ UI</h1>
 
 
 <span id="workers">

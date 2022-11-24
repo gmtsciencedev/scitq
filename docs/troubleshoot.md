@@ -33,6 +33,11 @@ mkswap /swapfile
 swapon /swapfile
 ```
 
+NB: You will have to add the following line in `/etc/fstab` to make it permanent (if required):
+```fstab
+/swapfile       none    swap    sw      0       0
+```
+
 Second, when querying the output of tasks, first forget the GUI, it won't be able to do it. Ideally, you have named your task and you know which one you're interested in, in which case go like this:
 ```bash
 pytq-manage -t 600 task output -n mytaskname > mytaskname.output
