@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scitq"
+version = "1.0b2"
+authors = [
+  { name="Raynald de Lahondès" },
+  { name="Rémi Tan" }
+]
+description = "A (distributed) scientific task queue"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Development Status :: 4 - Beta",
+    "Operating System :: OS Independent",
+]
+dependencies=['Flask',
+        'sqlalchemy',
+        'flask-sqlalchemy',
+        'flask-restx',
+        'flask-socketio >= 5.2.0',
+        'requests',
+        'psutil',
+        'tabulate',
+        'psycopg2-binary',
+        'awscli >= 1.25.22',
+        'awscli-plugin-endpoint',
+        'boto3 >= 1.24.22',
+        ]
+
+[project.urls]
+"Homepage" = "https://github.com/gmtsciencedev/scitq"
+"Bug Tracker" = "https://github.com/gmtsciencedev/scitq/issues"
+"Documentation" = "https://scitq.readthedocs.io/"
+
+[project.scripts]
+scitq-worker = "scitq.client:main"
+scitq-launch = "scitq.launch:main"
+scitq-manage = "scitq.manage:main"
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
