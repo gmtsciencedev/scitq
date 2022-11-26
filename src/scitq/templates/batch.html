@@ -30,7 +30,7 @@
         workers=data.workers;
         console.log('Received batches', batches);
         console.log('Received workers', workers);
-        batch_table ='<table class="table table-responsive table-hover table-striped text-center "><thead class="text-center table-secondary"><tr><th>#</th><th>Name</th><th>Workers</th><th>Progress</th><th>pending</th><th>running</th><th>successes</th><th>failed</th><th>total</th><th>Average duration (+ max, - min) </th><th>Actions</th></tr></thead>\n<tbody id="table">\n';
+        batch_table ='<table class="table table-responsive table-hover table-striped text-center "><thead class="text-center table-secondary"><tr><th>#</th><th>Name</th><th>Workers</th><th>Progress</th><th>pending</th><th>running</th><th>successes</th><th>failed</th><th>total</th><th>Average duration [min - max] </th><th>Actions</th></tr></thead>\n<tbody id="table">\n';
         list_batch=[];
         workers_by_batch =new Map();
         // list al the worker in batches
@@ -68,8 +68,8 @@
               stat_details += '<div class="p-2 text-'
                 +(status==='succeeded'?'success':status==='failure'?'danger':'normal')
                 +'">'+status+': '+duration_avg.toFixed(2)
-                +'(+'+ (duration_max-duration_avg).toFixed(2) 
-                +' -'+ (duration_avg-duration_min).toFixed(2)+')</div>';
+                +' ['+ duration_min.toFixed(2) 
+                +' - '+ duration_max.toFixed(2)+']</div>';
             }
 
 

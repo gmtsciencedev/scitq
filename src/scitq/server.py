@@ -598,16 +598,18 @@ class ExecutionDAO(BaseDAO):
                             else:
                                 api.abort(500, f"An execution cannot change status from pending to {value}")
                         elif execution.status=='accepted':
-                            if value in ['running','failed']:
+                            if value in ['running','failed','succeeded']:
                                 task.status = value
                                 task.modification_date = datetime.utcnow()
                             else:
+                                log.exception(f"An execution cannot change status from accepted to {value}")
                                 api.abort(500, f"An execution cannot change status from accepted to {value}")
                         elif execution.status=='running':
                             if value in ['succeeded', 'failed']:
                                 task.status=value
                                 task.modification_date = datetime.utcnow()
                             else:
+                                log.exception(f"An execution cannot change status from running to {value}")
                                 api.abort(500, f"An execution cannot change status from running to {value}")
                         else:
                             api.abort(500, f"An execution cannot change status from {execution.status} (only from pending, running or accepted)")
