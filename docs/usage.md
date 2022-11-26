@@ -167,4 +167,4 @@ scitq-launch -o 's3://results/test/' -d 'ubuntu:latest' touch /output/helloworld
 
 ## Managing your task executions
 
-Now that you have queued your tasks, the hard work is done, you can recruit your workers, distribute the work and watch it done, relaxing... You can do that either using the [GUI](gui.md) or using [scitq-manage utility](scitq-manage.md).
+Now that you have queued your tasks, the hard work is done, you can recruit your workers, distribute the work and watch it done, relaxing... You can do that either using the [GUI](gui.md) or using [scitq-manage utility](manage.md).

@@ -9,7 +9,7 @@ How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) 
 * [parameters](parameters.md): detail of all the parameters than can be set.
 * [usage](usage.md): now that is properly set up, use scitq and queue your first tasks.
 * [GUI](gui.md): monitor (and tune) what's going on in scitq.
-* [scitq-manage](scitq-manage.md): same as above but for command line lovers.
+* [scitq-manage](manage.md): same as above but for command line lovers.
 * [model](model.md): some insights about the underlying model, API and database.
 
 ## Project layout

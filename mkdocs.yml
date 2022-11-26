@@ -8,7 +8,7 @@ nav:
   - parameters: parameters.md
   - usage: usage.md
   - using the GUI: gui.md
-  - scitq-manage: scitq-manage.md
+  - manage: manage.md
   - model and API: model.md
   - specific settings: specific.md
   - troubleshooting: troubleshoot.md

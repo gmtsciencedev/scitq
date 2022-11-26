@@ -16,7 +16,7 @@ The schema include also two other tables:
 - signal: a simple object which is only used to send signal to tasks (like the pause, the stop or the kill signal),
 - execution: this is an important object: task can be executed several times and each execution may succeed or fail and have different outputs. Also an execution occurs on a specific worker.
 
-Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](scitq-manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
+Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
 
 While you can connect directly to the database, there is no way we can prevent something wrong to happen if you do that, do it only if you are adapt of the YOLO principle...
 
@@ -104,7 +104,7 @@ The function are available in a consistent style:
 :   list tasks for a worker
 
 The different function on other objects use the same consistent logic (`tasks`, `task_update`, `task_create`, etc... for tasks, `executions`, `execution_update`, etc... for executions).
-The technical documentation of scitq.lib is [here](scitq-lib.md)
+The technical documentation of scitq.lib is [here](lib.md)
 
 #### Server style : object or dict
 
