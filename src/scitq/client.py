@@ -491,7 +491,7 @@ class Client:
                     
 
 def main():
-    parser = argparse.ArgumentParser(description='PYTQ client')
+    parser = argparse.ArgumentParser(description='scitq client')
     parser.add_argument('server', type=str,
                     help='IP address of the server')
     parser.add_argument('concurrency', type=int,

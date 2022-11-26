@@ -20,11 +20,11 @@
           - include_tasks: add_in_etchosts.yaml
           - name: Clean source 1
             ansible.builtin.file:
-                    path: "{{ pytq_src }}/src/build"
+                    path: "{{ scitq_src }}/src/build"
                     state: absent
           - name: Clean source 2
             ansible.builtin.file:
-                    path: "{{ pytq_src }}/src/dist"
+                    path: "{{ scitq_src }}/src/dist"
                     state: absent
                     
 - name: Prepare managing servers
@@ -44,16 +44,16 @@
               timeout: 300
           - name: Gather facts
             setup:
-          - name: Copy pytq source
+          - name: Copy scitq source
             copy:
               remote_src: no
-              src: "{{ pytq_src }}/src"
-              dest: /opt/pytq
+              src: "{{ scitq_src }}/src"
+              dest: /opt/scitq
             become: true
           - include_tasks: add_docker.yaml
           - include_tasks: add_nfs.yaml
           - include_tasks: add_scratch.yaml
           - include_tasks: add_s3authentication.yaml
-          - include_tasks: add_pytq.yaml
+          - include_tasks: add_scitq.yaml
 
         

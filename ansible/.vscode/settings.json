@@ -14,7 +14,7 @@
             "file:///Users/lahondes/devel/ansible/playbooks/add_in_etchosts.yaml",
             "file:///Users/lahondes/devel/ansible/playbooks/remove_from_firewall.yaml",
             "file:///Users/lahondes/devel/ansible/playbooks/remove_from_etchosts.yaml",
-            "file:///Users/lahondes/devel/ansible/playbooks/add_pytq.yaml"
+            "file:///Users/lahondes/devel/ansible/playbooks/add_.yaml"
         ],
         "https://raw.githubusercontent.com/ansible-community/schemas/main/f/ansible.json#/definitions/tasks": [
             "file:///Users/lahondes/devel/ansible/playbooks/add_nfs.yaml",

@@ -1,12 +1,12 @@
 # Using the GUI
 
-This option is more simple than the [pytq-manage](pytq-manage.md) option but requires a browser access to PYTQ server (and thus require that you have access to a trusted IP as defined in [security](install.md#security), maybe a VPN or a proxy or an SSH tunnel).
+This option is more simple than the [scitq-manage](scitq-manage.md) option but requires a browser access to scitq server (and thus require that you have access to a trusted IP as defined in [security](install.md#security), maybe a VPN or a proxy or an SSH tunnel).
 
 !!! note
     You will notice there is no way to add a new task with the GUI: this is a design choice, a task is basically a command from the command line (an non interactive program), thus the command line is the ideal place to test and hence queue this command.
 ## Reaching the GUI
 
-If the PYTQ server name is `pytq.mycompany.com`, then the GUI URL is `http://pytq.mycompany.com:5000/ui/`.
+If the scitq server name is `scitq.mycompany.com`, then the GUI URL is `http://scitq.mycompany.com:5000/ui/`.
 It should look like that:
 
 ![ui-start](img/ui-start.png)
@@ -54,7 +54,7 @@ Note the small red message at the bottom of the screen "done for node1". What ha
 Here are the different options to manage interactively workers. 
 
 !!! note
-    Workers are also manage automatically by PYTQ *if you recruited them like we just did*: once they have started working (they have started a first task), if their batch becomes empty and they stay idle for 5 minutes, they will launch the idle callback and PYTQ will delete them - delete them from the worker screen and PYTQ database and also delete them in the provider space. This does not happen with permanent workers (i.e. manually deployed workers).
+    Workers are also manage automatically by scitq *if you recruited them like we just did*: once they have started working (they have started a first task), if their batch becomes empty and they stay idle for 5 minutes, they will launch the idle callback and scitq will delete them - delete them from the worker screen and scitq database and also delete them in the provider space. This does not happen with permanent workers (i.e. manually deployed workers).
 
 #### Changing the batch
 ![edit batch](img/ui-edit-batch.png)
@@ -73,7 +73,7 @@ Just right of concurrency is the prefetch parameter. Prefetch is an optimisation
 #### Destroy (trash icon)
 Last, on the right end of each worker a button with a trash icon may trigger the worker deletion. On a cloud deployed worker, this will delete the worker in base, unlink - but not delete - the jobs related to that worker, and trigger the Ansible code to destroy the instance in your provider cloud infrastructure.
 
-On a manually deployed worker this is not recommanded and it will not do much. It will delete the worker in base, but as the worker cannot be uninstalled by Ansible, it will keep working, and will automatically redeclare itself to PYTQ - thus reappearing instantly.
+On a manually deployed worker this is not recommanded and it will not do much. It will delete the worker in base, but as the worker cannot be uninstalled by Ansible, it will keep working, and will automatically redeclare itself to scitq - thus reappearing instantly.
 
 ## task screen (http://.../ui/task)
 The task screen may be reached clicking on one of the button in the top bar of the worker screen:
@@ -93,10 +93,10 @@ This wait 10 seconds then display "One", wait another 20 seconds and display "Tw
 
 To launch it (for details see [usage](usage.md#queuing-a-task)), simply:
 ```bash
-pytq-launch -b test -d ubuntu:latest sh -c 'sleep 10 && echo One && sleep 20 && echo Two && sleep 40 && echo Three'
+scitq-launch -b test -d ubuntu:latest sh -c 'sleep 10 && echo One && sleep 20 && echo Two && sleep 40 && echo Three'
 ```
 
-NB: this command will work if the environment variable PYTQ_SERVER is set and points to your actual PYTQ server, if not add `-s <name or address of PYTQ server>` before sh. If it is not properly set you will get this exception:
+NB: this command will work if the environment variable SCITQ_SERVER is set and points to your actual scitq server, if not add `-s <name or address of scitq server>` before sh. If it is not properly set you will get this exception:
 ```python
 WARNING:root:Exception when trying to post: HTTPConnectionPool(host='127.0.0.1', port=5000): Max retries exceeded with url: /tasks/ (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff09ffbf430>: Failed to establish a new connection: [Errno 61] Connection refused'))
 ```
@@ -120,7 +120,7 @@ If you do that quickly enough, you'll notice the text is (almost) live. It is up
 You can expand the stdout (standar output) flow of the command as well, and you will see the One Two Three words we can expect. And at one point the blue dot will turn green (succeeded).
 ![task step 6](img/ui-task6.png)
  
-If we leave things like that, in 5 minutes, PYTQ will destroy our worker: the worker is idle and there are no more tasks in the batch.
+If we leave things like that, in 5 minutes, scitq will destroy our worker: the worker is idle and there are no more tasks in the batch.
 
 In case you did not see properly the texts change, let's re-run the task, which is done clicking here:
 ![task step 7](img/ui-task7.png)

@@ -5,7 +5,7 @@
     jump: ACCEPT
     protocol: all
     action: insert
-    comment: "pytq : {{ nodename }}"
+    comment: "scitq : {{ nodename }}"
   become: yes
 - name: Update the firewall with node IPv6
   ansible.builtin.iptables:
@@ -14,7 +14,7 @@
     jump: ACCEPT
     protocol: all
     action: insert
-    comment: "pytq : {{ nodename }}"
+    comment: "scitq : {{ nodename }}"
     ip_version: ipv6
   become: yes
   when: hostvars[nodename].ipv6 is defined

@@ -1,16 +1,14 @@
-# PYthon Task Queue, PYTQ : a distributed task queue
+# scitq : a distributed scientific task queue
 
-PYTQ is a simple task queue in python: PYthon Task Queue. It is a distributed task
-queue system. It was primarily designed for scientific jobs, that is relatively
-heavy tasks. It also has a specificity of relatively feebly interdependent tasks.
+**scitq** is a simple task queue in python. It is a distributed task queue system. While quite generalist, it was primarily designed for scientific jobs, relatively heavy tasks that can be expressed as a Unix shell instruction. It also has a specificity of relatively feebly interdependent tasks.
 
 It has a few added capabilities apart from strict task distribution:
 - First it has the capacity to manage cloud instance life cycle (as for now 
 OpenStack (OVH), but others to follow shortly) - Note that you can still use 
-PYTQ without using that functionality, and you may use it in a mixed environment
+scitq without using that functionality, and you may use it in a mixed environment
 (with one or several static server plus extra temporary servers recruited on the
 cloud). 
-- next, PYTQ has the capacity to download and upload specific data (notably 
+- next, scitq has the capacity to download and upload specific data (notably 
 using s3 buckets as data exchange medium, but simple ftp is also possible,
 and even some more exotic stuff like IBM Aspera, last a very specific protocol for 
 bioinformatics dedicated to downloading public FASTQs (DNA sequence) from EBI or
@@ -18,12 +16,12 @@ bioinformatics dedicated to downloading public FASTQs (DNA sequence) from EBI or
 - next, usage of docker is integrated so that data input slots or data output slots 
 are always in the same place (/input or /output) (in non-dockerized environment,
 shell environment variable INPUT and OUTPUT hold the dedicated directories for
-these, so docker remains non-mandatory in PYTQ).
+these, so docker remains non-mandatory in scitq).
 
 
 ## Introduction
 
-PYTQ is a Python Task Queue based on the following model:
+**scitq** is a Task Queue system based on the following model:
 - a server hosts a series of (shell) tasks to be executed,
 - some workers connect to the server, fetch some tasks according to their capacity
 (which is very simply managed by the maximum number of parallel process they can
@@ -41,17 +39,17 @@ python ./setup.py install
 ```
 Now in one shell, run the server:
 ```
-FLASK_APP=pytq.pytq flask run
+FLASK_APP=scitq.server flask run
 ```
 
 In a another shell, launch the worker:
 ```bash
-pytq-worker 127.0.0.1 1
+scitq-worker 127.0.0.1 1
 ```
 
 In a third shell, queue some tasks:
 ```bash
-pytq-launch echo 'Hello world!'
+scitq-launch echo 'Hello world!'
 ```
 You're done!
 
@@ -62,10 +60,10 @@ about the different options.
 
 ### Special thanks
 
-Special thanks to Rémi Tan who did a great job on the UI of PYTQ, and also on the command line
-manager (pytq-manage) and on the library resilience (pytq.lib).
+Special thanks to Rémi Tan who did a great job on the UI of scitq, and also on the command line
+manager (scitq-manage) and on the library resilience (scitq.lib).
 
-Special thanks to Sibylle de Lahondès, my daughter, who created PYTQ favicon and logo.
+Special thanks to Sibylle de Lahondès, my daughter, who created scitq favicon and logo.
 
 And also to all people of GMT Science team who believe in this project and have
 made it possible: Etienne Formstecher, Edi Prifti, Michel Laborde, Florian Plaza-Oñate,
@@ -104,7 +102,7 @@ my opinion. Disclaimer: we had little apetance to invest real time in slurm so
 it was never production tested by us. The simple size of documentation makes it 
 impossible to grasp quickly. I think the main flaw of slurm is the complexity
 of the specifications: to be able to execute any tasks based on resource
-consumption (which PYTQ does not do: it has much (too?) simpler model of 
+consumption (which scitq does not do: it has much (too?) simpler model of 
 concurrency per worker - see below for details and now if you think this too 
 simple for you, look really deeper into slurm).
 
@@ -178,7 +176,7 @@ with stdout.readline() is not performant enough if you have heavy output).
 often you do not want to reload the page to refresh (Flower is smart enough for 
 that): I did write a very small game in Python with Flask and I had had a go with
 SocketIO with quite a success, so I tried here and it fits the case. I compared
-with basic jQuery and it performed better so PYTQ uses SocketIO (and a nice
+with basic jQuery and it performed better so scitq uses SocketIO (and a nice
 Flask package: Flask-SocketIO)
 
 For now, UI and server live in the same Flask application which makes deploy

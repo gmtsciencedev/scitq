@@ -1,3 +1,3 @@
-# pytq.lib technical documentation
+# scitq.lib technical documentation
 
-::: pytq.lib
+::: scitq.lib

@@ -4,7 +4,7 @@ ANSIBLE is an adminisys automation tool. It can also trigger VM creation in
 a number of different systems and make a versatile solution in that field.
 
 ## Server preparation
-Before installing you should consider your server security. As for now, PYTQ
+Before installing you should consider your server security. As for now, scitq
 operate in a closed environment where all nodes blindly trust the server, and
 the server trust the nodes and send them tasks to execute. This may change in
 the future.
@@ -41,14 +41,14 @@ Next copy or link the etc directory of this folder as /etc/ansible, so that
 ansible.cfg is present directly in the later folder.
 
 Next go to /root and link the folder that contain this file at this place like this
-(the code just below is correct if you cloned pytq repos in /root/ directory, so
- that the repos root is /root/pytq). If you want to have the repo somewhere else
-you'll have to adapt /etc/ansible/inventory/common variable pytq_src, but make
+(the code just below is correct if you cloned  repos in /root/ directory, so
+ that the repos root is /root/). If you want to have the repo somewhere else
+you'll have to adapt /etc/ansible/inventory/common variable _src, but make
 sure ansible folder can be accessed with `cd /root/ansible`
 
 ```bash
 cd /root
-ln -s pytq/ansible
+ln -s /ansible
 ```
 ### Install custom ansible collections
 
@@ -97,7 +97,7 @@ or moved since they call one another.
 This and the next will required that you are authenticated with OVH.
 
 ```
-ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=mynode region=UK1 flavor=s1-2 concurrency=1 server=pytq.server.com"
+ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=mynode region=UK1 flavor=s1-2 concurrency=1 server=.server.com"
 ```
 
 ### Destroy a VM

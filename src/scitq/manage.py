@@ -7,7 +7,7 @@ from datetime import datetime
 import os 
 
 MAX_LENGTH_STR=50
-DEFAULT_SERVER = os.getenv('PYTQ_SERVER','127.0.0.1')
+DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
 
 def converter(x,long): 
     """A small conversion function for items in lists"""
@@ -31,7 +31,7 @@ def __list_print(item_list, retained_columns, headers, long=False):
 def main():
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('-s','--server', help=F"Define a server, by default {DEFAULT_SERVER} this default value comes from the PYTQ_SERVER environment variable",type=str,default=DEFAULT_SERVER)
+    parser.add_argument('-s','--server', help=F"Define a server, by default {DEFAULT_SERVER} this default value comes from the SCITQ_SERVER environment variable",type=str,default=DEFAULT_SERVER)
     parser.add_argument('-t','--timeout', type=int,
             help='Specify the get timeout for complex queries (default to 150s)' )
 

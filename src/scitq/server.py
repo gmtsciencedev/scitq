@@ -24,10 +24,10 @@ from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 
 MAIN_THREAD_SLEEP = 5
 WORKER_OFFLINE_DELAY = 15
-PYTQ_SERVER = os.environ.get('PYTQ_SERVER',None)
+SCITQ_SERVER = os.environ.get('SCITQ_SERVER',None)
 WORKER_CREATE = 'cd /root/ansible/playbooks && ansible-playbook deploy_one_vm.yaml --extra-vars "nodename={hostname} concurrency={concurrency} status=running flavor={flavor} region={region}"'
-if PYTQ_SERVER is not None:
-    WORKER_CREATE = WORKER_CREATE[:-1] + f' target={PYTQ_SERVER}"'
+if SCITQ_SERVER is not None:
+    WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'
 WORKER_DELETE = os.environ.get('WORKER_DELETE','cd /root/ansible/playbooks && ansible-playbook destroy_vm.yaml --extra-vars "nodename={hostname}"')
 WORKER_CHECK = os.environ.get('WORKER_CHECK','/etc/ansible/inventory/sqlite_inventory.py --host {hostname}')
 WORKER_IDLE_CALLBACK = os.environ.get('WORKER_IDLE_CALLBACK',WORKER_DELETE)
@@ -49,7 +49,7 @@ dictConfig({
     }, "file": {
         "class": "logging.handlers.RotatingFileHandler",
         "formatter": "default",
-        "filename": os.environ.get('LOG_FILE',"/tmp/pytq.log"),
+        "filename": os.environ.get('LOG_FILE',"/tmp/scitq.log"),
         "maxBytes": int(os.environ.get('LOG_FILE_MAX_SIZE',"10000000")),
         "backupCount": int(os.environ.get('LOG_FILE_KEEP',"3"))
     }},
@@ -69,8 +69,8 @@ worker_create_queue = queue.Queue()
 # via https://github.com/pallets/flask-sqlalchemy/blob/main/examples/hello/hello.py
 app = Flask(__name__, instance_relative_config=True)
 #app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://postgres:postgres@localhost:5432/"
-app.config.from_object('pytq.default_settings')
-#app.config.from_pyfile("pytq.cfg", silent=True)
+app.config.from_object('scitq.default_settings')
+#app.config.from_pyfile("scitq.cfg", silent=True)
 #app.config.from_prefixed_env()
 if SQLALCHEMY_POOL_SIZE is not None:
     db = SQLAlchemy(app, engine_options={'pool_size': int(SQLALCHEMY_POOL_SIZE)})
@@ -409,7 +409,7 @@ worker = api.model('Worker', {
     'batch': fields.String(required=False, 
         description="worker accept only tasks with same batch (null or not)."),
     'idle_callback': fields.String(readonly=True,
-        description="A command to be called on pytq server when the worker load *returns* to zero. Typically used to end cloud instances.")
+        description="A command to be called on scitq server when the worker load *returns* to zero. Typically used to end cloud instances.")
 })
 
 @ns.route('/')
@@ -1484,4 +1484,4 @@ def main():
     socketio.run(app)
 
 if __name__ == "__main__":
-    raise RuntimeError('Do not launch directly, launch with "FLASK=pytq.pytq flask run"')
+    raise RuntimeError('Do not launch directly, launch with "FLASK=scitq.server flask run"')

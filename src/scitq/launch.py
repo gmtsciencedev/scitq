@@ -8,7 +8,7 @@ import time
 import os
 
 DEFAULT_DOCKER_OPTION = ''
-DEFAULT_SERVER = os.environ.get('PYTQ_SERVER','127.0.0.1')
+DEFAULT_SERVER = os.environ.get('SCITQ_SERVER','127.0.0.1')
 
 def get_sample(filename):
     """Return last dir of a path"""
@@ -22,7 +22,7 @@ def check_unique(variable, value, default_value=None):
 
 def launch(docker, docker_option, uid, gid, 
             command, server, test, name, batch, input, output, resource):
-    """A launching function for PYTQ tasks
+    """A launching function for scitq tasks
     """
 
     s=Server(server)
@@ -94,7 +94,7 @@ def main():
             elif argv[0] in ['-s', '--server']:
                 option = argv.pop(0)
                 if len(argv)==0:
-                    raise SyntaxError(f'{option} requires at least one argument: pytq server name or IP')
+                    raise SyntaxError(f'{option} requires at least one argument: scitq server name or IP')
                 check_unique('server',server, DEFAULT_SERVER)
                 server = argv.pop(0)
             elif argv[0] in ['-t', '--test']:
@@ -158,11 +158,11 @@ def main():
             print('Syntax error : {}'.format(e.args[0]), file=sys.stderr)
             sys.exit(2)
         print(f"""Usage:
-pytq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROPTION]] 
+scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROPTION]] 
                 [(-u|--uid) UID] [(-g|--gid) GID] [(-s|--server) SERVER] [(-t|--test)] 
                 [(-n|--name) NAME] [(-b|--batch) BATCH] [(-i|--input) INPUT] 
                 [(-o|--output) OUTPUT] [(-r|--resource) OUTPUT] [--] COMMAND
-    Add a task in pytq with :
+    Add a task in scitq with :
     -h,--help       display this help message
     -d,--docker     execute the task in a docker container (named DOCKERNAME)
                     default to None - the task is executed natively
@@ -178,7 +178,7 @@ pytq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROPT
                     1) exists on (remote) system,
                     2) user with uid UID must be a member of this group;
     -s,--server     send the order to server SERVER (default to {DEFAULT_SERVER})
-                    (this default value can be changed using PYTQ_SERVER environment
+                    (this default value can be changed using SCITQ_SERVER environment
                     variable)
     -t,--test       print the actual final task sent to the server instead
                     of really sending it (for debug purpose)

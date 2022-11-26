@@ -10,29 +10,29 @@
 :   An internal error of OpenStack, most likely an error of OVH when this reference is no more available in that region. OVH support confirms that you will not be charged for instances that are not available (stuck in ERROR or BUILD status). Simply delete the worker using the [GUI worker view](gui.md#worker-screen-httpui) delete icon and try another region. 
 
 !!! note
-    You might want to open OVH console as it will show the ERROR status of the instances quicker than waiting for PYTQ to display the error (that is because Ansible code is slow for this), but please do not use the OVH console to delete instances created with PYTQ: you can delete a server anytime with PYTQ, the code is very safe and will properly delete the objects and any modification Ansible has already done to your manager servers. When the line on the screen is gone, it means the Ansible delete worker procedure went fine and you can trust it was really deleted at provider level. However when you deal with a touchy reference (like the very good but rare i1-180), having the OVH console opened up to quickly know if you are in error or not is really nice. You can also call the support, they keep telling me I should call them to know how many instances of a certain type are available per region, but then I am terribly lazy...
+    You might want to open OVH console as it will show the ERROR status of the instances quicker than waiting for scitq to display the error (that is because Ansible code is slow for this), but please do not use the OVH console to delete instances created with scitq: you can delete a server anytime with scitq, the code is very safe and will properly delete the objects and any modification Ansible has already done to your manager servers. When the line on the screen is gone, it means the Ansible delete worker procedure went fine and you can trust it was really deleted at provider level. However when you deal with a touchy reference (like the very good but rare i1-180), having the OVH console opened up to quickly know if you are in error or not is really nice. You can also call the support, they keep telling me I should call them to know how many instances of a certain type are available per region, but then I am terribly lazy...
 
 `error for nodeX: PLAY [Launch a compute instance] *********************************************** TASK [Gathering Facts] ********************************************************* ok: [localhost] TASK [Add host and host related variables] ************************************* changed: [localhost] TASK [Launch a VM] ************************************************************* fatal: [localhost]: FAILED! => {"changed": false, "extra_data": {"data": null, "details": "None", "response": "None"}, "msg": "Timeout waiting for the server to come up."} PLAY RECAP ********************************************************************* localhost : ok=2 changed=1 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0 `
 :   This error occurs generally when you delete a worker before it had the chance to try three times to be deployed. You can ignore it safely if you deleted such a worker.
 
 ### Calling Ansible scripts manually
 
-There are several things that can prove useful when using Ansible out of PYTQ automatic management:
+There are several things that can prove useful when using Ansible out of scitq automatic management:
 
 #### Deploying a worker
 
-A worker will automatically declare itself to the server when it is up, so recruiting manually a server out of PYTQ will work fine except when your tasks are done: such manually recruited workers will never be automatically deleted, you'll need to delete them manually.
+A worker will automatically declare itself to the server when it is up, so recruiting manually a server out of scitq will work fine except when your tasks are done: such manually recruited workers will never be automatically deleted, you'll need to delete them manually.
 
 If deploy fails (it will be tried 3 times in automatic mode) and you want to understand what is happening, this is also a good option.
 
 ```bash
 source 7624350872955771-openrc.sh
 cd /root/ansible/playbooks
-ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=node5 concurrency=1 status=running flavor=c2-180 region=GRA7 target=mypytq.server.dom"
+ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=node5 concurrency=1 status=running flavor=c2-180 region=GRA7 target=myscitq.server.dom"
 ```
 The first line is loading OpenStack credentials (this file is provided by your cloud provider).
 The second line put you in the standard place where Ansible playbooks should be when you have done the [install](install.md).
-The third line is the deploying command, the same that pytq-server is using. The `target` variable is the FQDN of your PYTQ server. The other variables are usual variable for a worker.
+The third line is the deploying command, the same that scitq-server is using. The `target` variable is the FQDN of your scitq server. The other variables are usual variable for a worker.
 
 #### Passing a specific command to a worker or a group of worker
 
@@ -45,7 +45,7 @@ ansible "node2 node6" -m shell -a "sudo docker ps"
 
 #### Connecting to a node
 
-Of course as node are deployed with PYTQ server root SSH key, if you are already root on your PYTQ server, this is rather obvious. However there are two tricks that can make your life a lot easier there:
+Of course as node are deployed with scitq server root SSH key, if you are already root on your scitq server, this is rather obvious. However there are two tricks that can make your life a lot easier there:
 
 - First, the node are automatically inserted in (and removed from) `/etc/hosts`,
 - Second, you should add this alias to your bash configuration: 
@@ -99,17 +99,17 @@ optional arguments:
   --del-host DEL_HOST  Delete a host
 ```
 
-This is a very simple script but it can give you all the details you need on PYTQ Ansible managed workers. The very basic command is :
+This is a very simple script but it can give you all the details you need on scitq Ansible managed workers. The very basic command is :
 ```bash
 /etc/ansible/inventory/sqlite_inventory.py --list
 ```
 
 
 
-## PYTQ task output
+## scitq task output
 
 `You cannot attach to a stopped container, start it first`
-:   This error occurs when a docker accept to start (the binary called was found and could be launched) but fails immediately after (a fraction second before python attach the docker process to a collecting thread). That is hopefully quite rare: look into the worker logs with `journalctl -u pytq-worker`, find the faulty docker launch, and launch it manually in the worker replacing -d option (detach) by -it (interactive), this will show the error.
+:   This error occurs when a docker accept to start (the binary called was found and could be launched) but fails immediately after (a fraction second before python attach the docker process to a collecting thread). That is hopefully quite rare: look into the worker logs with `journalctl -u scitq-worker`, find the faulty docker launch, and launch it manually in the worker replacing -d option (detach) by -it (interactive), this will show the error.
 
 
 ## Specific cases
@@ -117,7 +117,7 @@ This is a very simple script but it can give you all the details you need on PYT
 ### Big outputs
 Some programs (notably CAMISIM) are very verbose and generate huge output, so that maybe it is a good idea to redirect the output to a file and rely only on stderr to follow the tasks. If you really need to follow the output during execution, that is however not an option. There are two things you should take care of:
 
-PYTQ will consume large amount of memory in the case, so be certain to have a significant amount of memory available. At least set up some swap, for instance like this:
+scitq will consume large amount of memory in the case, so be certain to have a significant amount of memory available. At least set up some swap, for instance like this:
 ```bash
 fallocate -l 8G /swapfile
 chmod 600 /swapfile
@@ -132,10 +132,10 @@ NB: You will have to add the following line in `/etc/fstab` to make it permanent
 
 Second, when querying the output of tasks, first forget the GUI, it won't be able to do it. Ideally, you have named your task and you know which one you're interested in, in which case go like this:
 ```bash
-pytq-manage -t 600 task output -n mytaskname > mytaskname.output
+scitq-manage -t 600 task output -n mytaskname > mytaskname.output
 ```
 Note the `-t 600` which tells the client library to be very patient (600s) before hitting timeout.
 
 !!! note
-    Be aware that REST is poorly adapted to large dataset and a modest 69Mb log (2 million lines, though) ended up as 19Gb REST message eating that amount of memory in pytq-server and at pytq-manage level upon reception. It did work, though, but I was looking at the server with top and added several swap files (as initially the server had only 8Gb memory...), which can be done live if you're in such a corner (the above procedure is extremely quick).
+    Be aware that REST is poorly adapted to large dataset and a modest 69Mb log (2 million lines, though) ended up as 19Gb REST message eating that amount of memory in scitq-server and at scitq-manage level upon reception. It did work, though, but I was looking at the server with top and added several swap files (as initially the server had only 8Gb memory...), which can be done live if you're in such a corner (the above procedure is extremely quick).
 

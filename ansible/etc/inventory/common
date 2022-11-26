@@ -1,5 +1,5 @@
 [all:vars]
-pytq_src=/root/pytq
+scitq_src=/root/scitq
 
 [managers]
 localhost ansible_connection=local keyname=mykeyname

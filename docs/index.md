@@ -4,17 +4,17 @@
 
 How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) and read the [usage](usage.md). Sure it is what you need but unsure what you will need? Look at [installation](install.md) and [specific settings](specific.md).
 
-* [installation](install.md): straight to business, install PYTQ.
+* [installation](install.md): straight to business, install scitq.
 * [specific settings](specific.md): extra things you should consider and set up.
 * [parameters](parameters.md): detail of all the parameters than can be set.
-* [usage](usage.md): now that is properly set up, use PYTQ and queue your first tasks.
-* [GUI](gui.md): monitor (and tune) what's going on in PYTQ.
-* [pytq-manage](pytq-manage.md): same as above but for command line lovers.
+* [usage](usage.md): now that is properly set up, use scitq and queue your first tasks.
+* [GUI](gui.md): monitor (and tune) what's going on in scitq.
+* [scitq-manage](scitq-manage.md): same as above but for command line lovers.
 * [model](model.md): some insights about the underlying model, API and database.
 
 ## Project layout
 
-    src         # The python src code (and pytq python package)
+    src         # The python src code (and scitq python package)
     ansible     # The ansible recipes that enable to recruit, install and destroy workers 
     docs        # The MkDocs documentation source
     templates   # Some templates to help install primarily the server service 

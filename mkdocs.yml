@@ -1,4 +1,4 @@
-site_name: PYTQ
+site_name: scitq
 theme:
   name: readthedocs
   highlightjs: true
@@ -8,7 +8,7 @@ nav:
   - parameters: parameters.md
   - usage: usage.md
   - using the GUI: gui.md
-  - pytq-manage: pytq-manage.md
+  - scitq-manage: scitq-manage.md
   - model and API: model.md
   - specific settings: specific.md
   - troubleshooting: troubleshoot.md

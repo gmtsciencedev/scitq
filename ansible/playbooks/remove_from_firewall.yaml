@@ -5,7 +5,7 @@
     jump: ACCEPT
     protocol: all
     action: insert
-    comment: "pytq : {{ nodename }}"
+    comment: "scitq : {{ nodename }}"
     state: absent
   become: true
 - name: Update the firewall with node IPv6
@@ -15,7 +15,7 @@
     jump: ACCEPT
     protocol: all
     action: insert
-    comment: "pytq : {{ nodename }}"
+    comment: "scitq : {{ nodename }}"
     ip_version: ipv6
     state: absent
   become: true

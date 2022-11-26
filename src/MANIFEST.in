@@ -1,2 +1,2 @@
-recursive-include pytq/templates *
-recursive-include pytq/static *
+recursive-include scitq/templates *
+recursive-include scitq/static *

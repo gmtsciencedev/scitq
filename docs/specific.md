@@ -4,21 +4,21 @@
 
 ### Using NFS
 
-NFS has been used since the beginning of pytq usage, but we tend to not use it anymore as NFS is very likely to create some bandwidth bottlenecks. Yet if you have a very big bandwidth this can still be a very good option. In doubt, look at S3 that will be covered later on.
+NFS has been used since the beginning of scitq usage, but we tend to not use it anymore as NFS is very likely to create some bandwidth bottlenecks. Yet if you have a very big bandwidth this can still be a very good option. In doubt, look at S3 that will be covered later on.
 
 NFS is hardcoded to be mounted on `/data` and as for now there is no way to change that easily as this directory will be used in the NFS server, in the workers and in the container (dockers) where your tasks are launched.
 
-#### Changes in PYTQ server `/etc/ansible/inventory/common`
+#### Changes in scitq server `/etc/ansible/inventory/common`
 
 If you use NFS just set up `nfs_server` with some short name for your server and `nfs_server_address` with the IP or name with which your workers will see your NFS server. Those variables are in `[all:vars]`.
 
-Your server short name should also be added in `[managers]` section together, a line just before the localhost definition for the PYTQ server itself which looks like that:
+Your server short name should also be added in `[managers]` section together, a line just before the localhost definition for the scitq server itself which looks like that:
 `localhost ansible_connection=local keyname=mykeyname`
 
 In the provided file, the exemple server shortname is `mynfsserver` and the long server name is `mynfsserver.my.domain` (but it could be an IP address as well).
 
 
-#### Additional steps on PYTQ server
+#### Additional steps on scitq server
 
 You should also add the short name of your nfs in your ssh config file, edit or create `/root/.ssh/config` and add those lines:
 ```init
@@ -86,11 +86,11 @@ s3_region=gra
 s3_url=https://s3.gra.perf.cloud.ovh.net
 ```
 
-You must also setup S3 access on your permanent workers, and be careful to set your AWS_ENDPOINT_URL variable in pytq-worker service `/etc/systemd/system/pytq-worker.service` definition as stated in [parameters](parameters.md#aws_endpoint_url). If you change this file do not forget to reload and apply:
+You must also setup S3 access on your permanent workers, and be careful to set your AWS_ENDPOINT_URL variable in scitq-worker service `/etc/systemd/system/scitq-worker.service` definition as stated in [parameters](parameters.md#aws_endpoint_url). If you change this file do not forget to reload and apply:
 
 ```bash
 systemctl daemon-reload
-systemctl restart pytq-worker
+systemctl restart scitq-worker
 ```
 
 ## Docker private image: registry management
@@ -152,12 +152,12 @@ docker_insecure_registry=myprivateregistry.my.domain:5000
 
 For OVH, you must create a public cloud project with a "manager" Horizon account. This correspond to the section `Project Management` : `Users & Roles` in OVH interface. Note the Horizon username and password in a safe place (like a [keepass](https://keepass.info)).
 
-Clicking on `...` on the right of the new user you can export the Openstack RC file. In that RC file, you fill find all the specific OpenStack environment variables starting with `OS_...` that must be added into the service definition of pytq-server (`/etc/system/systemd/pytq.service`). You must add them under the `[Service]` section of this file with `Environment=OS_...=value` lines as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
+Clicking on `...` on the right of the new user you can export the Openstack RC file. In that RC file, you fill find all the specific OpenStack environment variables starting with `OS_...` that must be added into the service definition of scitq-server (`/etc/system/systemd/scitq.service`). You must add them under the `[Service]` section of this file with `Environment=OS_...=value` lines as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
 
 Do not forget to apply those changes:
 ```bash
 systemctl daemon-reload
-systemctl restart pytq
+systemctl restart scitq
 ```
 
 #### Other things
@@ -178,6 +178,6 @@ You must deploy the SSH key that was created in [install](install.md#create-ssh-
     When using OVH Horizon, when you connect you default to a specific region (shown in the top gray line of the console, on the right of your public cloud project id). This is remembered from one login to another but may not be the right one. If you get the wrong one like an non-opened region, you will have inactive interfaces for the `Compute` sections, don't forget to change, just click on the region name and you will be able to choose the right region.
 
 
-Now go to the `Compute` : `Key pairs` section on [Horizon](https://horizon.cloud.ovh.net/project/key_pairs), and choose `Import Public Key` and copy paste the content of PYTQ server `/root/.ssh/id_rsa.pub` file in SSH key, give it a name, the keyname that should be set in Ansible `/etc/ansible/inventory/common` file, as noted [here](install.md#adapt-etcansibleinventorycommon). If you change this parameter it will be automatically applied at next Ansible usage.
+Now go to the `Compute` : `Key pairs` section on [Horizon](https://horizon.cloud.ovh.net/project/key_pairs), and choose `Import Public Key` and copy paste the content of scitq server `/root/.ssh/id_rsa.pub` file in SSH key, give it a name, the keyname that should be set in Ansible `/etc/ansible/inventory/common` file, as noted [here](install.md#adapt-etcansibleinventorycommon). If you change this parameter it will be automatically applied at next Ansible usage.
 
 This must be done for all the opened regions, so once you've imported the key for one region, change the region as explained in the note above and import the key to this new region, keeping the same key name. Do that iteratively for all the regions - there are not so many of them.

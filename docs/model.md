@@ -1,8 +1,8 @@
-# PYTQ model and API
+# scitq model and API
 
-## PYTQ model
+## scitq model
 
-PYTQ is base on a simple database model. At the heart of PYTQ is the notion of:
+scitq is base on a simple database model. At the heart of scitq is the notion of:
 
 - task 
 - and worker
@@ -16,13 +16,13 @@ The schema include also two other tables:
 - signal: a simple object which is only used to send signal to tasks (like the pause, the stop or the kill signal),
 - execution: this is an important object: task can be executed several times and each execution may succeed or fail and have different outputs. Also an execution occurs on a specific worker.
 
-Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](pytq-manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
+Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](scitq-manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
 
 While you can connect directly to the database, there is no way we can prevent something wrong to happen if you do that, do it only if you are adapt of the YOLO principle...
 
 ## API
 
-The API is a full REST API (operated using the excellent [Flask RESTX](https://github.com/python-restx/flask-restx) package), and it is fully exposed on `http://<your PYTQ server>:5000/` :
+The API is a full REST API (operated using the excellent [Flask RESTX](https://github.com/python-restx/flask-restx) package), and it is fully exposed on `http://<your scitq server>:5000/` :
 
 ![API home](img/api1.png)
 
@@ -41,13 +41,13 @@ And now for something usefull we can list the different executions:
 Note that you have a swagger.json link at the top which can help you create a client for the API. However if you plan to create a Python client, do not bother with that there is one ready made for you, and it is the next and last topic of the documentation.
 
 
-## PYTQ client (pytq.lib)
+## scitq client (scitq.lib)
 
 ### Basic usage
 
-In the following example, we connect locally to the server (the address is thus '127.0.0.1') but pytq.lib is a REST client so it can work remotely provided the network access is granted (see [security](install.md#security)):
+In the following example, we connect locally to the server (the address is thus '127.0.0.1') but scitq.lib is a REST client so it can work remotely provided the network access is granted (see [security](install.md#security)):
 ```python
-from pytq.lib import Server
+from scitq.lib import Server
 from pprint import pprint
 
 s = Server('127.0.0.1')
@@ -104,14 +104,14 @@ The function are available in a consistent style:
 :   list tasks for a worker
 
 The different function on other objects use the same consistent logic (`tasks`, `task_update`, `task_create`, etc... for tasks, `executions`, `execution_update`, etc... for executions).
-The technical documentation of pytq.lib is [here](pytq-lib.md)
+The technical documentation of scitq.lib is [here](scitq-lib.md)
 
 #### Server style : object or dict
 
 The server object is a simple proxy to the different REST functions that call the API. The answer is provided as is natural in Python JSON in dictionary objects. However in some cases, object style, that is argparse.Namespace, provides a more natural way of coding:
 
 ```python
-from pytq.lib import Server
+from scitq.lib import Server
 from pprint import pprint
 
 s = Server('127.0.0.1', style='object')
@@ -122,13 +122,13 @@ NB: style parameter default to dictionary style, `style='dict'`.
 
 #### Asynchronous 
 
-pytq.lib has several goodies upon a basic REST client, and one of the best is that it is partially asynchronous. If the connection to the server is correct it will work in synchronous mode (and block on each query), but when a timeout occurs it will transparently switch to asynchronous mode (unless the server object was called with `asynchronous=False` option).
+scitq.lib has several goodies upon a basic REST client, and one of the best is that it is partially asynchronous. If the connection to the server is correct it will work in synchronous mode (and block on each query), but when a timeout occurs it will transparently switch to asynchronous mode (unless the server object was called with `asynchronous=False` option).
 
 Asynchronous mode means that a special query thread will be opened and that all queries sending some information will be sent whenever possible. Queries will be executed in the same order as they were launched but the call instruction, like `s.worker_update(...)` will be non-blocking. Also, the objects or dictionaries (depending on style) returned by such queries will be lazy. Lazy means the object hold no real information, only trying to access to an attribute will trigger the real query - and will be blocking.
 
 The get queries are always synchronous (as it is likely you'll need the information very soon after querying) and will block and retry as much as necessary, but not fail, if the server is down. 
 
-This makes any code using pytq.lib very resilient to a server crash.
+This makes any code using scitq.lib very resilient to a server crash.
 
 
 There are two parameters to be more or less aggressive, in the Server object creator:
@@ -144,14 +144,14 @@ There are two parameters to be more or less aggressive, in the Server object cre
 
 So for instance if you want to have a resilient but very unaggressive code, you could:
 ```python
-from pytq.lib import Server
+from scitq.lib import Server
 
 s = Server('127.0.0.1', put_timeout=60, get_timeout=300)
 ```
 
 #### Example
 
-This is an almost literal example of a real use case of PYTQ at GMT Science, using [CAMISIM](https://github.com/CAMI-challenge/CAMISIM).
+This is an almost literal example of a real use case of scitq at GMT Science, using [CAMISIM](https://github.com/CAMI-challenge/CAMISIM).
 
 This suppose that:
 
@@ -169,7 +169,7 @@ Note the `s.join()` instruction at the end of the script. This instruction is re
 
 ```python
 import pandas as pd
-from pytq.lib import Server
+from scitq.lib import Server
 
 s=Server('myserver')
 name='camisim1'
