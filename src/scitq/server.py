@@ -516,11 +516,11 @@ class WorkerCallback(Resource):
             if db.session.query(Execution).filter(Execution.status=='running',
                     Execution.worker_id==worker.worker_id).count()>0:
                 log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
-                return {'result':'cannot call idle with running tasks'}, 400
+                return {'result':'still have running tasks'}
             if db.session.query(Task).filter(and_(Task.status.in_(['pending','accepted']),
                                     Task.batch==worker.batch)).count()>0:
                 log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
-                return {'result':'still some work to do, lazy one!'}, 409
+                return {'result':'still some work to do, lazy one!'}
             log.warning(f'Worker {worker.name} called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
             worker.destroy()
             db.session.delete(worker)

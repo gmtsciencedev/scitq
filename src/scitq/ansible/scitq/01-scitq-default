@@ -5,7 +5,7 @@ managers
 workers
 
 [scitq:vars]
-version="1.0b4"
+version="1.0b7"
 
 [managers]
 localhost ansible_connection=local

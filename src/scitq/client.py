@@ -156,31 +156,36 @@ class Executor:
     async def get_output(self, execution_id):
         # Read line (sequence of bytes ending with b'\n') asynchronously
         output = []
+        error = []
+
         now = time()
         while True:
             try:
                 output.append(
-                    await asyncio.wait_for(self.process.stdout.readline(), self.dynamic_read_timeout)
+                    (await asyncio.wait_for(self.process.stdout.readline(), self.dynamic_read_timeout)).decode('utf-8')
                 )
                 if time()-now>self.dynamic_read_timeout:
                     break
             except asyncio.TimeoutError:
                 break
-        self.s.execution_output_write(execution_id, 
-            (b''.join(output)).decode('utf-8'))
+            except Exception as e:
+                error.append(f'During stdout collection this error occured: {traceback.format_exc()}\n' )
+                break
+        self.s.execution_output_write(execution_id, ''.join(output))
 
-        error = []
         while True:
             try:
                 error.append(
-                    await asyncio.wait_for(self.process.stderr.readline(), self.dynamic_read_timeout)
+                    (await asyncio.wait_for(self.process.stderr.readline(), self.dynamic_read_timeout)).decode('utf-8')
                 )
                 if time()-now>self.dynamic_read_timeout:
                     break
             except asyncio.TimeoutError:
                 break
-        self.s.execution_error_write(execution_id,
-            (b''.join(error)).decode('utf-8'))
+            except Exception as e:
+                error.append(f'During stderr collection this error occured: {traceback.format_exc()}\n' )
+                break
+        self.s.execution_error_write(execution_id,''.join(error))
 
         qsize = self.s.queue_size()
         if qsize > QUEUE_SIZE_THRESHOLD:
