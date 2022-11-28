@@ -322,7 +322,7 @@ def main():
                 os.path.join(args.path,'sqlite_inventory.py') )
             os.chmod(os.path.join(args.path,'sqlite_inventory.py'), 0o770)
             shutil.copy(package_path('ansible','scitq','01-scitq-default'), 
-                os.path.join(args.path,'scitq-default') )
+                os.path.join(args.path,'01-scitq-default') )
         elif args.action=='path':
             print(package_path('ansible','playbooks'))
 

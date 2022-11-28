@@ -42,6 +42,19 @@ Sometimes, it is very convenient to launch specific commands to some nodes:
 ansible "node2 node6" -m shell -a "sudo docker ps"
 ```
 
+Notably this command will show you the scitq installed files version for ansible 
+```bash
+ansible bioit -m debug -a "var=version"
+```
+(if your version lags, redo the `scitq-manage ansible install`)
+
+#### Look at Ansible internal variables
+Here for `node1` but it can be replaced with any host or group.
+```
+ansible node1 -m debug -a "var=hostvars[inventory_hostname]"
+```
+
+
 #### Connecting to a node
 
 Of course as node are deployed with scitq server root SSH key, if you are already root on your scitq server, this is rather obvious. However there are two tricks that can make your life a lot easier there:
