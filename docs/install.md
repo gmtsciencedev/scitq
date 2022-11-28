@@ -37,6 +37,7 @@ For what follow and to clarify words, we will design as:
 * scitq-worker : a scitq service and software that takes its order from scitq-server and execute them,
 * worker : the instance(s) or physical server(s) on which scitq-worker is installed,
 
+If you are upgrading, go to [upgrading](#upgrading) chapter.
 
 ## scitq-server
 
@@ -73,21 +74,28 @@ mkdir /var/log/scitq
 
 ### install python package
 
-Go to the `src` directory of the code and just do *as root*:
+The now default way to install is by pip:
+```bash
+pip3 install --upgrade pip setuptools
+pip3 install scitq
+```
+
+If you want to install by source:
 ```bash
 cd /root/
+pip3 install --upgrade pip setuptools
 git clone https://github.com/gmtsciencedev/scitq.git
-cd scitq/src
-pyton ./setup.py install
+cd scitq
+pyton3 ./setup.py install
 ```
 
 ### install the service
 
-Go to the `templates` directory, and copy `template_service.tpl`:
-
+Copy the template from https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_service.tpl:
 ```bash
-cp template_service.tpl /etc/systemd/system/scitq.service
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_service.tpl -o /etc/systemd/system/scitq.service
 ```
+(this template_service.tpl is also in `/root/scitq/templates` it you installed by source)
 
 Now edit `/etc/systemd/system/scitq.service` to suit your need. Keeping 
 most variables as they are should be fine, *except SCITQ_SERVER variable*:
@@ -97,6 +105,7 @@ most variables as they are should be fine, *except SCITQ_SERVER variable*:
 Look into [Parameters](parameters.md#scitq-server-parameters) to have more details about the parameters that can be set in this file.
 
 ```bash
+mkdir /var/log/scitq
 systemctl daemon-reload
 systemctl enable scitq
 systemctl start scitq
@@ -110,19 +119,7 @@ Look with `systemctl status scitq` that all is fine and that should be it. In ca
 
      Ansible is only needed if you deploy workers on the cloud automatically. If workers are deployed manually you can just bypass entirely Ansible configuration.
 
-First Ansible code is yet quite simple and has a certain number of hardcoded things, which should not raise any major issue on a dedicated server. There are three of them:
-
-* this repository should be put in `/root/scitq` directory (so that `src` complete path is `/root/scitq/src`),
-* the ansible part should be linked (preferably) or copied to `/root/ansible`,
-* ansible configuration `/etc/ansible` should be a link to `/root/ansible/etc`.
-
-So if the repository is in `/root` (if not move it now), just do:
-```bash
-cd /root
-ln -s scitq/ansible 
-ln -s scitq/ansible/etc /etc/ansible 
-```
-
+If you installed scitq before the `1.0b3` version, this section is very different, see [upgrading](#upgrading) for details (and much cleaner now).
 ### install ansible itself
 
 ```bash
@@ -161,32 +158,73 @@ This will create `/root/.ssh/id_rsa` and `/root/.ssh/id_rsa.pub`. If you are unf
 
 ### Configure ansible components
 
-Ansible configurable parts are in `/etc/ansible/inventory` (that should be the same as `/root/scitq/ansible/etc/inventory` if you followed this guide)
+First, you must attach scitq ansible configuration to ansible. You just need to add a specific inventory source, modifying the `inventory=...` line in `ansible.cfg` (by default, `/etc/ansible/ansible.cfg`), by adding a specific directory for scitq:
+`inventory=...,/etc/ansible/inventory`
 
-#### Adapt /etc/ansible/inventory/common
-
-In short, the only thing to do in principle in this file is to change the `keyname` parameter that is defined in the `localhost` line in the `[managers]` section. 
-
-This `keyname` is linked to the SSH key we just created above. You will need to deploy this key in your cloud provider console, as explained in more detail in [Providers configuration](specific.md#providers-configuration), so as to let Ansible gain access to newly deployed workers. The `keyname` is just some short name under which this key will be called in your cloud provider infrastructure. We use the shortname of our scitq server for this, but any name will do.
-
-In `[all:vars]`, you will find `scitq_src` variable. If you followed this guide and installed scitq source in `/root/scitq`, you can leave the variable as it is. Otherwise this variable should point to the place where sources are (the directory that contain the `src` folder).
-
-Last, this `[all:vars]` section is also where NFS parameters can be set if you plan to use NFS, see [using NFS](specific.md#using-nfs) for details.
-
-#### Adapt `/etc/ansible/inventory/ovh` and others
-
-Have a quick look at the other files in `/etc/ansible/inventory`. Overall these files are pretty safe to be left unchanged unless you need a specific feature. 
-
-The following options should not be changed to avoid Python and SSH trouble in Ansible with Ubuntu:
-
-```
-[...:vars]
-ansible_python_interpreter=/usr/bin/env python3
-ansible_user=ubuntu
-ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+Also in `[inventory]` section, it is a good idea to enable the (normaly defaults) inventory plugins in the following order:
+```ini
+[inventory]
+enable_plugins=host_list, script, auto, ini, yaml, toml
+...
 ```
 
-#### About `/etc/ansible/inventory/sqlite_inventory.py` 
+Now copy the default files with:
+```bash
+scitq-manage ansible install
+```
+
+If you have an unusual Ansible configuration or do not wish to use `/etc/ansible/inventory` directory, add a `-p` argument:
+
+```bash
+scitq-manage ansible install -p /path/to/my/inventory
+```
+(simply do not forget to add that specific path in your inventory variable in your ansible configuration)
+
+And create a sample file `/etc/ansible/inventory/02-scitq`:
+
+```ini
+[scitq:vars]
+keyname=scitq
+```
+
+This is the minimal file. 
+
+This `keyname` is linked to the SSH key we just created above. You will need to deploy this key in your cloud provider console, as explained in more detail in [Providers configuration](specific.md#providers-configuration), so as to let Ansible gain access to newly deployed workers. The `keyname` is just some short name under which this key will be called in your cloud provider infrastructure. Replace `scitq` by any value you see fit - we have several scitq servers so we go for each server shortname here. Be sure you match the name of your key under your provider configuration.
+
+If you want to deploy by source, add a scitq_src variable pointing to the path the source live: if you followed this guide and installed scitq source in `/root/scitq`, set it as:
+
+`scitq_source=/root/scitq`
+
+Last, this `[scitq:vars]` section is also where NFS parameters can be set if you plan to use NFS, see [using NFS](specific.md#using-nfs) for details. If that is so, you will also need to add your NFS server to the managers group, creating a subsection `[managers]` with the shortname of your server.
+
+Next it is likely you will need a `[workers:vars]` section:
+
+- If you are using s3, see [using S3](specific.md#aws-or-others-s3) for details, you can either set up the `s3_...` variables for all workers under a `[workers:vars]` section or be more specific and set it up only for a certain provider, like under `[ovh:vars]` section. 
+- Same for the `docker_...` variables if you use a private registry, see [docker private registry](specific.md#docker-private-image-registry-management).
+ 
+So that a final `/etc/ansible/inventory/02-scitq` could look like this:
+
+```ini
+[scitq:vars]
+keyname=scitq
+nfs_server=mynfsserver
+nfs_server_address=mynfsserver.mycompany.com
+scitq_src=/root/scitq
+
+[managers]
+mynfsserver
+
+[workers:vars]
+s3_key_id=xxxxxxxxxxxxxxxxxxxxxxxxxxx
+s3_access_key=xxxxxxxxxxxxxxxxxxxxxxxxxx
+s3_region=gra
+s3_url=https://s3.gra.perf.cloud.ovh.net
+docker_registry=xxxxxxxxxx.container-registry.ovh.net
+docker_authentication=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+NB: remember not to set any variable you do not need, like the scitq_src variable which is only to deploy by source on workers. Also creating a `[managers]` section is not useful here if you do not use NFS.
+
+#### About `sqlite_inventory.py` 
 
 If you are not interested in implementation details, just leave this file here and that will be fine.
 
@@ -214,21 +252,28 @@ In this file we will finish with manual worker deployment and security.
 Just like for scitq-server you need simply the python setuptools. With a Ubuntu distribution just do that:
 ```bash
 apt install python3 python3-pip
+pip3 install --upgrade pip
+pip3 install --upgrade setuptools
 ```
 
 Next download and install scitq package:
+```
+pip3 install scitq
+```
 
+Or via source:
 ```bash
 git clone https://github.com/gmtsciencedev/scitq.git
-cd scitq/src
+cd scitq
 pyton ./setup.py install
 ```
+
 
 ### Configure and start scitq-worker service
 
 Next copy the service template to systemd directory:
 ```bash
-cp templates/template_worker_service.tpl /etc/systemd/system/scitq-worker.service
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_worker_service.tpl -o /etc/systemd/system/scitq-worker.service
 ```
 
 And edit `/etc/systemd/system/scitq-worker.service` to suit your needs.
@@ -291,6 +336,70 @@ ip6tables-save > /etc/iptables/rules.v6
 If your tasks generate some kind of data output, which is very likely this is the last mandatory step of the install. With current scitq version, you have two choices: [S3](specific.md#aws-or-others-s3) or [NFS](specific.md#using-nfs). S3 is recommanded, it is cheaper and does not have NFS bottleneck issue, but if you have a nice NFS (with a generous bandwidth and low latency disks), it is perfectly fine.
 
 In case you have specific docker images that you would want to use, configure a [private registry](specific.md#docker-private-image-registry-management).
+
+
+## Upgrading
+
+### Upgrading from 1.0b2 and below
+
+#### Ansible configuration 
+
+In 1.0b2 and below, Ansible configuration was directly inserted in scitq source, it now lives in different files. 
+
+- Copy all of previous ansible configuration in a safe place, with `cp -r /root/scitq/ansible /root/oldansible` (or `cp -r /root/pytq/ansible /root/oldansible` for version versions <1.0b2),
+- Install new version `pip install --upgrade scitq pip setuptools`,
+- Remove ansible link in `/etc` so that `/etc/ansible` is a plain directory,
+- Copy back your ansible base configuration : `cp /root/oldansible/etc/ansible.cfg /etc/ansible/`
+- Install the files with `scitq-manage ansible install`
+- Create `/etc/ansible/inventory/02-scitq` and report in that file all the specific variables:
+    - All the specific variables that were in `/root/oldansible/etc/common` :  `keyname`, and possibly `nfs_server`, `nfs_server_address` should be defined in that file under `[scitq:vars]`. If you still plan to deploy by source code (which may enable testing some code modification), add also the `scitq_source` variable with the path in which lives the code (in the path you set, you must have the `src` directory present as an immediate subdirectory) - not that if you do not do that, deployment will be done by pip, which is now the default.
+    - All the specific variables that were in `/root/oldansible/etc/ovh` should now go under `[ovh:vars]` in that file (so just copy paste the existing `[ovh:vars]` paragraph in that file)
+
+#### Service configuration
+
+If you come from a version strictly below 1.0b2:
+- Next change the service `/etc/systemd/system/pytq.service`:
+    - First stop and remove the service `systemctl stop pytq` and `systemctl disable pytq`,
+    - Rename the file to `/etc/systemd/system/scitq.service`,
+    - Change the line `Description=pytq` by `Description=scitq`,
+    - Replace line `Environment=FLASK_APP=...` by `Environment=FLASK_APP=scitq.server`
+    - Replace line `Environment=PYTQ_SERVER=...` by `Environment=SCITQ_SERVER=...`
+    - Update by `systemctl daemon-reload` and `systemctl enable scitq` and `systemctl start scitq`
+- For any manually deployed worker, it is the same procedure (still if you come from strictly below 1.0b2):
+    - First stop and remove the service `systemctl stop pytq-worker` and `systemctl disable pytq-worker`,
+    - Rename the file to `/etc/systemd/system/scitq-worker.service`,
+    - Change the line `Description=pytq-worker` by `Description=scitq-worker`,
+    - Change the line `ExecStart=pytq-worker -s running ...` by `ExecStart=scitq-worker -s running ...`,
+    - Update by `systemctl daemon-reload` and `systemctl enable scitq-worker` and `systemctl start scitq-worker`
+
+If you come from 1.0b2 just restart the services `systemctl restart scitq` and `systemctl restart scitq-worker`.
+
+### Upgrading from 1.0b3 and above
+
+With pip (replace `pip3` by the path to your pip, if you are not using Ubuntu plain install):
+```bash
+pip3 install --upgrade scitq
+```
+
+With git (replace `/root/scitq` with the path to your source if you did not keep the standard install path)
+```bash
+cd /root/scitq
+git pull
+rm -fr build dist
+python3 ./setup.py install
+```
+
+Relaunch the services:
+```
+systemctl restart scitq
+```
+Or for a worker:
+```
+systemctl restart scitq-worker
+```
+
+You must also upgrade your ansible code, with `scitq-manage ansible install` (or with -p paramater if you have used a custom inventory directory)
+
 
 ## What's next?
 

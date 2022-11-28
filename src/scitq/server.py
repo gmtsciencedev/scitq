@@ -18,18 +18,18 @@ from subprocess import run
 import signal
 import json
 from sqlalchemy.dialects import sqlite
-from .util import PropagatingThread
+from .util import PropagatingThread, package_path
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
+from .ansible.scitq.sqlite_inventory import scitq_inventory
 
 
 MAIN_THREAD_SLEEP = 5
 WORKER_OFFLINE_DELAY = 15
 SCITQ_SERVER = os.environ.get('SCITQ_SERVER',None)
-WORKER_CREATE = 'cd /root/ansible/playbooks && ansible-playbook deploy_one_vm.yaml --extra-vars "nodename={hostname} concurrency={concurrency} status=running flavor={flavor} region={region}"'
+WORKER_CREATE = f'cd {package_path("ansible","playbooks")} && ansible-playbook deploy_one_vm.yaml --extra-vars "nodename={{hostname}} concurrency={{concurrency}} status=running flavor={{flavor}} region={{region}}"'
 if SCITQ_SERVER is not None:
     WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'
-WORKER_DELETE = os.environ.get('WORKER_DELETE','cd /root/ansible/playbooks && ansible-playbook destroy_vm.yaml --extra-vars "nodename={hostname}"')
-WORKER_CHECK = os.environ.get('WORKER_CHECK','/etc/ansible/inventory/sqlite_inventory.py --host {hostname}')
+WORKER_DELETE = os.environ.get('WORKER_DELETE',f'cd {package_path("ansible","playbooks")} && ansible-playbook destroy_vm.yaml --extra-vars "nodename={{hostname}}"')
 WORKER_IDLE_CALLBACK = os.environ.get('WORKER_IDLE_CALLBACK',WORKER_DELETE)
 WORKER_CREATE_CONCURRENCY = 10
 WORKER_CREATE_RETRY=2
@@ -58,6 +58,8 @@ dictConfig({
         'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
     }
 })
+
+IS_SQLITE = 'sqlite' in SQLALCHEMY_DATABASE_URI
 
 
 log.info('Starting')
@@ -148,10 +150,9 @@ class Worker(db.Model):
                 run([self.idle_callback.format(**(self.__dict__))],shell=True,check=True)
             except Exception as e:
                 log.exception(e)
-            worker_check = json.loads(
-                run([WORKER_CHECK.format(**(self.__dict__))], shell=True, 
-                    check=True, capture_output=True, encoding='utf-8').stdout
-                )
+
+            worker_check = json.loads(scitq_inventory(host=self.hostname))
+
             if not worker_check:
                 log.warning(f'Worker {self.name} was destroyed.')
                 break
@@ -206,7 +207,8 @@ class Signal(db.Model):
         self.worker_id = worker_id
         self.signal = signal
 
-db.create_all()
+with app.app_context():
+    db.create_all()
 
 
 # via https://flask-restx.readthedocs.io/en/latest/example.html
@@ -370,7 +372,8 @@ class WorkerDAO(BaseDAO):
         worker=self.get(id)
         log.warning(f'Deleting worker {id} ({worker.idle_callback})')
         if worker.idle_callback is not None:
-            session = Session(db.engine)
+            with app.app_context():
+                session = Session(db.engine)
             def _this_worker_destroy():
                 worker.destroy()
                 session.delete(worker)
@@ -1007,7 +1010,7 @@ def handle_get(json):
         else:
             where_clause = ""
 
-        if isinstance(db.session.bind.dialect, sqlite.dialect):
+        if IS_SQLITE:
             trunc_output=f'SUBSTR(execution.output,-{UI_OUTPUT_TRUNC},{UI_OUTPUT_TRUNC})'
             trunc_error=f'SUBSTR(execution.error,-{UI_OUTPUT_TRUNC},{UI_OUTPUT_TRUNC})'
         else:
@@ -1070,7 +1073,7 @@ def handle_get(json):
     #    )])})
     if json['object'] == 'batch':
         log.info('sending batch')
-        if isinstance(db.session.bind.dialect, sqlite.dialect):
+        if IS_SQLITE:
             duration_query='(JULIANDAY(e1.modification_date)-JULIANDAY(e1.creation_date))*24'
             worker_query='''SELECT batch,GROUP_CONCAT(name,',') FROM worker GROUP BY batch'''
         else:
@@ -1366,7 +1369,8 @@ def background():
     # while some tasks are pending without executions:
     #   look for a running worker:
     #      create a pending execution of this task for this worker
-    session = Session(db.engine)
+    with app.app_context():
+        session = Session(db.engine)
     worker_create_process_waiting_queue = []
     worker_create_process_queue = []
     log.info('Starting thread for {}'.format(os.getpid()))
@@ -1439,7 +1443,8 @@ def background():
             while len(worker_create_process_waiting_queue)>0 \
                     and len(worker_create_process_queue)<WORKER_CREATE_CONCURRENCY:
                 new_worker = worker_create_process_waiting_queue.pop(0)
-                new_worker.db_session = Session(db.engine)
+                with app.app_context():
+                    new_worker.db_session = Session(db.engine)
                 # verifying that the object is still in db to prevent recreation
                 if worker_exists(new_worker.w.worker_id, session):
                     log.warning(f'Launching creation process for worker {new_worker.hostname}.')
@@ -1471,7 +1476,8 @@ def background():
                 sleep(MAIN_THREAD_SLEEP)
                 try:
                     log.warning('Trying to reconnect...')
-                    session = Session(db.engine)
+                    with app.app_context():
+                        session = Session(db.engine)
                     break
                 except Exception:
                     pass

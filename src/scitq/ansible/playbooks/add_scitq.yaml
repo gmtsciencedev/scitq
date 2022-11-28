@@ -8,17 +8,19 @@
     - python3-pip
     state: present
   become: true
-- name: Install scitq dependency manually to avoid pip trouble
+- name: Install scitq from source
   ansible.builtin.shell:
-    cmd: cd /opt/scitq/src/ && pip3 install -r requirements.txt
-    warn: no
-  become: true
-- name: Install scitq
-  ansible.builtin.shell:
-    chdir: /opt/scitq/src/
+    chdir: /opt/scitq/
     cmd: python3 ./setup.py install
     warn: no
   become: true
+  when: scitq_src is defined
+- name: Install scitq from pip
+  ansible.builtin.shell:
+    cmd: pip3 install scitq=="{{ version }}"
+    warn: no
+  become: true
+  when: scitq_src is not defined
 - name: Add scitq-worker service template
   vars:
     concurrency: 1

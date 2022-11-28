@@ -132,8 +132,8 @@ class Database:
         self.do('DELETE FROM hosts WHERE host_id=?',(host_id,))
         self.connection.commit()
 
-def main():
-    parser = argparse.ArgumentParser(description='(yaf) Ansible SQLite inventory script')
+def decorate_parser(parser):
+    """Easing integration: all options to parser added here"""
     parser.add_argument('--list', default=None, action='store_true',
                 help="List all hosts")
     parser.add_argument('--host', type=str, action='store', default=None,
@@ -150,10 +150,10 @@ def main():
                 help="Add a host variable value (requires --variable, and thus the host to be known - with --add-host or --for-host), can be used several times")
     parser.add_argument('--del-host', type=str, action='store', default=None,
                 help=f"Delete a host")
+
+def inventory(args):
+    """Main fonction"""
     
-
-    args = parser.parse_args()
-
     if args.variable or args.value:
         if len(args.variable)!=len(args.value):
             raise (f"Use exactly the same number of values (value used: {args.value}) and variables (variables used: {args.variable})")
@@ -166,9 +166,9 @@ def main():
     db = Database(SQLITE_DATABASE)
 
     if args.list:
-        print(db.list())
+        return db.list()
     elif args.host is not None:
-        print(db.list_host(args.host))
+        return db.list_host(args.host)
     
     if args.add_host is not None:
         host = args.add_host
@@ -186,6 +186,19 @@ def main():
 
     if args.del_host is not None:
         db.del_host(args.del_host)
+    
+
+def scitq_inventory(list=False, host=None, add_host=None, in_group=DEFAULT_GROUP, 
+        for_host=None, variable=[], value=[], del_host=None):
+    """Same command as inventory but adapted for scitq internal use"""
+    return inventory(argparse.Namespace(list=list, host=host, add_host=add_host, 
+            in_group=in_group, for_host=for_host, variable=variable, 
+            value=value, del_host=del_host))
 
 if __name__=="__main__":
-    main()
+    parser = argparse.ArgumentParser(description='(yaf) Ansible SQLite inventory script')
+    decorate_parser(parser)
+    args = parser.parse_args()
+    result = inventory(args)
+    if result:
+        print(result)

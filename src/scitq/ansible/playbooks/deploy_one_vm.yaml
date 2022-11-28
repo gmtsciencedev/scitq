@@ -46,10 +46,12 @@
             ansible.builtin.file:
                     path: "{{ scitq_src }}/src/build"
                     state: absent
+            when: scitq_src is defined
           - name: Clean source 2
             ansible.builtin.file:
                     path: "{{ scitq_src }}src/dist"
                     state: absent
+            when: scitq_src is defined
                     
 - name: Prepare managing servers
   hosts: managers
@@ -74,6 +76,7 @@
               src: "{{ scitq_src }}/src"
               dest: /opt/scitq/
             become: true
+            when: scitq_src is defined
           - include_tasks: add_docker.yaml
           - include_tasks: add_nfs.yaml
           - include_tasks: add_scratch.yaml

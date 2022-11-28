@@ -1,2 +1,0 @@
-recursive-include scitq/templates *
-recursive-include scitq/static *

@@ -27,7 +27,7 @@ If deploy fails (it will be tried 3 times in automatic mode) and you want to und
 
 ```bash
 source 7624350872955771-openrc.sh
-cd /root/ansible/playbooks
+cd $(scitq-manage ansible path)
 ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=node5 concurrency=1 status=running flavor=c2-180 region=GRA7 target=myscitq.server.dom"
 ```
 The first line is loading OpenStack credentials (this file is provided by your cloud provider).
@@ -39,7 +39,6 @@ The third line is the deploying command, the same that scitq-server is using. Th
 Sometimes, it is very convenient to launch specific commands to some nodes:
 
 ```bash
-cd /root/ansible/playbooks
 ansible "node2 node6" -m shell -a "sudo docker ps"
 ```
 
@@ -66,22 +65,24 @@ Just in case, but you should not need that.
 
 ```bash
 source 7624350872955771-openrc.sh
-cd /root/ansible/playbooks
+cd $(scitq-manage ansible path)
 ansible-playbook destroy_vm.yaml --extra-vars "nodename=node5"
 ```
 
 
-#### Playing with Ansible inventory (/etc/ansible/inventory/sqlite_inventory.py)
+#### Playing with Ansible inventory (sqlite_inventory.py)
 
-Just query the file with 
+Ansible see the file as a standalone python script in scitq extra inventory source (the one you added to your `inventory=...` ansible.cfg file). You can call the file directly like Ansible, but `scitq-manage` can be used to call it in a simpler way:
+
+Just query the database with 
 ```bash
-/etc/ansible/inventory/sqlite_inventory.py -h
+scitq-manage ansible inventory -h
 ```
 
 ```bash
-usage: sqlite_inventory.py [-h] [--list] [--host HOST] [--add-host ADD_HOST] [--in-group IN_GROUP]
-                           [--for-host FOR_HOST] [--variable VARIABLE] [--value VALUE]
-                           [--del-host DEL_HOST]
+usage: scitq-manage ansible inventory [-h] [--list] [--host HOST] [--add-host ADD_HOST] [--in-group IN_GROUP]
+                                      [--for-host FOR_HOST] [--variable VARIABLE] [--value VALUE]
+                                      [--del-host DEL_HOST]
 
 (yaf) Ansible SQLite inventory script
 
@@ -101,7 +102,7 @@ optional arguments:
 
 This is a very simple script but it can give you all the details you need on scitq Ansible managed workers. The very basic command is :
 ```bash
-/etc/ansible/inventory/sqlite_inventory.py --list
+scitq-manage ansible inventory --list
 ```
 
 

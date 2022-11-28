@@ -1,0 +1,28 @@
+[scitq]
+
+[scitq:children]
+managers
+workers
+
+[scitq:vars]
+version="1.0b3"
+
+[managers]
+localhost ansible_connection=local
+
+[workers:vars]
+ansible_python_interpreter=/usr/bin/env python3
+ansible_user=ubuntu
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+swap_proportion = 0.1
+
+
+[workers:children]
+ovh
+manual
+
+[workers]
+
+[ovh]
+
+[manual]

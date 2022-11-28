@@ -50,6 +50,9 @@ sure ansible folder can be accessed with `cd /root/ansible`
 cd /root
 ln -s /ansible
 ```
+
+
+
 ### Install custom ansible collections
 
 For mdadm:
@@ -104,3 +107,4 @@ ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=mynode region=UK1 fla
 ```
 ansible-playbook destroy_vm.yaml --extra-vars "nodename=mynode"
 ```
+

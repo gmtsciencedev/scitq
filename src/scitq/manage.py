@@ -5,9 +5,13 @@ from subprocess import run
 import argparse
 from datetime import datetime
 import os 
+from .util import package_path
+from .ansible.scitq.sqlite_inventory import inventory, decorate_parser
+import shutil
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
+DEFAULT_ANSIBLE_INVENTORY = '/etc/ansible/inventory'
 
 def converter(x,long): 
     """A small conversion function for items in lists"""
@@ -125,6 +129,15 @@ def main():
     task_update_subparser.add_argument('-j','--input', help='The new input for the task', type=str, default=None)
     task_update_subparser.add_argument('-o','--output', help='The new output for the task', type=str, default=None)
     
+    ansible_parser = subparser.add_parser('ansible', help='The following options are to work with ansible subcode')
+    subsubparser=ansible_parser.add_subparsers(dest='action')
+    ansible_path_parser=subsubparser.add_parser('path',help='Return the path of scitq Ansible playbooks')
+    ansible_install_parser=subsubparser.add_parser('install',help='Install scitq Ansible inventory files')
+    ansible_install_parser.add_argument('-p','--path', help=f'specify install path (default to {DEFAULT_ANSIBLE_INVENTORY})',
+         type=str, default=DEFAULT_ANSIBLE_INVENTORY)
+    ansible_inventory_parser=subsubparser.add_parser('inventory',help='Execute the internal inventory command')
+    decorate_parser(ansible_inventory_parser)
+
 
     args=parser.parse_args()
     s = Server(args.server, get_timeout=args.timeout)
@@ -296,5 +309,28 @@ def main():
             else:
                 raise RuntimeError('You must specify either name (-n) or id (-i)')
             s.task_delete(id)
+    
+
+    elif args.object=='ansible':
+
+        if args.action=='install':
+            if not os.path.exists(args.path):
+                print('Creating directory', args.path)
+                os.makedirs(args.path)
+            print('Installing files')
+            shutil.copy(package_path('ansible','scitq','sqlite_inventory.py'), 
+                os.path.join(args.path,'sqlite_inventory.py') )
+            os.chmod(os.path.join(args.path,'sqlite_inventory.py'), 0o770)
+            shutil.copy(package_path('ansible','scitq','01-scitq-default'), 
+                os.path.join(args.path,'scitq-default') )
+        elif args.action=='path':
+            print(package_path('ansible','playbooks'))
+
+        #sql_inventory = package_path('ansible','scitq','sqlite_inventory.py')
+        elif args.action=='inventory':
+            result=inventory(args)
+            if result:
+                print(result)
+
 if __name__=="__main__":
     main()

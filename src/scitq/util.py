@@ -1,4 +1,5 @@
 import threading
+import os
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -26,3 +27,7 @@ class PropagatingThread(threading.Thread):
         if self.exc:
             raise self.exc
         return super(PropagatingThread, self).is_alive()
+
+def package_path(*subdirs):
+    """A very stupid hack to point to actual package data"""
+    return os.path.join(os.path.dirname(__file__), *subdirs)

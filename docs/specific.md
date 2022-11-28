@@ -8,14 +8,11 @@ NFS has been used since the beginning of scitq usage, but we tend to not use it 
 
 NFS is hardcoded to be mounted on `/data` and as for now there is no way to change that easily as this directory will be used in the NFS server, in the workers and in the container (dockers) where your tasks are launched.
 
-#### Changes in scitq server `/etc/ansible/inventory/common`
+#### Changes in scitq server ansible configuration (`/etc/ansible/inventory/02-scitq` by default)
 
-If you use NFS just set up `nfs_server` with some short name for your server and `nfs_server_address` with the IP or name with which your workers will see your NFS server. Those variables are in `[all:vars]`.
+If you use NFS just set up `nfs_server` with some short name for your server and `nfs_server_address` with the IP or name with which your workers will see your NFS server. Those variables are in `[scitq:vars]` as explained in [Configure ansible components](install.md#configure-ansible-components).
 
-Your server short name should also be added in `[managers]` section together, a line just before the localhost definition for the scitq server itself which looks like that:
-`localhost ansible_connection=local keyname=mykeyname`
-
-In the provided file, the exemple server shortname is `mynfsserver` and the long server name is `mynfsserver.my.domain` (but it could be an IP address as well).
+Your server short name should also be added in a `[managers]` section.
 
 
 #### Additional steps on scitq server
@@ -75,16 +72,18 @@ Here we will focus on worker access to S3 and we suppose you have already setup 
 
 #### With Ansible
 
-Just open the `/etc/ansible/inventory` file matching your provider, let's say for instance `/etc/ansible/inventory/ovh` and configure s3 variables in `[ovh:vars]` section:
+Just open the scitq ansible configuration file (`/etc/ansible/inventory/02-scitq` by default) and configure s3 variables in `[workers:vars]` section:
 
 ```
-[ovh:vars]
+[workers:vars]
 [...]
 s3_key_id=xxxxx
 s3_access_key=xxxx
 s3_region=gra
 s3_url=https://s3.gra.perf.cloud.ovh.net
 ```
+
+You can also put these variables under more specific provider configuration (for instance you could replace `[workers:vars]` by `[ovh:vars]`), so that different provider use different s3 settings.
 
 You must also setup S3 access on your permanent workers, and be careful to set your AWS_ENDPOINT_URL variable in scitq-worker service `/etc/systemd/system/scitq-worker.service` definition as stated in [parameters](parameters.md#aws_endpoint_url). If you change this file do not forget to reload and apply:
 
