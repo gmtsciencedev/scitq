@@ -15,7 +15,7 @@ It excludes unix services and other never ending tasks, or task whoes ending sta
 
 
 ### predictible (in terms of requirements: cpu, mem, disk)
-That's the last one but not the least. Some programs are extremely nice (like pigz), they let you choose how many thread you will use and consume a reasonable amount of memory, plus they are very constant in their needs (you do not have to monitor them for hours to guess how they will behave). Some programs are very bad in that regard, they tend to be very variable in their needs during their computation time and they offer little or no controle over it. They are not impossible to work with but will give you a hard time.
+That's the last one but not the least. Some programs are extremely nice (like pigz), they let you choose how many thread you will use and consume a reasonable amount of memory, plus they are very constant in their needs (you do not have to monitor them for hours to guess how they will behave). Some programs are very bad in that regard, they tend to be very variable in their needs during their computation time and they offer little or no control over it. They are not impossible to work with but will give you a hard time.
 
 scitq will not help you to know what your needs are so the basic rule is to run one task completely either with a resource surveying program (like Zabbix, free and excellent), or simply using top and watching.
 
@@ -164,6 +164,9 @@ scitq-launch -o 's3://results/test/' -d 'ubuntu:latest' touch /output/helloworld
 
 `--`
 :   Like in most shell command this marks the end of `scitq-launch` options, so that what come next will be interpreted as the command to launch. It is useful if your command starts with dash (welcome to crapy design) or, which is more likely, in case your docker has a builtin command automatically launched and you just have to provide options (thus starting with dash). By default (without specifying `--` ) 
+
+!!! note
+    Be careful when you use quotes and variables with scitq-launch, see [using-variables-and-quote-with-scitq-launch](troubleshoot.md#using-variables-and-quote-with-scitq-launch).
 
 ## Managing your task executions
 

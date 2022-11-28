@@ -153,3 +153,33 @@ Note the `-t 600` which tells the client library to be very patient (600s) befor
 !!! note
     Be aware that REST is poorly adapted to large dataset and a modest 69Mb log (2 million lines, though) ended up as 19Gb REST message eating that amount of memory in scitq-server and at scitq-manage level upon reception. It did work, though, but I was looking at the server with top and added several swap files (as initially the server had only 8Gb memory...), which can be done live if you're in such a corner (the above procedure is extremely quick).
 
+### Using variables and quote with scitq-launch
+
+`scitq-launch` does the maximum to be userfriendly however it is used in a shell and there are certain limits.
+
+Quotes are "guessed" by scitq-launch in an "as-safe-as-possible-approach". scitq-launch has no way of knowing what was the quoting character you used in the first place. But it will receive one token with a space in it which only occurs if some quoting was there. If a single or double quote is present in the string, it will use the other quoting character to requote the token. In doubt it will use the single quote character which is safer as it prevents shell interpretation to a higher degree.
+
+There are consequences for variable. Imaging the following situation:
+
+```bash
+OUTPUT=2
+scitq-launch -n task1 sh -c "OUTPUT=1; echo $OUTPUT"
+scitq-launch -n task2 sh -c 'OUTPUT=1; echo $OUTPUT'
+scitq-launch -n task3 sh -c "OUTPUT=1; echo \$OUTPUT '1'"
+```
+
+Can you guess what will be the output of task1, task2, task3?
+
+- task1: 2
+- task2: 1
+- task3: /scratch/tmpxxxxxxxxx/output/ 1
+
+In the first case, using double quotes enabled the local shell to replace immediately $OUTPUT by its value, so that scitq-launch never received the `$OUTPUT` at all. 
+
+In the second case, using simple quotes prevented any interpretation, but in the final shell, the sh shell run within the task.
+
+Now the complex case. In the third case, the first shell did not interpret as $ was backslashed, yet because the command contain a single quote character, the task that was queued was `sh -c "OUTPUT=1; echo $OUTPUT '1'"` (note than now the $ sign is no more backslashed). During the task launching, an intermediary shell was launched, inheriting the special variables of non-docker commands (OUTPUT, INPUT, TEMP, CPU), which interpreted the variable, thus $OUTPUT was replaced by this special value and the final shell sh never saw the `$OUTPUT` variable.
+
+Note that in the second case, if we had not redifined OUTPUT it would have inherited the special value.
+
+To avoid that complexity, it is recommanded to use the first scheme or the second and not the third, and do not reassign special variables.

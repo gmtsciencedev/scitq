@@ -48,7 +48,9 @@ def launch(docker, docker_option, uid, gid,
 def command_join(command_list):
     """rejoin a shlex.splitted command
     shlex.join should do that but does strange things with some operands (<,>,|)"""
-    return " ".join([word if ' ' not in word else "'{}'".format(word) for word in command_list])
+    return " ".join([word if ' ' not in word else (
+            '"{}"'.format(word) if "'" in word else "'{}'".format(word) )
+        for word in command_list])
 
 def main():
     argv = list(sys.argv[1:])
