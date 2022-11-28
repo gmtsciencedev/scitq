@@ -405,14 +405,15 @@ class Server:
             'signal': signal
         })
     
-    def worker_deploy(self, number, batch, region, flavor, concurrency):
+    def worker_deploy(self, number, batch, region, flavor, concurrency, prefetch=0):
         """Deploy (and create) some workers"""
         return self.put('/workers/deploy', data={
             'number':int(number),
             'region':region,
             'flavor':flavor,
             'batch':batch,
-            'concurrency':concurrency
+            'concurrency':concurrency,
+            'prefetch': prefetch
         })
     
     def batch_stop(self,batch,signal=0):

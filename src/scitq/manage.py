@@ -277,9 +277,9 @@ def main():
             else:
                 raise RuntimeError(f'No execution for this task {id}')
             if args.output:
-                print(tabulate(execution['output'],tablefmt ="plain"))
+                print(execution['output'])
             elif args.error:
-                print(tabulate(execution['error'],tablefmt="plain"))
+                print(execution['error'])
             else:
                 print(tabulate([[execution['output'],execution['error']]],headers=["output",],tablefmt ="plain"))
         

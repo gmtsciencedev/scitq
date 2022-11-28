@@ -36,6 +36,7 @@ DEFAULT_INPUT_DIR = '/input'
 DEFAULT_OUTPUT_DIR = '/output'
 DEFAULT_RESOURCE_DIR = '/resource'
 DEFAULT_TEMP_DIR = '/tmp'
+OUTPUT_LIMIT = 1024 * 128
 
 if os.path.exists('/data'):
     CONTAINER_LAUNCH_COMMAND = f'docker run --rm -d -v /data:/data \
@@ -129,19 +130,24 @@ class Executor:
                         'INPUT':self.input_dir,
                         'OUTPUT':self.output_dir,
                         'TEMP': self.temp_dir,
-                        'RESOURCE': self.resource_dir})
+                        'RESOURCE': self.resource_dir},
+                    limit=OUTPUT_LIMIT)
             self.run_slots.value -= 1
             self.s.execution_update(execution_id, pid=self.process.pid, status='running')
         else:
             # this is the safe way to keep docker process attached while still getting its container id
             try:
+                self.process = None
                 self.container_id = subprocess.run(command, shell=True,
                     capture_output=True, check=True).stdout.decode('utf-8').strip()
                 self.process = await asyncio.create_subprocess_shell(
                         CONTAINER_ATTACH_COMMAND.format(container_id=self.container_id),
-                        stdout=PIPE, stderr=PIPE)
+                        stdout=PIPE, stderr=PIPE, limit=OUTPUT_LIMIT)
                 self.run_slots.value -= 1
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running')
+            except subprocess.CalledProcessError as e:
+                self.s.execution_error_write(execution_id,e.stderr.decode('utf-8'))
+                self.s.execution_update(execution_id, status='failed')
             except Exception as e:
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
@@ -303,55 +309,56 @@ class Executor:
         await self.execute(execution_id=self.execution_id, 
                    command=contained_command)
                     
-        log.warning('Launched')
-        while True:
-            log.warning(f"... {self.execution_id} ...")
-            returncode = await self.get_output(self.execution_id)
-            log.warning("...")
-            if returncode is not None:
-                log.warning('... done')
-                await self.get_output(self.execution_id)
-                try:
-                    output_files = self.upload()
-                except Exception as e:
-                    output_files = ''
-                    self.s.execution_error_write(self.execution_id,
-                        traceback.format_exc())
-                    returncode=-1000
-                if returncode!=0:
-                    log.error(f'... task failed with error code {returncode}')
-                log.warning(f'Run slots: {self.run_slots.value}')
+        if not self.process is None:
+            log.warning('Launched')
+            while True:
+                log.warning(f"... {self.execution_id} ...")
+                returncode = await self.get_output(self.execution_id)
+                log.warning("...")
+                if returncode is not None:
+                    log.warning('... done')
+                    await self.get_output(self.execution_id)
+                    try:
+                        output_files = self.upload()
+                    except Exception as e:
+                        output_files = ''
+                        self.s.execution_error_write(self.execution_id,
+                            traceback.format_exc())
+                        returncode=-1000
+                    if returncode!=0:
+                        log.error(f'... task failed with error code {returncode}')
+                    log.warning(f'Run slots: {self.run_slots.value}')
 
-                self.s.execution_update(self.execution_id, 
-                    status='succeeded' if returncode==0 else 'failed', 
-                    return_code=returncode, output_files=output_files)
-                self.run_slots.value += 1
-                if returncode==0:
-                    self.clean()
-                break
-            else:
-                try:
-                    signal=self.execution_queue.get(block=False)
-                    if self.container:
-                        # sending a signal on the docker run process itself will not have any effect
-                        # we must launch another process to send the signal to docker service instead
-                        if self.container_id:
-                            if signal == SIGTERM:
-                                subprocess.run(['docker','stop',self.container_id])
-                            elif signal == SIGKILL:
-                                subprocess.run(['docker','kill',self.container_id])
-                            elif signal == SIGTSTP:
-                                subprocess.run(['docker','pause',self.container_id])
-                            elif signal == SIGCONT:
-                                subprocess.run(['docker','unpause',self.container_id])
-                            else:
-                                log.warning(f'Cannot launch signal {signal} with docker...')
-                    else:
-                        self.process.send_signal(signal)
-                    log.warning(f'...signal {signal} sent')    
+                    self.s.execution_update(self.execution_id, 
+                        status='succeeded' if returncode==0 else 'failed', 
+                        return_code=returncode, output_files=output_files)
+                    self.run_slots.value += 1
+                    if returncode==0:
+                        self.clean()
+                    break
+                else:
+                    try:
+                        signal=self.execution_queue.get(block=False)
+                        if self.container:
+                            # sending a signal on the docker run process itself will not have any effect
+                            # we must launch another process to send the signal to docker service instead
+                            if self.container_id:
+                                if signal == SIGTERM:
+                                    subprocess.run(['docker','stop',self.container_id])
+                                elif signal == SIGKILL:
+                                    subprocess.run(['docker','kill',self.container_id])
+                                elif signal == SIGTSTP:
+                                    subprocess.run(['docker','pause',self.container_id])
+                                elif signal == SIGCONT:
+                                    subprocess.run(['docker','unpause',self.container_id])
+                                else:
+                                    log.warning(f'Cannot launch signal {signal} with docker...')
+                        else:
+                            self.process.send_signal(signal)
+                        log.warning(f'...signal {signal} sent')    
 
-                except queue.Empty:
-                    pass
+                    except queue.Empty:
+                        pass
 
 class Client:
     def __init__(self, server, concurrency, name, batch):
