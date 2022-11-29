@@ -49,7 +49,8 @@ systemctl start nfs-server
 Next you should change your `/etc/exports` file to add some `/data` export. 
 A minimal exports file could be:
 
-```/etc/exports
+**/etc/exports**:
+```fs
 /data   127.0.0.1(rw,sync,no_subtree_check,no_root_squash) 
 ```
 
