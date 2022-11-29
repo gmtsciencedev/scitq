@@ -183,7 +183,7 @@ for sample in samples.columns:
     s3base = f's3://rnd/camisim/{name}/{sample}'
     tasks.append(
         s.task_create(
-            command=f"sh -c 'metagenomesimulation.py /input/config.ini > /output/output.log'",
+            command=f"metagenomesimulation.py /input/config.ini",
             name=sample,
             batch=name,
             input=' '.join([f'{s3base}/{item}' for item in [
