@@ -183,7 +183,7 @@ for sample in samples.columns:
     s3base = f's3://rnd/camisim/{name}/{sample}'
     tasks.append(
         s.task_create(
-            command=f'sh -c "metagenomesimulation.py /input/config.ini > /output/output.log"',
+            command=f"sh -c 'metagenomesimulation.py /input/config.ini > /output/output.log'",
             name=sample,
             batch=name,
             input=' '.join([f'{s3base}/{item}' for item in [
@@ -203,3 +203,5 @@ s.worker_deploy(number=5,
 s.join(tasks, retry=2)
 ```
 
+!!! note
+    remember to use `s.task_create(command="sh -c '...'")` (double quote outside) and not `s.task_create(command='sh -c "..."')` (simple quote outside) to prevent intermediary shell interpretation.
