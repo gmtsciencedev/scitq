@@ -18,6 +18,7 @@ import traceback
 import shutil
 import subprocess
 from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
+import shlex
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -38,23 +39,22 @@ DEFAULT_RESOURCE_DIR = '/resource'
 DEFAULT_TEMP_DIR = '/tmp'
 OUTPUT_LIMIT = 1024 * 128
 
-if os.path.exists('/data'):
-    CONTAINER_LAUNCH_COMMAND = f'docker run --rm -d -v /data:/data \
-        -v {{input_dir}}:{DEFAULT_INPUT_DIR} \
-        -v {{output_dir}}:{DEFAULT_OUTPUT_DIR} \
-        -v {{temp_dir}}:{DEFAULT_TEMP_DIR} \
-        -v {{resource_dir}}:{DEFAULT_RESOURCE_DIR} \
-        -e "CPU={{cpu}}" \
-        {{extra_options}} {{container}} {{command}}'
-else:
-    CONTAINER_LAUNCH_COMMAND = f'docker run --rm -d \
-        -v {{input_dir}}:{DEFAULT_INPUT_DIR} \
-        -v {{output_dir}}:{DEFAULT_OUTPUT_DIR} \
-        -v {{temp_dir}}:{DEFAULT_TEMP_DIR} \
-        -v {{resource_dir}}:{DEFAULT_RESOURCE_DIR} \
-        -e "CPU={{cpu}}" \
-        {{extra_options}} {{container}} {{command}}'
-CONTAINER_ATTACH_COMMAND = 'docker attach {container_id}'
+def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_options,
+        container, command):
+    docker_cmd = ['docker','run', '--rm', '-d']
+    if os.path.exists('/data'):
+        docker_cmd.extend(['-v', '/data:/data'])
+    docker_cmd.extend([
+        '-v', f'{input_dir}:{DEFAULT_INPUT_DIR}',
+        '-v', f'{output_dir}:{DEFAULT_OUTPUT_DIR}',
+        '-v', f'{temp_dir}:{DEFAULT_TEMP_DIR}',
+        '-v', f'{resource_dir}:{DEFAULT_RESOURCE_DIR}',
+        '-e', f'CPU={str(cpu)}'])
+    docker_cmd.extend(shlex.split(extra_options))
+    docker_cmd.append(container)
+    docker_cmd.extend(shlex.split(command)) 
+    log.warning(f'Final docker command: {" ".join(docker_cmd)}')
+    return docker_cmd
 
 def create_dir(base_dir, sub_dir):
     """A small helper function to create a subdirectory and return its name.
@@ -74,9 +74,11 @@ def create_dir(base_dir, sub_dir):
 
 def final_slash(path):
     """Return the string with a final slash if it has not already"""
-    if not path.endswith('/'):
-        path += '/'
-    return path
+    return path if path.endswith('/') else path+'/'
+
+def no_slash(path):
+    """Do the reverse of final_slash, remove the final slash if it had one"""
+    return path[:-1] if path.endswith('/') else path
 
 class Executor:
     """Executor represent the process in which the task is launched, it is also
@@ -115,7 +117,7 @@ class Executor:
         asyncio.run(self.run())
 
     # via: https://stackoverflow.com/questions/10756383/timeout-on-subprocess-readline-in-python/34114767?noredirect=1#comment55978734_10756738
-    async def execute(self, execution_id, command):
+    async def execute(self, execution_id):
         # Start child process
         # NOTE: universal_newlines parameter is not supported
         log.warning(f'Run slots: {self.run_slots.value}')
@@ -123,25 +125,39 @@ class Executor:
             log.warning(f'Overalocation, worker is out of run slot, have to wait...')
             sleep(POLLING_TIME)
 
+        self.process = None
         if not self.container:
-            self.process = await asyncio.create_subprocess_shell(command,
-                    stdout=PIPE, stderr=PIPE, env={
-                        'CPU':str(self.cpu),
-                        'INPUT':self.input_dir,
-                        'OUTPUT':self.output_dir,
-                        'TEMP': self.temp_dir,
-                        'RESOURCE': self.resource_dir},
-                    limit=OUTPUT_LIMIT)
-            self.run_slots.value -= 1
-            self.s.execution_update(execution_id, pid=self.process.pid, status='running')
+            try:
+                self.process = await asyncio.create_subprocess_exec(
+                        *shlex.split(self.command),
+                        stdout=PIPE, stderr=PIPE, env={
+                            'CPU':str(self.cpu),
+                            'INPUT': no_slash(self.input_dir),
+                            'OUTPUT': no_slash(self.output_dir),
+                            'TEMP': no_slash(self.temp_dir),
+                            'RESOURCE': no_slash(self.resource_dir)},
+                        limit=OUTPUT_LIMIT)
+                self.run_slots.value -= 1
+                self.s.execution_update(execution_id, pid=self.process.pid, status='running')
+            except Exception as e:
+                self.s.execution_error_write(execution_id,
+                        traceback.format_exc())
+                self.s.execution_update(execution_id, status='failed')
         else:
             # this is the safe way to keep docker process attached while still getting its container id
             try:
-                self.process = None
-                self.container_id = subprocess.run(command, shell=True,
+                self.container_id = subprocess.run(docker_command(command=self.command, 
+                        container=self.container,
+                        input_dir=self.input_dir,
+                        output_dir=self.output_dir,
+                        temp_dir=self.temp_dir,
+                        resource_dir=self.resource_dir,
+                        cpu=self.cpu,
+                        extra_options=self.container_options),
+                    shell=False,
                     capture_output=True, check=True).stdout.decode('utf-8').strip()
-                self.process = await asyncio.create_subprocess_shell(
-                        CONTAINER_ATTACH_COMMAND.format(container_id=self.container_id),
+                self.process = await asyncio.create_subprocess_exec(
+                        'docker','attach',self.container_id,
                         stdout=PIPE, stderr=PIPE, limit=OUTPUT_LIMIT)
                 self.run_slots.value -= 1
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running')
@@ -279,18 +295,6 @@ class Executor:
                 status='failed', 
                 return_code=returncode, output='')
             return None
-        if self.container is None:
-            contained_command = self.command
-        else:
-            contained_command = CONTAINER_LAUNCH_COMMAND.format(command=self.command, 
-                container=self.container,
-                input_dir=self.input_dir,
-                output_dir=self.output_dir,
-                temp_dir=self.temp_dir,
-                resource_dir=self.resource_dir,
-                cpu=self.cpu,
-                extra_options=self.container_options
-                )
         
         while self.s.task_get(self.task_id).status == 'paused' or self.run_slots.value<=0:
             if self.run_slots.value<=0:
@@ -305,9 +309,8 @@ class Executor:
             self.clean()
             return None
         
-        log.warning(f'Launching job {self.execution_id}: {contained_command}')
-        await self.execute(execution_id=self.execution_id, 
-                   command=contained_command)
+        log.warning(f'Launching job {self.execution_id}: {self.command}')
+        await self.execute(execution_id=self.execution_id)
                     
         if not self.process is None:
             log.warning('Launched')

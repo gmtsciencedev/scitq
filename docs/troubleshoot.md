@@ -157,29 +157,46 @@ Note the `-t 600` which tells the client library to be very patient (600s) befor
 
 `scitq-launch` does the maximum to be userfriendly however it is used in a shell and there are certain limits.
 
-Quotes are "guessed" by scitq-launch in an "as-safe-as-possible-approach". scitq-launch has no way of knowing what was the quoting character you used in the first place. But it will receive one token with a space in it which only occurs if some quoting was there. If a single or double quote is present in the string, it will use the other quoting character to requote the token. In doubt it will use the single quote character which is safer as it prevents shell interpretation to a higher degree.
+When the launched command is not a shell, things are pretty simple, the only shell that can interpret the variable is the shell you are in when you run scitq-launch, and interpretation occurs only following the simple rules of shell interpretation:
+- the variable is called directly like : `scitq-launch echo $VAR`,
+- or the variable is used within a double quoted string : `scitq-launch echo "hello $VAR"`,
+- in all other case (backslashing the $ sign or using single quoted string), `$VAR` will not be interpreted and will show as `$VAR` in the output, like for instance : `scitq-launch echo 'hello $VAR'`.
 
-There are consequences for variable. Imaging the following situation:
+Note that `scitq-launch 'echo $VAR'` is improper and will throw an error `FileNotFoundError: [Errno 2] No such file or directory: 'echo $VAR'` in the error flow of the task.
+
+
+Things get trickier when the command launched is a shell 
 
 ```bash
-OUTPUT=2
-scitq-launch -n task1 sh -c "OUTPUT=1; echo $OUTPUT"
-scitq-launch -n task2 sh -c 'OUTPUT=1; echo $OUTPUT'
-scitq-launch -n task3 sh -c "OUTPUT=1; echo \$OUTPUT '1'"
+TEST=2
+scitq-launch -n task1 sh -c "TEST=1; echo $TEST"
+scitq-launch -n task2 sh -c 'TEST=1; echo $TEST'
 ```
 
-Can you guess what will be the output of task1, task2, task3?
+The first case is similar to what habbened in the `"hello $VAR"` exemple, `$TEST` is present in a double quoted string and is interpreted by the first shell, the one in which you run scitq-launch. In the second case, `$TEST` is protected by single quoted string ans is not interpreted, however as the task launched is a shell...
+
+Well can you guess what will be the output of those two tasks?
 
 - task1: 2
 - task2: 1
-- task3: /scratch/tmpxxxxxxxxx/output/ 1
 
-In the first case, using double quotes enabled the local shell to replace immediately $OUTPUT by its value, so that scitq-launch never received the `$OUTPUT` at all. 
+Two more things on that topic:
 
-In the second case, using simple quotes prevented any interpretation, but in the final shell, the sh shell run within the task.
+```bash
+scitq-launch -o s3://rnd/myresults/ sh -c 'echo "Hello world!" > $OUTPUT/result.txt'
+```
+You may remember that when tasks do not use a container, the special values `$OUTPUT`, `$INPUT`, `$TEMP`, `$RESOURCE` and `$CPU` (cf [No docker](usage.md#no-docker) can be used to still use input, output and resource subsystems. 
 
-Now the complex case. In the third case, the first shell did not interpret as $ was backslashed, yet because the command contain a single quote character, the task that was queued was `sh -c "OUTPUT=1; echo $OUTPUT '1'"` (note than now the $ sign is no more backslashed). During the task launching, an intermediary shell was launched, inheriting the special variables of non-docker commands (OUTPUT, INPUT, TEMP, CPU), which interpreted the variable, thus $OUTPUT was replaced by this special value and the final shell sh never saw the `$OUTPUT` variable.
 
-Note that in the second case, if we had not redifined OUTPUT it would have inherited the special value.
+Also be careful when trying to escape quotes. Say for instance you want to display `"l'avion"` (which means "the plane" in French). A rather nasty case because we have single and double quotes in that string, so the shell to do that is already a bit unfriendly:
 
-To avoid that complexity, it is recommanded to use the first scheme or the second and not the third, and do not reassign special variables.
+```bash
+echo "\"l'avion\""
+```
+
+With scitq, where you must protect from the initial shell and a python process, this becomes completely ugly:
+```bash
+scitq-launch echo "\"\\\"l'avion\\\"\""
+```
+
+

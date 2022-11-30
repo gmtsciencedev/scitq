@@ -88,6 +88,12 @@ cd $INPUT
 mysubcommand1 -db $RESOURCE/my.db *.fastq > $OUTPUT/myoutput.txt
 ```
 
+!!! note
+    `$OUTPUT`, `$INPUT`, `$RESOURCE` and `$TEMP` special variables contain strings **without a final slash** which makes script writing more natural (like above) as it is far easier to add a needed slash than to remove an unneeded one in shell.
+
+!!! note
+    `$CPU` is the only special variable **available with or without docker**: it contains the number of CPU divided by the concurrency.
+
 ### input (-i)
 As explained above this option let you specify some files that will be downloaded before the task is launched and available in `/input` folder or in the folder stored in `INPUT` environmental variable if you do not use docker.
 

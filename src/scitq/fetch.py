@@ -101,6 +101,13 @@ class BotoSession(boto3.session.Session):
             kwargs['endpoint_url'] = os.environ.get("AWS_ENDPOINT_URL")
         return super().client(*args, **kwargs)
 
+def get_s3():
+    if os.environ.get("AWS_ENDPOINT_URL"):
+        return boto3.resource('s3', 
+            endpoint_url=os.environ.get("AWS_ENDPOINT_URL"))
+    else:
+        return boto3.resource('s3')
+
 @retry_if_it_fails(RETRY_TIME)
 def s3_get(source, destination):
     """S3 downloader: download source expressed as s3://bucket/path_to_file 
@@ -109,8 +116,14 @@ def s3_get(source, destination):
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(source).groupdict()
     try:
-        BotoSession().client('s3').download_file(uri_match['bucket'],
-            uri_match['path'],destination)
+        if uri_match['path'].endswith('/'):
+            bucket=get_s3().Bucket(uri_match['bucket'])
+            for obj in bucket.objects.filter(Prefix=uri_match['path']):
+                destination_name = os.path.relpath(obj.key, uri_match['path'])
+                bucket.download_file(obj.key, destination_name)
+        else:
+            BotoSession().client('s3').download_file(uri_match['bucket'],
+                uri_match['path'],destination)
     except botocore.exceptions.ClientError as error:
         if 'Not Found' in error.response.get('Error',{}).get('Message',None):
             raise FetchError(f'{source} was not found')
