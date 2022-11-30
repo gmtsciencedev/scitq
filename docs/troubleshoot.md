@@ -158,6 +158,7 @@ Note the `-t 600` which tells the client library to be very patient (600s) befor
 `scitq-launch` does the maximum to be userfriendly however it is used in a shell and there are certain limits.
 
 When the launched command is not a shell, things are pretty simple, the only shell that can interpret the variable is the shell you are in when you run scitq-launch, and interpretation occurs only following the simple rules of shell interpretation:
+
 - the variable is called directly like : `scitq-launch echo $VAR`,
 - or the variable is used within a double quoted string : `scitq-launch echo "hello $VAR"`,
 - in all other case (backslashing the $ sign or using single quoted string), `$VAR` will not be interpreted and will show as `$VAR` in the output, like for instance : `scitq-launch echo 'hello $VAR'`.
@@ -173,7 +174,7 @@ scitq-launch -n task1 sh -c "TEST=1; echo $TEST"
 scitq-launch -n task2 sh -c 'TEST=1; echo $TEST'
 ```
 
-The first case is similar to what habbened in the `"hello $VAR"` exemple, `$TEST` is present in a double quoted string and is interpreted by the first shell, the one in which you run scitq-launch. In the second case, `$TEST` is protected by single quoted string ans is not interpreted, however as the task launched is a shell...
+The first case is similar to what happened in the `"hello $VAR"` exemple, `$TEST` is present in a double quoted string and is interpreted by the first shell, the one in which you run scitq-launch. In the second case, `$TEST` is protected by single quoted string ans is not interpreted, however as the task launched is a shell...
 
 Well can you guess what will be the output of those two tasks?
 
