@@ -60,6 +60,7 @@ scitq-launch -d mypublicdocker mycommand --myoption myarg
 ```
 
 Then generally with docker, you mount volume(s) with docker -v option so that you can access some external files to the docker and recover some results file. Here scitq will automatically propose several mounts or mapping automatically. There are 4 of them:
+
 - /data : it is used in [NFS](specific.md#using-nfs) context. If you activated NFS support in scitq then /data will be available in /data in the docker context (it is the only mount available also out of docker context),
 - /input : we will cover that just after with [input](#input--i) option, if you specify any input option, the files will be made available to your task in that folder,
 - /resource : it is very much like /input, but related to [resource](#resource--r) option. The difference with input is that resources are shared between tasks.

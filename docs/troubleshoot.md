@@ -186,7 +186,7 @@ Two more things on that topic:
 ```bash
 scitq-launch -o s3://rnd/myresults/ sh -c 'echo "Hello world!" > $OUTPUT/result.txt'
 ```
-You may remember that when tasks do not use a container, the special values `$OUTPUT`, `$INPUT`, `$TEMP`, `$RESOURCE` and `$CPU` (cf [No docker](usage.md#no-docker) can be used to still use input, output and resource subsystems. 
+You may remember that when tasks do not use a container, the special values `$OUTPUT`, `$INPUT`, `$TEMP`, `$RESOURCE` and `$CPU` (cf [No docker](usage.md#no-docker)) can be used to still use input, output and resource subsystems. 
 
 
 Also be careful when trying to escape quotes. Say for instance you want to display `"l'avion"` (which means "the plane" in French). A rather nasty case because we have single and double quotes in that string, so the shell to do that is already a bit unfriendly:
