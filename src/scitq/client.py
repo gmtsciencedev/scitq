@@ -88,7 +88,8 @@ class Executor:
 
     def __init__(self, server, execution_id, task_id, command, input, output, 
                 container, container_options, execution_started, execution_queue,
-                cpu, resource_dir, resource, resources_db, run_slots, worker_id):
+                cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore,
+                worker_id):
         self.s = Server(server, style='object')
         self.worker_id = worker_id
         self.execution_id = execution_id
@@ -112,6 +113,7 @@ class Executor:
         self.resource=resource
         self.resources_db=resources_db
         self.run_slots=run_slots
+        self.run_slots_semaphore=run_slots_semaphore
         self.container_id=None
         self.dynamic_read_timeout = READ_TIMEOUT
         asyncio.run(self.run())
@@ -123,7 +125,9 @@ class Executor:
         log.warning(f'Run slots: {self.run_slots.value}')
         while self.run_slots.value<=0:
             log.warning(f'Overalocation, worker is out of run slot, have to wait...')
+            self.run_slots_semaphore.release()
             sleep(POLLING_TIME)
+            self.run_slots_semaphore.acquire()
 
         self.process = None
         if not self.container:
@@ -168,7 +172,6 @@ class Executor:
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed')
-                
 
                 
 
@@ -296,12 +299,15 @@ class Executor:
                 return_code=returncode, output='')
             return None
         
+        self.run_slots_semaphore.acquire()
         while self.s.task_get(self.task_id).status == 'paused' or self.run_slots.value<=0:
             if self.run_slots.value<=0:
                 log.warning(f'Task {self.task_id} has been prefetched and is waiting')
             else:
                 log.warning(f'Task {self.task_id} is paused, waiting...')
+            self.run_slots_semaphore.release()
             sleep(POLLING_TIME)
+            self.run_slots_semaphore.acquire()
         # check a last time that this task is for us
         if self.s.execution_get(self.execution_id).status == 'failed':
             # the task is no longer for us so we bail out
@@ -311,7 +317,8 @@ class Executor:
         
         log.warning(f'Launching job {self.execution_id}: {self.command}')
         await self.execute(execution_id=self.execution_id)
-                    
+        self.run_slots_semaphore.release()
+
         if not self.process is None:
             log.warning('Launched')
             while True:
@@ -332,10 +339,12 @@ class Executor:
                         log.error(f'... task failed with error code {returncode}')
                     log.warning(f'Run slots: {self.run_slots.value}')
 
+                    self.run_slots_semaphore.acquire()
                     self.s.execution_update(self.execution_id, 
                         status='succeeded' if returncode==0 else 'failed', 
                         return_code=returncode, output_files=output_files)
                     self.run_slots.value += 1
+                    self.run_slots_semaphore.release()
                     if returncode==0:
                         self.clean()
                     break
@@ -384,6 +393,7 @@ class Client:
         self.manager = multiprocessing.Manager()
         self.resources_db = self.manager.dict()
         self.run_slots = multiprocessing.Value('i', concurrency)
+        self.run_slots_semaphore = multiprocessing.Semaphore(1)
 
 
     def declare(self):
@@ -430,7 +440,9 @@ class Client:
                         self.declare()
                         continue
                 if self.w.concurrency != self.concurrency:
+                    self.run_slots_semaphore.acquire()
                     self.run_slots.value += self.w.concurrency-self.concurrency
+                    self.run_slots_semaphore.release()
                     log.warning(f'Concurrency changed from {self.concurrency} to {self.w.concurrency}, adjusting run slots: {self.run_slots.value}')
                     self.concurrency = self.w.concurrency
                 if self.prefetch != self.w.prefetch:
@@ -460,6 +472,7 @@ class Client:
                                     'resource': task.resource,
                                     'resources_db': self.resources_db,
                                     'run_slots': self.run_slots,
+                                    'run_slots_semaphore': self.run_slots_semaphore,
                                     'worker_id': self.w.worker_id
                                 })
                             self.s.execution_update(execution.execution_id, status='accepted')
@@ -486,21 +499,25 @@ class Client:
                 for execution_id in list(self.executions.keys()):
                     if not self.executions[execution_id][0].is_alive():
                         del(self.executions[execution_id])
-                if self.concurrency+self.prefetch-len(self.executions)!=self.run_slots.value:
-                    log.warning(f'Race condition detected on process number')
-                    # ok time to look what is really going on
-                    running = waiting = 0
-                    for execution in self.s.worker_executions(self.w.worker_id):
-                        if execution.status=='running':
-                            running += 1
-                        elif execution.status=='accepted':
-                            waiting += 1
-                    log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
-                    log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
-                    log.warning(f'Overall we should have {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')
-                    if self.run_slots.value != self.concurrency - running:
-                        log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
-                        self.run_slots.value = self.concurrency - running
+                if self.run_slots_semaphore.acquire():
+                    if self.concurrency-len(self.executions)!=self.run_slots.value:
+                        log.warning(f'Race condition detected on process number')
+                        # ok time to look what is really going on
+                        running = waiting = 0
+                        for execution in self.s.worker_executions(self.w.worker_id):
+                            if execution.status=='running':
+                                running += 1
+                            elif execution.status=='accepted':
+                                waiting += 1
+                        log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
+                        log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
+                        log.warning(f'Overall we should have {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')
+                        if self.run_slots.value != self.concurrency - running:
+                            log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
+                            self.run_slots.value = self.concurrency - running
+                    self.run_slots_semaphore.release()
+                else:
+                    log.warning('Cannot estimate process number, giving up.')
             except Exception as e:
                 log.exception('An exception occured during worker main loop')
             sleep(POLLING_TIME)
