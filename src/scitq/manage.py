@@ -38,6 +38,8 @@ def main():
     parser.add_argument('-s','--server', help=F"Define a server, by default {DEFAULT_SERVER} this default value comes from the SCITQ_SERVER environment variable",type=str,default=DEFAULT_SERVER)
     parser.add_argument('-t','--timeout', type=int,
             help='Specify the get timeout for complex queries (default to 150s)' )
+    parser.add_argument('--version', action='store_true',
+            help="Print the version and exit")
 
     subparser=parser.add_subparsers(help='sub-command help',dest='object')
     worker_parser = subparser.add_parser('worker', help='The following options will only concern workers')
@@ -140,6 +142,12 @@ def main():
 
 
     args=parser.parse_args()
+
+    if args.version:
+        import pkg_resources
+        print(f"Version: {pkg_resources.get_distribution('scitq').version}")
+        return None
+
     s = Server(args.server, get_timeout=args.timeout)
     if args.object=='worker':
         if args.action =='list':

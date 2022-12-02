@@ -13,11 +13,13 @@ import hashlib
 import threading
 import subprocess
 from .util import PropagatingThread
+import concurrent.futures
 
 # how many time do we retry
 RETRY_TIME = 3
 RETRY_SLEEP_TIME = 10
 PUBLIC_RETRY_TIME = 20
+MAX_PARALLEL_S3 = 5
 
 class FetchError(Exception):
     pass
@@ -112,15 +114,26 @@ def get_s3():
 def s3_get(source, destination):
     """S3 downloader: download source expressed as s3://bucket/path_to_file 
     to destination - a local file path"""
-    log.info(f'S3 downloading {source} to {destination}')
+    log.warning(f'S3 downloading {source} to {destination}')
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(source).groupdict()
     try:
         if uri_match['path'].endswith('/'):
             bucket=get_s3().Bucket(uri_match['bucket'])
-            for obj in bucket.objects.filter(Prefix=uri_match['path']):
-                destination_name = os.path.relpath(obj.key, uri_match['path'])
-                bucket.download_file(obj.key, destination_name)
+            jobs = {}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_S3) as executor:
+                for obj in bucket.objects.filter(Prefix=uri_match['path']):
+                    destination_name = os.path.relpath(obj.key, uri_match['path'])
+                    destination_name = os.path.join(destination, destination_name)
+                    destination_path,_ = os.path.split(destination_name)
+                    log.warning(f'S3 downloading {obj.key} to {destination_name}')
+                    if not os.path.exists(destination_path):
+                        os.makedirs(destination_path)
+                    if not os.path.exists(destination_name):
+                        jobs[executor.submit(bucket.download_file, obj.key, destination_name)]=obj.key
+                for job in  concurrent.futures.as_completed(jobs):
+                    obj = jobs[job]
+                    log.warning(f'Done for {obj}: {job.result()}')
         else:
             BotoSession().client('s3').download_file(uri_match['bucket'],
                 uri_match['path'],destination)

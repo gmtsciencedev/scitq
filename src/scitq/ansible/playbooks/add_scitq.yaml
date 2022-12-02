@@ -8,10 +8,16 @@
     - python3-pip
     state: present
   become: true
+- name: Upgrade pip
+  ansible.builtin.shell:
+    cmd: pip3 install --upgrade pip setuptools
+    warn: no
+  become: true
+  when: scitq_src is not defined
 - name: Install scitq from source
   ansible.builtin.shell:
     chdir: /opt/scitq/
-    cmd: python3 ./setup.py install
+    cmd: pip3 install .
     warn: no
   become: true
   when: scitq_src is defined
