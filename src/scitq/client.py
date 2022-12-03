@@ -198,6 +198,7 @@ class Executor:
                 break
         self.s.execution_output_write(execution_id, ''.join(output))
 
+        now = time()
         while True:
             try:
                 error.append(

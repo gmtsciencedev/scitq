@@ -1379,28 +1379,40 @@ def background():
         task_attributions = False
         try:
             batch_already_dispatched = []
-            for task in session.query(Task).filter(
-                    Task.status=='pending').with_entities(Task.task_id, Task.batch):
-                if task.batch in batch_already_dispatched:
-                    continue
-                for worker in session.query(Worker).filter(
-                        Worker.status=='running',Worker.batch==task.batch).with_entities(
-                        Worker.worker_id,Worker.concurrency,Worker.prefetch):
-                    if session.query(Execution).filter(and_(
-                                Execution.worker_id==worker.worker_id,
-                                Execution.status.in_(['running','pending','accepted']))
-                            ).with_entities(func.count()).scalar()<(worker.concurrency+worker.prefetch):
-                        session.add(Execution(worker_id=worker.worker_id,
-                            task_id=task.task_id))
-                        session.query(Task).filter(Task.task_id==task.task_id).update(
-                            {'status':'assigned'}
-                        )
-                        log.info(f'Execution of task {task.task_id} proposed to worker {worker.worker_id}')
-                        task_attributions = True
-                        break
-                else:
-                    log.info(f'All worker are full for batch {task.batch}, giving up for this round')
-                    batch_already_dispatched.append(task.batch)
+            task_list = list(session.query(Task).filter(
+                    Task.status=='pending').with_entities(Task.task_id, Task.batch))
+            if task_list:
+                worker_list = list(session.query(Worker).filter(
+                            Worker.status=='running').with_entities(
+                            Worker.worker_id,Worker.batch,Worker.concurrency,Worker.prefetch))
+                execution_per_worker = {worker_id: count for worker_id,count in 
+                                session.query(Execution.worker_id,func.count(Execution.task_id)).filter(and_(
+                                    Execution.worker_id.in_(list([w.worker_id for w in worker_list])),
+                                    Execution.status.in_(['running','pending','accepted']))
+                                ).group_by(
+                                    Execution.worker_id
+                                )
+                }
+                
+                for task in task_list:
+                    if task.batch in batch_already_dispatched:
+                        continue
+                    for worker in worker_list:
+                        if worker.batch != task.batch:
+                            continue
+                        if execution_per_worker.get(worker.worker_id,0)<(worker.concurrency+worker.prefetch):
+                            session.add(Execution(worker_id=worker.worker_id,
+                                task_id=task.task_id))
+                            session.query(Task).filter(Task.task_id==task.task_id).update(
+                                {'status':'assigned'}
+                            )
+                            execution_per_worker[worker.worker_id] = execution_per_worker.get(worker.worker_id,0)+1
+                            log.info(f'Execution of task {task.task_id} proposed to worker {worker.worker_id}')
+                            task_attributions = True
+                            break
+                    else:
+                        log.info(f'All worker are full for batch {task.batch}, giving up for this round')
+                        batch_already_dispatched.append(task.batch)
             if task_attributions:
                 session.commit()
             now = datetime.utcnow()
