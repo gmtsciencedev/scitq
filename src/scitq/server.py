@@ -1,7 +1,6 @@
 from argparse import Namespace
 from datetime import datetime
-from re import X
-from flask import flash, Flask, redirect, jsonify, render_template, request, url_for, g
+from flask import Flask, render_template, request, g
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, select, delete, true
 from sqlalchemy.orm import Session
@@ -18,7 +17,7 @@ from subprocess import run
 import signal
 import json
 from sqlalchemy.dialects import sqlite
-from .util import PropagatingThread, package_path
+from .util import PropagatingThread, package_path, package_version
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 from .ansible.scitq.sqlite_inventory import scitq_inventory
 
@@ -935,17 +934,17 @@ class BatchDelete(Resource):
  #####  ### 
 
 
-
+package_version = package_version()
 @app.route('/ui/')
 def ui(name=None):
-    return render_template('ui.html', name=name)
+    return render_template('ui.html', name=name, package_version=package_version)
 @app.route('/ui/task/')
 def task():
-    return render_template('task.html')
+    return render_template('task.html',package_version=package_version)
 
 @app.route('/ui/batch/')
 def batch():
-    return render_template('batch.html')
+    return render_template('batch.html', package_version=package_version)
 
 #@app.route('/test/')
 
@@ -1376,12 +1375,11 @@ def background():
     log.info('Starting thread for {}'.format(os.getpid()))
     while True:
         log.info('Starting main loop')
-        task_attributions = False
         try:
-            batch_already_dispatched = []
             task_list = list(session.query(Task).filter(
                     Task.status=='pending').with_entities(Task.task_id, Task.batch))
             if task_list:
+                task_attributions = False
                 worker_list = list(session.query(Worker).filter(
                             Worker.status=='running').with_entities(
                             Worker.worker_id,Worker.batch,Worker.concurrency,Worker.prefetch))
@@ -1395,8 +1393,6 @@ def background():
                 }
                 
                 for task in task_list:
-                    if task.batch in batch_already_dispatched:
-                        continue
                     for worker in worker_list:
                         if worker.batch != task.batch:
                             continue
@@ -1410,11 +1406,8 @@ def background():
                             log.info(f'Execution of task {task.task_id} proposed to worker {worker.worker_id}')
                             task_attributions = True
                             break
-                    else:
-                        log.info(f'All worker are full for batch {task.batch}, giving up for this round')
-                        batch_already_dispatched.append(task.batch)
-            if task_attributions:
-                session.commit()
+                if task_attributions:
+                    session.commit()
             now = datetime.utcnow()
             log.warning('Looking for offline/online workers')
             session.expire_all()

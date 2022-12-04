@@ -31,3 +31,8 @@ class PropagatingThread(threading.Thread):
 def package_path(*subdirs):
     """A very stupid hack to point to actual package data"""
     return os.path.join(os.path.dirname(__file__), *subdirs)
+
+def package_version():
+    """Return scitq package version"""
+    import pkg_resources
+    return pkg_resources.get_distribution(__package__).version

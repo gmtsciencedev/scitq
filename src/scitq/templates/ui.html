@@ -45,12 +45,13 @@
         totals = data.totals;
         console.log('Received workers ',workers);
         console.log('Received totals ',totals);
-        total_div = "<div class=\"container total-div\"><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=pending'>Pending: "+totals[0]
+        total_div = "<div class=\"container total-div\" style='margin-top:0.5em'><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=pending'>Pending: "+totals[0]
             +"</a><a href='#'>Assigned: "+totals[1]
             +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=running'>Running: "+totals[2]
             +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=failed'>Failed: "+totals[3]
             +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=succeeded'>Succeeded: "+totals[4]
-            +"</a></div><a type='button' id='downloadall' target='_blank' href='/ui/batch/'  class='btn btn-secondary' style='margin-left: 5%;'>Batch view</a>";
+            +"</a></div><a type='button' id='downloadall' target='_blank' href='/ui/batch/'  class='btn btn-secondary' style='margin-left: 5%; margin-top: 0.4em'>Batch view</a>"+
+            "<p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>Version: {{ package_version }} </p>";
             
         worker_table = '<table class="table table-responsive text-center table-hover table-striped"><thead class=" table-secondary"><tr><th>Worker Name</th><th>Batch</th><th>Status</th><th>Concurrency</th><th>Prefetch</th><th>Accepted Tasks</th><th>Running Tasks</th><th>Successes</th><th>Failures</th><th>Total Tasks</th><th>CPU load / IOwait %</th><th>Free memory %</th><th>read/write GB</th><th></th></tr></thead>\n<tbody>\n';
         for (i=0; i<workers.length; i++) {
@@ -131,7 +132,7 @@
 </head>
 
 <title>scitq UI</title>
-<img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left;"/><h1 style="float:left; margin-right:1em;">scitq UI</h1>
+<img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left;margin-top:-0.5em"/><h1 style="float:left; margin-right:1em;">scitq UI</h1>
 
 
 <span id="workers">

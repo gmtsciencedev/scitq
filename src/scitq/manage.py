@@ -5,7 +5,7 @@ from subprocess import run
 import argparse
 from datetime import datetime
 import os 
-from .util import package_path
+from .util import package_path, package_version
 from .ansible.scitq.sqlite_inventory import inventory, decorate_parser
 import shutil
 
@@ -144,8 +144,7 @@ def main():
     args=parser.parse_args()
 
     if args.version:
-        import pkg_resources
-        print(f"Version: {pkg_resources.get_distribution('scitq').version}")
+        print(f"Version: {package_version()}")
         return None
 
     s = Server(args.server, get_timeout=args.timeout)
