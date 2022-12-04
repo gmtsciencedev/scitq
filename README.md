@@ -1,5 +1,14 @@
 # scitq : a distributed scientific task queue
 
+Item|Project site
+--|--
+Source|[https://github.com/gmtsciencedev/scitq](https://github.com/gmtsciencedev/scitq)
+Documentation|[https://scitq.readthedocs.io/](https://scitq.readthedocs.io/)
+Download|[https://pypi.org/project/scitq/](https://pypi.org/project/scitq/)
+Docker images|[worker](https://hub.docker.com/repository/docker/gmtscience/scitq-worker) and [server](https://hub.docker.com/repository/docker/gmtscience/scitq-server)
+Keywords|task, queue, job, python, distributed, science
+
+
 **scitq** is a simple task queue in python. It is a distributed task queue system. While quite generalist, it was primarily designed for scientific jobs, relatively heavy tasks that can be expressed as a Unix shell instruction. It also has a specificity of relatively feebly interdependent tasks.
 
 It has a few added capabilities apart from strict task distribution:

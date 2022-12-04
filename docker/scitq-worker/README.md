@@ -1,13 +1,13 @@
 # Minimal usage
 
 ```bash
-docker run --privileged --rm -d scitq-worker:1.0b19
+docker run --privileged --rm -d gmtscience/scitq-worker:latest
 ```
 
 # Recommanded usage
 
 ```bash
-docker run -v /tmp:/scratch -v /tmp:/var/lib/docker -e NAME=node1  -e SCITQ_SERVER=$SCITQ_SERVER --privileged --rm -d scitq-worker:1.0b19
+docker run -v /tmp:/scratch -v /tmp:/var/lib/docker -e NAME=node1  -e SCITQ_SERVER=$SCITQ_SERVER --privileged --rm -d gmtscience/scitq-worker:latest
 ```
 
 # dind or dood ?
