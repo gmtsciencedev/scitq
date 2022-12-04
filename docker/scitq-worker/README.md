@@ -4,7 +4,7 @@
 docker run --privileged --rm -d gmtscience/scitq-worker:latest
 ```
 
-# Recommanded usage
+# Recommended usage
 
 ```bash
 docker run -v /tmp:/scratch -v /tmp:/var/lib/docker -e NAME=node1  -e SCITQ_SERVER=$SCITQ_SERVER --privileged --rm -d gmtscience/scitq-worker:latest
@@ -14,7 +14,7 @@ docker run -v /tmp:/scratch -v /tmp:/var/lib/docker -e NAME=node1  -e SCITQ_SERV
 
 See https://shisho.dev/blog/posts/docker-in-docker/ for instance.
 
-dind is recommanded as it isolate worker dockers from general dockers in your setup, and it has been tested and validated.
+dind is recommended as it isolate worker dockers from general dockers in your setup, and it has been tested and validated.
 
 dood does not work at this time. It *should* work also but it get stuck when `docker attach` instruction is launched within python code: FYI, the command used in dood mode should be (BUT THIS DOES NOT WORK):
 

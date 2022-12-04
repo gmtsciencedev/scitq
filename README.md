@@ -42,10 +42,11 @@ remembered.
 
 ### Quick start
 
+Install:
 ```bash
-cd src
-python ./setup.py install
+pip install scitq
 ```
+
 Now in one shell, run the server:
 ```
 FLASK_APP=scitq.server flask run
@@ -64,8 +65,7 @@ You're done!
 
 Optionally look on http://127.0.0.1:5000/ui/ to see what happened.
 
-Look into the more detailed flask/README.md to learn
-about the different options.
+Look into the [documentation](https://scitq.readthedocs.io/) to learn about the different options.
 
 ### Special thanks
 
