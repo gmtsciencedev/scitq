@@ -19,6 +19,7 @@ import shutil
 import subprocess
 from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
 import shlex
+import concurrent.futures
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -29,6 +30,7 @@ DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
     "/tmp" if platform.system() in ['Windows','Darwin'] else "/scratch")
 BASE_RESOURCE_DIR = os.path.join(BASE_WORKDIR,'resource')
+MAXIMUM_PARALLEL_UPLOAD = 5
 
 if not os.path.exists(BASE_RESOURCE_DIR):
     os.mkdir(BASE_RESOURCE_DIR)
@@ -271,12 +273,17 @@ class Executor:
         log.warning('Uploading output results...')
         if self.output:
             output_files = []
-            for root, _, files in os.walk(self.output_dir):
-                rel_path = os.path.relpath(root, self.output_dir)
-                for local_data in files:
-                    data = os.path.join(root, local_data)
-                    put(data, pathjoin(self.output,rel_path,'/'))
-                    output_files.append(local_data)
+            jobs = {}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAXIMUM_PARALLEL_UPLOAD) as executor:
+                for root, _, files in os.walk(self.output_dir):
+                    rel_path = os.path.relpath(root, self.output_dir)
+                    for local_data in files:
+                        data = os.path.join(root, local_data)
+                        jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
+                        output_files.append(local_data)
+                for job in  concurrent.futures.as_completed(jobs):
+                    obj = jobs[job]
+                    log.warning(f'Done for {obj}: {job.result()}')
             if output_files:
                 return ' '.join(output_files)
     
