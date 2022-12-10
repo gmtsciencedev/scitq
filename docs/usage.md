@@ -99,12 +99,14 @@ mysubcommand1 -db $RESOURCE/my.db *.fastq > $OUTPUT/myoutput.txt
 As explained above this option let you specify some files that will be downloaded before the task is launched and available in `/input` folder or in the folder stored in `INPUT` environmental variable if you do not use docker.
 
 You can specify several time this option so that as to have several input files. The file should be specified as a URI, here are the available possibilities:
+
 - `ftp://...` : an anonymous FTP link to a file (no recursive folder),
 - `s3://...` : an S3 link which requires that [S3](specific.md#aws-or-others-s3) was properly set up,
 - `fasp://...` : an IBM Aspera link, used notably in bioinformatics,
 - `file:///....` : a local file in the worker, thus unlikely to be suitable except in specific contexts where files are brought to the worker by means not provided by scitq.
 
 Specifically for bioinformatics (and it is in fact the only thing really specific for that field in scitq), there is a dedicated custom URI called run+fastq:
+
 - `run+fastq://myrunaccession` where myrunaccession should be replaced with a real SRR... or ERR... run accession and will use any available mean to try to grab the FASTQ files associated with this run. It will try EBI ENA first as it is much faster than NCBI SRA, first with EBI ENA FTP link, then NCBI SRA sratools, then EBI ENA Aspera link (Aspera does not work well with several providers unfortunately, notably OVH), and it will loop over these three possibilities a certain number of time (10) until one succeed.
 
 If you wish to see scitq in action just for this specific input part, that is easy in python:
@@ -116,11 +118,14 @@ get('run+fastq://ERR3857002', './')
 
 So for instance you can say:
 ```bash
-scitq-launch -i run+fastq://SRR5666311 -d ubuntu:latest sh -c 'zcat *.f*q.gz|wc -l' 
+scitq-launch -i run+fastq://SRR5666311 -d ubuntu:latest sh -c 'zcat /input/*.f*q.gz|wc -l' 
 ```
 
 On workers, input dirs are in `/scratch/<someuniquename>/input`.
 NB the `/scratch` thing is unrelated to the eponymous language, it is just a reminder that in the end all in that directories will be scratched once the worker is deleted.
+
+!!! note
+    New since version 1.0b19 and above (1.0rcX versions are above 1.0bX versions), and **only with S3**, an input can end with a trailing slash which means recursively import all the directory as input. This can be convenient notably when you chain tasks (as output is recursive itself).
 
 ### resource (-r)
 

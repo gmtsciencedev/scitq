@@ -86,7 +86,7 @@ cd /root/
 pip3 install --upgrade pip setuptools
 git clone https://github.com/gmtsciencedev/scitq.git
 cd scitq
-pyton3 ./setup.py install
+python3 -m pip install .
 ```
 
 ### install the service
@@ -265,7 +265,7 @@ Or via source:
 ```bash
 git clone https://github.com/gmtsciencedev/scitq.git
 cd scitq
-pyton ./setup.py install
+python -m pip install .
 ```
 
 
@@ -386,7 +386,7 @@ With git (replace `/root/scitq` with the path to your source if you did not keep
 cd /root/scitq
 git pull
 rm -fr build dist
-python3 ./setup.py install
+python3 -m pip install .
 ```
 
 Relaunch the services:

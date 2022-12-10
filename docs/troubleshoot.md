@@ -183,6 +183,8 @@ Well can you guess what will be the output of those two tasks?
 
 Two more things on that topic:
 
+First prefer **single quote** protection of the main string when using a shell command like this, it is more likely what you want:
+
 ```bash
 scitq-launch -o s3://rnd/myresults/ sh -c 'echo "Hello world!" > $OUTPUT/result.txt'
 ```
