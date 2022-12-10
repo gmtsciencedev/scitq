@@ -3,7 +3,7 @@
 This option is more simple than the [scitq-manage](manage.md) option but requires a browser access to scitq server (and thus require that you have access to a trusted IP as defined in [security](install.md#security), maybe a VPN or a proxy or an SSH tunnel).
 
 !!! note
-    You will notice there is no way to add a new task with the GUI: this is a design choice, a task is basically a command from the command line (an non interactive program), thus the command line is the ideal place to test and hence queue this command.
+    You will notice there is no way to add a new task with the GUI: this is a design choice, a task is basically a command from the command line (a non-interactive program), thus the command line is the ideal place to test and hence queue this command.
 ## Reaching the GUI
 
 If the scitq server name is `scitq.mycompany.com`, then the GUI URL is `http://scitq.mycompany.com:5000/ui/`.

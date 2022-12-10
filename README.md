@@ -12,6 +12,7 @@ Keywords|task, queue, job, python, distributed, science
 **scitq** is a simple task queue in python. It is a distributed task queue system. While quite generalist, it was primarily designed for scientific jobs, relatively heavy tasks that can be expressed as a Unix shell instruction. It also has a specificity of relatively feebly interdependent tasks.
 
 It has a few added capabilities apart from strict task distribution:
+
 - First it has the capacity to manage cloud instance life cycle (as for now 
 OpenStack (OVH), but others to follow shortly) - Note that you can still use 
 scitq without using that functionality, and you may use it in a mixed environment
@@ -31,6 +32,7 @@ these, so docker remains non-mandatory in scitq).
 ## Introduction
 
 **scitq** is a Task Queue system based on the following model:
+
 - a server hosts a series of (shell) tasks to be executed,
 - some workers connect to the server, fetch some tasks according to their capacity
 (which is very simply managed by the maximum number of parallel process they can
@@ -120,21 +122,22 @@ start can really work in a matter of minutes), a polished and neat solution whic
 has been around for years. Why not Celery then? We tried, we had a lot of successes
 with Celery BUT we were disappointed in a particular occasion. But first Celery
 qualities:
-  - it is based on a simple concurrency model where each worker can perform 
-  a fixed number of tasks in parallel. It is remarkably adapted to having 
-  relatively similar servers rented on the internet (you tend to rent prototyped machines),
-  yet if you have some variations, it handles them nicely. This is much simpler 
-  than resource management because sometimes identifying the resource requirements
-  of certain tasks may be daunting and only trial and error will tell. Nextflow 
-  resource management is simply not rich enough (what if the bottleneck is disk
-  speed?) and Slurm is too complex. So a simple model like that is extremely clever.
-  Plus you can change each worker concurrency with a nice UI (flower).
-  - You can add tasks in different ways, but usually a very simple python script
-  can do the job (so no other language to learn),
-  - The system is very light, super easy to deploy, and consume very little 
-  resources.
+    - it is based on a simple concurrency model where each worker can perform 
+    a fixed number of tasks in parallel. It is remarkably adapted to having 
+    relatively similar servers rented on the internet (you tend to rent prototyped machines),
+    yet if you have some variations, it handles them nicely. This is much simpler 
+    than resource management because sometimes identifying the resource requirements
+    of certain tasks may be daunting and only trial and error will tell. Nextflow 
+    resource management is simply not rich enough (what if the bottleneck is disk
+    speed?) and Slurm is too complex. So a simple model like that is extremely clever.
+    Plus you can change each worker concurrency with a nice UI (flower).
+    - You can add tasks in different ways, but usually a very simple python script
+    can do the job (so no other language to learn),
+    - The system is very light, super easy to deploy, and consume very little 
+    resources.
 
 Now the defaults:
+
   - It was invented mainly to do some simple asynchronous background tasks for 
   websites (it is the recommended way to do so with Flask), so maybe it was not 
   thought to monitor heavy scientific load: so it can handle tons of tasks (reason
