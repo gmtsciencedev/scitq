@@ -169,7 +169,7 @@ scitq-launch -o 's3://results/test/' -d 'ubuntu:latest' touch /output/helloworld
 :    Specify scitq server address. It is more simple to set up `SCITQ_SERVER` environment variable, but this is useful if you have several scitq servers.
 
 `-t`
-:    Run a test: do not really launch the task, but rather print what would be the launched task. Usefull if you launch your tasks in small bash loops (`for i in $(seq 1 10); do scitq-launch -i s3://input/data$i.dat -d mydocker mycommand -i /input/$i.dat; done`) to watch for proper variable expansion.
+:    Run a test: do not really launch the task, but rather print what would be the launched task. Usefull if you launch your tasks in small bash loops (`for i in $(seq 1 10); do scitq-launch -i s3://input/data/$i.dat -d mydocker mycommand -i /input/$i.dat; done`) to watch for proper variable expansion.
 
 `-n`
 :   Give a name to your task. Usefull to manage your tasks, we will come to that. Otherwise, tasks have just a task_id (but that's fine so do not worry too much about that).
