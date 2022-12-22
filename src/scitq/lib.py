@@ -197,65 +197,83 @@ class Server:
             sleep(self.get_timeout)
             return self.get(url)
 
-    def put(self,url, data):
+    def put(self,url, data, asynchronous=None, timeout=None):
         """A wrapper used for all put operations.
         - url: extra string to add after base server URL
         - data: extra data (payload of put operation) represented as dict
 
         return the objects according to Server style (see style in class doc)
         (in asynchronous mode, return a lazy object)"""
+        timeout = self.put_timeout if timeout is None else timeout
+        asynchronous = self.asynchronous if asynchronous is None else asynchronous
         try:
             return self._wrap(requests.put(
-                self.url+url, json=data, timeout=self.put_timeout
+                self.url+url, json=data, timeout=timeout
             ))
         except (ConnectionError,Timeout) as e:
-            if not self.query_thread.is_alive():
-                self.query_thread.start()
-            log.warning(f'Exception when trying to put: {e}')
-            sleep(self.put_timeout)
-            return_queue=queue.Queue()
-            self.send_queue.put((self,'put',(url, data),return_queue))
-            return LazyObject(return_queue)
-                
+            if asynchronous:
+                if not self.query_thread.is_alive():
+                    self.query_thread.start()
+                log.warning(f'Exception when trying to put: {e}')
+                return_queue=queue.Queue()
+                self.send_queue.put((self,'put',(url, data),return_queue))
+                return LazyObject(return_queue)
+            else:
+                log.warning(f'Exception when trying to put: {e}')
+                sleep(timeout)
+                return self.put(url, data, asynchronous, timeout)
         
 
-    def post(self, url, data):
+    def post(self, url, data, asynchronous=None, timeout=None):
         """A wrapper used for all post operations.
         - url: extra string to add after base server URL
         - data: extra data (payload of post operation) represented as dict
 
         return the objects according to Server style (see style in class doc)"""
+        timeout = self.put_timeout if timeout is None else timeout
+        asynchronous = self.asynchronous if asynchronous is None else asynchronous
         try:
             return self._wrap(requests.post(
                 url=self.url+url, json=data, timeout=self.put_timeout
             ))
         except (ConnectionError,Timeout) as e:
-            if not self.query_thread.is_alive():
-                self.query_thread.start()
-            log.warning(f'Exception when trying to post: {e}')
-            return_queue=queue.Queue()
-            self.send_queue.put((self,'post',(url, data),return_queue))
-            return LazyObject(return_queue)
+            if asynchronous:
+                if not self.query_thread.is_alive():
+                    self.query_thread.start()
+                log.warning(f'Exception when trying to post: {e}')
+                return_queue=queue.Queue()
+                self.send_queue.put((self,'post',(url, data),return_queue))
+                return LazyObject(return_queue)
+            else:
+                log.warning(f'Exception when trying to post: {e}')
+                sleep(timeout)
+                return self.post(url, data, asynchronous, timeout)
 
-    def delete(self,url):
+    def delete(self,url, asynchronous=None, timeout=None):
         """A wrapper used for all put operations.
         - url: extra string to add after base server URL
         - data: extra data (payload of put operation) represented as dict
 
         return the objects according to Server style (see style in class doc)
         (in asynchronous mode, return a lazy object)"""
+        timeout = self.put_timeout if timeout is None else timeout
+        asynchronous = self.asynchronous if asynchronous is None else asynchronous
         try:
             return self._wrap(requests.delete(
-                self.url+url, timeout=self.put_timeout
+                self.url+url, timeout=timeout
             ))
         except (ConnectionError,Timeout) as e:
-            if not self.query_thread.is_alive():
-                self.query_thread.start()
-            log.warning(f'Exception when trying to put: {e}')
-            sleep(self.put_timeout)
-            return_queue=queue.Queue()
-            self.send_queue.put((self,'delete',(url, None),return_queue))
-            return LazyObject(return_queue)
+            if asynchronous:
+                if not self.query_thread.is_alive():
+                    self.query_thread.start()
+                log.warning(f'Exception when trying to delete: {e}')
+                return_queue=queue.Queue()
+                self.send_queue.put((self,'delete',(url, None),return_queue))
+                return LazyObject(return_queue)
+            else:
+                log.warning(f'Exception when trying to delete: {e}')
+                sleep(timeout)
+                return self.delete(url, asynchronous, timeout)
 
 
     def workers(self):
@@ -295,7 +313,8 @@ class Server:
     def worker_callback(self, id, message):
         """Send a callback message (mainly idle) to trigger action on worker from the server
         return a object with result attribute, equal to ok"""
-        return self.put(f'/workers/{id}/callback', data={'message':message})
+        return self.put(f'/workers/{id}/callback', data={'message':message},
+            asynchronous=False, timeout=GET_TIMEOUT)
     
     def worker_executions(self, id, status=None):
         """Get a list of a worker current assigned executions. 

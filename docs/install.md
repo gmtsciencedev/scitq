@@ -232,7 +232,8 @@ When we deploy a new worker there are a lot of information we must remember in A
 
 ### What's next?
 
-There are four optional tasks which are recommanded and all require some modification of Ansible `/etc/ansible/inventory` files `common` or your cloud providers files (`ovh` and so on):
+There are four optional tasks which are recommanded and all require some modification of Ansible file `/etc/ansible/inventory/02-scitq`:
+
 - scitq Ansible code is really about deploying in the cloud, so you should set up a [provider](specific.md#providers-configuration).
 - You should set up the [security](#security) as it is a reasonable idea when operating in a public cloud.
 - You should add some [storage](#define-a-storage-component).
@@ -358,6 +359,7 @@ In 1.0b2 and below, Ansible configuration was directly inserted in scitq source,
 #### Service configuration
 
 If you come from a version strictly below 1.0b2:
+
 - Next change the service `/etc/systemd/system/pytq.service`:
     - First stop and remove the service `systemctl stop pytq` and `systemctl disable pytq`,
     - Rename the file to `/etc/systemd/system/scitq.service`,
