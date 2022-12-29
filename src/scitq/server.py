@@ -281,6 +281,33 @@ class TaskDAO(BaseDAO):
     def list(self):
         return super().list(sorting_column='task_id')
 
+    def update(self, id, data):
+        task = self.get(id)
+        modified = False
+        for attr, value in data.items():
+            if hasattr(task,attr): 
+                if getattr(task,attr)!=value:
+                    if attr=='status':
+                        if value not in self.authorized_status:
+                            api.abort(500,
+                                f"Status {value} is not possible (only {' '.join(self.authorized_status)})")
+                        if task.status=='running':
+                            for execution in db.session.query(Execution).filter(
+                                    Execution.task_id==id, Execution.status=='running'):
+                                db.session.add(Signal(execution.execution_id, execution.worker_id, 9))
+                                execution.status='failed'
+                                execution.modification_date = datetime.utcnow()
+                    setattr(task, attr, value)
+                    modified = True
+            else:
+                raise Exception('Error: {} has no attribute {}'.format(
+                    task.__name__, attr))
+        if modified:
+            task.modification_date = datetime.utcnow()
+            db.session.commit()
+        return task
+
+
 task_dao = TaskDAO()
 
 task = api.model('Task', {
@@ -516,7 +543,7 @@ class WorkerCallback(Resource):
                     Execution.worker_id==worker.worker_id).count()>0:
                 log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
                 return {'result':'still have running tasks'}
-            if db.session.query(Task).filter(and_(Task.status.in_(['pending','accepted']),
+            if db.session.query(Task).filter(and_(Task.status.in_(['pending']),
                                     Task.batch==worker.batch)).count()>0:
                 log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
                 return {'result':'still some work to do, lazy one!'}

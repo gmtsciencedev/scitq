@@ -41,6 +41,18 @@ DEFAULT_RESOURCE_DIR = '/resource'
 DEFAULT_TEMP_DIR = '/tmp'
 OUTPUT_LIMIT = 1024 * 128
 
+
+STATUS_LAUNCHING = 0
+STATUS_DOWNLOADING = 1
+STATUS_WAITING = 2
+STATUS_RUNNING = 3
+STATUS_UPLOADING = 4
+STATUS_FAILED = 5
+STATUS_SUCCEEDED = 6
+STATUS_TXT = ['LAUNCHING', 'DOWNLOADING', 'WAITING', 'RUNNING', 'UPLOADING', 
+    'FAILED', 'SUCCEEDED']
+
+
 def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_options,
         container, command):
     docker_cmd = ['docker','run', '--rm', '-d']
@@ -91,7 +103,7 @@ class Executor:
     def __init__(self, server, execution_id, task_id, command, input, output, 
                 container, container_options, execution_started, execution_queue,
                 cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore,
-                worker_id):
+                worker_id, status):
         self.s = Server(server, style='object')
         self.worker_id = worker_id
         self.execution_id = execution_id
@@ -118,7 +130,20 @@ class Executor:
         self.run_slots_semaphore=run_slots_semaphore
         self.container_id=None
         self.dynamic_read_timeout = READ_TIMEOUT
+        self.__status__=status
         asyncio.run(self.run())
+
+
+    @property
+    def status(self):
+        """A wrapper around status multiprocessing.Value, return STATUS_... value
+        for this Executor"""
+        return self.__status__.value
+    
+    @status.setter
+    def status(self, status_value):
+        """A wrapper around status multiprocessing.Value, set status.value as STATUS_"""
+        self.__status__.value = status_value
 
     # via: https://stackoverflow.com/questions/10756383/timeout-on-subprocess-readline-in-python/34114767?noredirect=1#comment55978734_10756738
     async def execute(self, execution_id):
@@ -144,8 +169,10 @@ class Executor:
                             'RESOURCE': no_slash(self.resource_dir)},
                         limit=OUTPUT_LIMIT)
                 self.run_slots.value -= 1
+                self.status = STATUS_RUNNING
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running')
             except Exception as e:
+                self.status = STATUS_FAILED
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed')
@@ -165,12 +192,15 @@ class Executor:
                 self.process = await asyncio.create_subprocess_exec(
                         'docker','attach',self.container_id,
                         stdout=PIPE, stderr=PIPE, limit=OUTPUT_LIMIT)
+                self.status = STATUS_RUNNING
                 self.run_slots.value -= 1
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running')
             except subprocess.CalledProcessError as e:
+                self.status = STATUS_FAILED
                 self.s.execution_error_write(execution_id,e.stderr.decode('utf-8'))
                 self.s.execution_update(execution_id, status='failed')
             except Exception as e:
+                self.status = STATUS_FAILED
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed')
@@ -226,6 +256,7 @@ class Executor:
     def download(self):
         """Do the downloading part, before launching, getting all input URIs into input_dir"""
         log.warning('Downloading input data...')
+        self.status = STATUS_DOWNLOADING
         if self.input:
             for data in self.input.split():
                 get(data, self.input_dir)
@@ -302,12 +333,14 @@ class Executor:
             self.s.execution_error_write(self.execution_id,
                 traceback.format_exc())
             returncode=-1001
+            self.status = STATUS_FAILED
             self.s.execution_update(self.execution_id, 
                 status='failed', 
                 return_code=returncode, output='')
             return None
         
         self.run_slots_semaphore.acquire()
+        self.status = STATUS_WAITING
         while self.s.task_get(self.task_id).status == 'paused' or self.run_slots.value<=0:
             if self.run_slots.value<=0:
                 log.warning(f'Task {self.task_id} has been prefetched and is waiting')
@@ -336,6 +369,13 @@ class Executor:
                 if returncode is not None:
                     log.warning('... done')
                     await self.get_output(self.execution_id)
+
+                    self.run_slots_semaphore.acquire()
+                    log.warning(f'Task {self.execution_id} '+'succeeded' if returncode==0 else 'failed')
+                    self.status = STATUS_UPLOADING
+                    self.run_slots.value += 1
+                    self.run_slots_semaphore.release()
+
                     try:
                         output_files = self.upload()
                     except Exception as e:
@@ -343,18 +383,20 @@ class Executor:
                         self.s.execution_error_write(self.execution_id,
                             traceback.format_exc())
                         returncode=-1000
+                    
+                    self.status = STATUS_SUCCEEDED if returncode==0 else STATUS_FAILED
+                    self.s.execution_update(self.execution_id, 
+                        status='succeeded' if returncode==0 else 'failed', 
+                        return_code=returncode, output_files=output_files)
+                    
                     if returncode!=0:
                         log.error(f'... task failed with error code {returncode}')
                     log.warning(f'Run slots: {self.run_slots.value}')
 
-                    self.run_slots_semaphore.acquire()
-                    self.s.execution_update(self.execution_id, 
-                        status='succeeded' if returncode==0 else 'failed', 
-                        return_code=returncode, output_files=output_files)
-                    self.run_slots.value += 1
-                    self.run_slots_semaphore.release()
+
                     if returncode==0:
                         self.clean()
+                        log.warning('Cleaned')
                     break
                 else:
                     try:
@@ -401,7 +443,8 @@ class Client:
         self.manager = multiprocessing.Manager()
         self.resources_db = self.manager.dict()
         self.run_slots = multiprocessing.Value('i', concurrency)
-        self.run_slots_semaphore = multiprocessing.Semaphore(1)
+        self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
+        self.executions_status = {}
 
 
     def declare(self):
@@ -463,6 +506,9 @@ class Client:
                             task = self.s.task_get(execution.task_id)
                             execution_started = multiprocessing.Semaphore(0)
                             execution_queue = multiprocessing.Queue()
+                            self.executions_status[execution.execution_id]=self.manager.Value(
+                                                    'I', 
+                                                    value=STATUS_LAUNCHING)
                             p=multiprocessing.Process(target=Executor,
                                 kwargs={
                                     'server': self.server,
@@ -481,7 +527,8 @@ class Client:
                                     'resources_db': self.resources_db,
                                     'run_slots': self.run_slots,
                                     'run_slots_semaphore': self.run_slots_semaphore,
-                                    'worker_id': self.w.worker_id
+                                    'worker_id': self.w.worker_id,
+                                    'status': self.executions_status[execution.execution_id]
                                 })
                             self.s.execution_update(execution.execution_id, status='accepted')
                             p.start()
@@ -507,19 +554,28 @@ class Client:
                 for execution_id in list(self.executions.keys()):
                     if not self.executions[execution_id][0].is_alive():
                         del(self.executions[execution_id])
+                        del(self.executions_status[execution_id])
                 if self.run_slots_semaphore.acquire():
-                    if self.concurrency-len(self.executions)!=self.run_slots.value:
+                    running_executions = [ execution_id 
+                            for execution_id, execution_status in self.executions_status.items()
+                            if execution_status.value==STATUS_RUNNING ]
+                    log.warning(f'Status are { {execution_id:STATUS_TXT[execution_status.value] for execution_id, execution_status in self.executions_status.items()} }')
+                    if self.concurrency-len(running_executions)!=self.run_slots.value:
                         log.warning(f'Race condition detected on process number')
                         # ok time to look what is really going on
                         running = waiting = 0
                         for execution in self.s.worker_executions(self.w.worker_id):
                             if execution.status=='running':
+                                if execution.execution_id not in running_executions:
+                                    log.warning(f'Execution {execution.execution_id} is supposed to be running and is not.')
                                 running += 1
                             elif execution.status=='accepted':
+                                if execution.execution_id in running_executions:
+                                    log.warning(f'Execution {execution.execution_id} is not supposed to be running but is running.')
                                 waiting += 1
                         log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
                         log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
-                        log.warning(f'Overall we should have {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')
+                        log.warning(f'Overall we should have at max {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')
                         if self.run_slots.value != self.concurrency - running:
                             log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
                             self.run_slots.value = self.concurrency - running

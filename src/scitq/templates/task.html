@@ -72,8 +72,8 @@
         tasks= data.tasks;
         console.log('Received tasks', tasks);
         task_table ='<table class="table table-responsive table-hover table-striped"><thead id="task_head" class="text-center table-'+color_table+'"><tr><th>#</th><th>Name</th><th>Command</th><th><div onclick="">Worker</div></th><th>Batch</th><th>Status</th><th>Start</th><th>Runtime</th><th>Output</th><th>Error</th><th>Actions</th></tr></thead></tr></thead>\n<tbody id="table">\n';
-        select_worker ='<div> <label class="form-label" for="filter_by_worker">Worker name :</label><select id="filter_by_worker" name="worker" class="form-select col-md-3">\n<option value="" '+(filter.get('worker')!=''?'':'')+'>-</option>\n';
-        select_batch ='<div> <label class="form-label" for="filter_by_batch">Batch :</label><select id="filter_by_batch" name="batch" class="form-select" col-md-3>\n<option value="" '+(filter.get('batch')!=''?'':'selected')+'>Default</option>\n';
+        select_worker ='<div> <label class="form-label" for="filter_by_worker">Worker:</label><select id="filter_by_worker" name="worker" class="form-select col-md-3">\n<option value="" '+(filter.get('worker')!=''?'':'')+'>-</option>\n';
+        select_batch ='<div> <label class="form-label" for="filter_by_batch">Batch:</label><select id="filter_by_batch" name="batch" class="form-select" col-md-3>\n<option value="" '+(filter.get('batch')!=''?'':'selected')+'>Default</option>\n';
         sort_by='<label for="sortby" class="form-label">Sort by:</label>'
                 +'<select id="sortby" name="sortby" class="form-select">'
                 +'<option value=""'+(filter.get('sortby')==''?'selected':'')+'>-</option>'
@@ -435,7 +435,7 @@
                     <button type="button" id="pause" onclick="pause_page()" class="btn btn-warning"> Pause </button>
                     <button type="button" id="downloadall" onclick="downloadAll('all')"  class="btn btn-info">Download All<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg></button>
                     <a type="button" id="downloadall" target="_blank" href="/ui/batch/"  class="btn btn-secondary d-flex align-items-center">Batch view</a>
-                    <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>Version: {{ package_version }} </p>
+                    <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>
                     </div>
                 </div>
                 </div>
