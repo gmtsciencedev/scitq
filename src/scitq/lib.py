@@ -7,11 +7,13 @@ import threading
 import queue
 from argparse import Namespace
 import logging as log
+import time
 
 
 PUT_TIMEOUT = 30
 GET_TIMEOUT = 150
 QUERY_THREAD_TIMEOUT = 10
+QUERY_THREAD_IDLE_TIMEOUT = 60
 JOIN_DYNAMIC_SLEEP_TIME_INCREMENT = 10
 
 def _parse_date_andco(item):
@@ -90,15 +92,21 @@ class LazyObject:
         return str(self._o)
 
 
-def query_thread(semaphore,send_queue, put_timeout):
+def query_thread(semaphore, send_queue, put_timeout):
         """A Query-thread which treats all the queries with a while loop until the object is there, then it put the result in the returning queue
         """
+        time_point = None
         while True :
             while not semaphore.acquire(blocking=False):
                 try:
                     self,type,query,return_queue = send_queue.get(timeout=QUERY_THREAD_TIMEOUT)
+                    time_point = None
                     break
                 except queue.Empty:
+                    if time_point is None:
+                        time_point=time.time()
+                    elif time.time() - time_point > QUERY_THREAD_IDLE_TIMEOUT:
+                        return None
                     continue
             else: 
                 #This block is executed when the semaphore is acquired (meaning the Server instance was closed)
@@ -134,7 +142,29 @@ def query_thread(semaphore,send_queue, put_timeout):
                         task_done = True
                     except (ConnectionError,Timeout) as e:
                         log.warning(f'Exception when trying to post: {e}') 
-                return_queue.put(result)            
+                return_queue.put(result) 
+
+class RestartingThread:
+    """This Thread class is a thin wrapper above a threading.Thread that can be 
+    restarted, it implements only start() and is_alive() methods
+    """
+    def __init__(self, target, args):
+        self.target = target
+        self.args = args
+        self.__thread__=None
+    
+    def is_alive(self):
+        return False
+
+    def start(self):
+        if self.is_alive():
+            print('Thread already alive')
+            return
+        self.__thread__=threading.Thread(target=self.target, args=self.args)
+        self.__thread__.start()
+        self.is_alive = self.__thread__.is_alive
+        
+
 
 class Server:
     """A thin wrapper above requests with URLs registered
@@ -174,7 +204,7 @@ class Server:
             self.query_thread_semaphore = threading.Semaphore()
             self.query_thread_semaphore.acquire(blocking=False)
             self.send_queue= queue.Queue()
-            self.query_thread=threading.Thread(target=query_thread,
+            self.query_thread=RestartingThread(target=query_thread,
                 args=(self.query_thread_semaphore,self.send_queue,put_timeout))
         self.get_timeout = get_timeout
         self.put_timeout = put_timeout
