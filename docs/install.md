@@ -91,11 +91,26 @@ python3 -m pip install .
 
 ### install the service
 
-Copy the template from https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_service.tpl:
+Copy the template from https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_uwsgi_service.tpl:
 ```bash
-curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_service.tpl -o /etc/systemd/system/scitq.service
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_uwsgi_service.tpl -o /etc/systemd/system/scitq.service
 ```
-(this template_service.tpl is also in `/root/scitq/templates` it you installed by source)
+(this template_uwsgi_service.tpl is also in `/root/scitq/templates` it you installed by source)
+
+
+!!! note
+    uwsgi is the new way to deploy scitq starting from v1.0rc5. If for some reason you prefer old style deploy (which use development server included in Flask), use template_service.tpl instead of template_uwsgi_service.tpl. If you use old style deploy, you will not need to do the following install of uwsgi with specific support extension.
+
+If you use uwsgi which is the new default, you must install uwsgi in a specific way, so that it includes SSL (needed for "handshake") and gevent support:
+```bash
+apt install -y libssl-dev
+python3 -m pip install --upgrade pip
+export CFLAGS="-I/usr/include/openssl"
+export LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
+export UWSGI_PROFILE_OVERRIDE=ssl=true
+python3 -m pip install -I --no-binary=:all: --no-cache-dir pyuwsgi uwsgi
+python3 -m pip install gevent
+```
 
 Now edit `/etc/systemd/system/scitq.service` to suit your need. Keeping 
 most variables as they are should be fine, *except SCITQ_SERVER variable*:
@@ -112,6 +127,46 @@ systemctl start scitq
 ```
 
 Look with `systemctl status scitq` that all is fine and that should be it. In case of trouble, you'll find details in `/var/log/scitq/scitq.log` file or whatever file you have specified in [LOG_FILE](parameters.md#log_file) parameter. 
+
+#### Using uwsgi
+
+**New in 1.0rc5**: you can now use uwsgi. Be careful that uwsgi is a complex and delicate system and stick to those instructions unless you really know what you are doing.
+
+As specified above, uwsgi must be installed with SSL and gevent support, on Ubuntu this is done this way:
+```bash
+apt install -y libssl-dev
+python3 -m pip install --upgrade pip
+export CFLAGS="-I/usr/include/openssl"
+export LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
+export UWSGI_PROFILE_OVERRIDE=ssl=true
+python3 -m pip install -I --no-binary=:all: --no-cache-dir pyuwsgi uwsgi
+python3 -m pip install gevent
+```
+
+Then you can run with:
+```bash
+export SQLALCHEMY_DATABASE_URI=postgresql://root@/scitq
+export LOG_FILE=/var/log/scitq/scitq.log
+export LOG_FILE_MAX_SIZE=10000000
+export LOG_FILE_KEEP=10
+export SCITQ_SERVER=gamma.gmt.bio
+export OS_AUTH_URL=https://auth.cloud.ovh.net/v3
+export OS_PROJECT_ID=1dbb2f509809809dfh89
+export OS_PROJECT_NAME="1234567890123435"
+export OS_USER_DOMAIN_NAME="Default"
+export OS_PROJECT_DOMAIN_ID="default"
+export OS_USERNAME="user-MLKMLKMLKMLD"
+export OS_PASSWORD_INPUT="xxxxxxxxxxxxxxxxxxxxxx"
+export OS_PASSWORD="xxxxxxxxxxxxxxxxxxxxx"
+export OS_REGION_NAME="GRA7"
+export OS_INTERFACE=public
+export OS_IDENTITY_API_VERSION=3
+# the line below is needed for ubuntu, not necessarily for all distrib
+export PYTHONPATH=/usr/lib/python3.8/site-packages/
+pyuwsgi --http :5000 --gevent 1000 --http-websockets --master -w scitq.wsgi:app
+```
+
+
 
 ## Ansible
 
@@ -193,7 +248,7 @@ This `keyname` is linked to the SSH key we just created above. You will need to 
 
 If you want to deploy by source, add a scitq_src variable pointing to the path the source live: if you followed this guide and installed scitq source in `/root/scitq`, set it as:
 
-`scitq_source=/root/scitq`
+`scitq_src=/root/scitq`
 
 Last, this `[scitq:vars]` section is also where NFS parameters can be set if you plan to use NFS, see [using NFS](specific.md#using-nfs) for details. If that is so, you will also need to add your NFS server to the managers group, creating a subsection `[managers]` with the shortname of your server.
 
@@ -353,7 +408,7 @@ In 1.0b2 and below, Ansible configuration was directly inserted in scitq source,
 - Copy back your ansible base configuration : `cp /root/oldansible/etc/ansible.cfg /etc/ansible/`
 - Install the files with `scitq-manage ansible install`
 - Create `/etc/ansible/inventory/02-scitq` and report in that file all the specific variables:
-    - All the specific variables that were in `/root/oldansible/etc/common` :  `keyname`, and possibly `nfs_server`, `nfs_server_address` should be defined in that file under `[scitq:vars]`. If you still plan to deploy by source code (which may enable testing some code modification), add also the `scitq_source` variable with the path in which lives the code (in the path you set, you must have the `src` directory present as an immediate subdirectory) - not that if you do not do that, deployment will be done by pip, which is now the default.
+    - All the specific variables that were in `/root/oldansible/etc/common` :  `keyname`, and possibly `nfs_server`, `nfs_server_address` should be defined in that file under `[scitq:vars]`. If you still plan to deploy by source code (which may enable testing some code modification), add also the `scitq_src` variable with the path in which lives the code (in the path you set, you must have the `src` directory present as an immediate subdirectory) - not that if you do not do that, deployment will be done by pip, which is now the default.
     - All the specific variables that were in `/root/oldansible/etc/ovh` should now go under `[ovh:vars]` in that file (so just copy paste the existing `[ovh:vars]` paragraph in that file)
 
 #### Service configuration

@@ -9,7 +9,7 @@ import json
 
 
 # GLOBAL CONSTANTS
-SQLITE_DATABASE = os.environ.get('ANSIBLE_SQLITE','/tmp/ansible-sqlite.db')
+SQLITE_DATABASE = os.environ.get('ANSIBLE_SQLITE','/var/spool/scitq/ansible-scitq.db')
 DEFAULT_GROUP = os.environ.get('ANSIBLE_DEFAULT_GROUP','Default')
 
 # INTERNAL CONSTANTS
@@ -18,6 +18,10 @@ VERSION=1
 class Database:
     def __init__(self, database_path):
         """Initialize database connection, if empty populate it"""
+        if not os.path.exists(database_path):
+            database_folder,_ = os.path.split(database_path)
+            if not os.path.exists(database_folder):
+                os.makedirs(database_folder)
         self.connection = sqlite3.connect(database_path)
         self.connection.row_factory = sqlite3.Row
         self.base_cursor = self.connection.cursor()

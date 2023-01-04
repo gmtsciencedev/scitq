@@ -28,7 +28,10 @@ SCITQ_SERVER = os.environ.get('SCITQ_SERVER',None)
 WORKER_CREATE = f'cd {package_path("ansible","playbooks")} && ansible-playbook deploy_one_vm.yaml --extra-vars "nodename={{hostname}} concurrency={{concurrency}} status=running flavor={{flavor}} region={{region}}"'
 if SCITQ_SERVER is not None:
     WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'
-WORKER_DELETE = os.environ.get('WORKER_DELETE',f'cd {package_path("ansible","playbooks")} && ansible-playbook destroy_vm.yaml --extra-vars "nodename={{hostname}}"')
+WORKER_DELETE = os.environ.get('WORKER_DELETE',
+    f'cd {package_path("ansible","playbooks")} && ansible-playbook destroy_vm.yaml --extra-vars "nodename={{hostname}}"')
+SERVER_CRASH_WORKER_RECOVERY = os.environ.get('SERVER_CRASH_WORKER_RECOVERY',
+    f'cd {package_path("ansible","playbooks")} && ansible-playbook check_after_reboot.yaml')
 WORKER_IDLE_CALLBACK = os.environ.get('WORKER_IDLE_CALLBACK',WORKER_DELETE)
 WORKER_CREATE_CONCURRENCY = 10
 WORKER_CREATE_RETRY=2
@@ -942,13 +945,18 @@ class BatchDelete(Resource):
     @ns.doc("delete_a_batch")
     def delete(self, name):
         """Delete all tasks and executions for this batch"""
-        # execution are deleted by cascade
         if name=='Default':
-            for t in Task.query.filter(Task.batch.is_(None)):
-                db.session.delete(t)
+            log.warning('Deleting default batch')
+            tasks = db.session.query(Task.task_id).where(Task.batch.is_(None))
+            db.session.query(Execution).filter(Execution.task_id.in_(tasks)).delete(
+                synchronize_session=False)
+            db.session.execute(delete(Task).where(Task.batch.is_(None)))
         else:
-            for t in Task.query.filter(Task.batch==name):
-                db.session.delete(t)
+            log.warning(f'Deleting batch {name}')
+            tasks = db.session.query(Task).where(Task.batch==name)
+            db.session.query(Execution).filter(Execution.task_id.in_(tasks)).delete(
+                synchronize_session=False)
+            db.session.execute(delete(Task).where(Task.batch==name))
         db.session.commit()
         return {'result':'Ok'}
 
@@ -1382,14 +1390,19 @@ def worker_exists(worker_id, db_session):
     """Return true if this worker_id is in database"""
     return db_session.query(Worker).filter(Worker.worker_id==worker_id).count()>0
 
-#@app.route('/ui/get/')
-#def ui_get():
-#    object = request.args.get('object','workers')
-#    log.info('Return worker list to UI')
-#    if object=='workers':
-#        log.info('sending workers')
-#        return jsonify(workers = list([list(row) for row in db.session.execute(
-#            'SELECT name, status, (SELECT count(execution_id) FROM execution WHERE execution.worker_id=worker.worker_id) FROM worker')]))
+
+
+
+ #####     ##     ####   #    #   ####   #####    ####   #    #  #####       #####  #    #  #####   ######    ##    #####  
+ #    #   #  #   #    #  #   #   #    #  #    #  #    #  #    #  #    #        #    #    #  #    #  #        #  #   #    # 
+ #####   #    #  #       ####    #       #    #  #    #  #    #  #    #        #    ######  #    #  #####   #    #  #    # 
+ #    #  ######  #       #  #    #  ###  #####   #    #  #    #  #    #        #    #    #  #####   #       ######  #    # 
+ #    #  #    #  #    #  #   #   #    #  #   #   #    #  #    #  #    #        #    #    #  #   #   #       #    #  #    # 
+ #####   #    #   ####   #    #   ####   #    #   ####    ####   #####         #    #    #  #    #  ######  #    #  #####  
+                                                                                                                           
+
+
+
 
 def background():
     # while some tasks are pending without executions:
@@ -1399,9 +1412,24 @@ def background():
         session = Session(db.engine)
     worker_create_process_waiting_queue = []
     worker_create_process_queue = []
+    other_process_queue = []
     log.info('Starting thread for {}'.format(os.getpid()))
+    ansible_workers = list(session.query(Worker).filter(and_(
+                    Worker.status=='running',
+                    Worker.idle_callback.is_not(None))).with_entities(
+                        Worker.hostname))
+    if ansible_workers:
+        log.warning(f'Making sure workers {",".join([w.hostname for w in ansible_workers])} has access to server')
+        process = PropagatingThread(
+                    target=run,
+                    args = (SERVER_CRASH_WORKER_RECOVERY,),
+                    kwargs= {'shell': True, 'check':True}
+                )
+        other_process_queue.append(('Worker access task',process))
+        process.start()
+
     while True:
-        log.info('Starting main loop')
+        log.warning('Starting main loop')
         try:
             task_list = list(session.query(Task).filter(
                     Task.status=='pending').with_entities(Task.task_id, Task.batch))
@@ -1495,6 +1523,15 @@ def background():
                 except Exception as e:
                     log.exception(f'Creation failed: {e}')
                     worker_create_process_queue.remove((new_worker, worker_create_process))
+            for process_name, process in list(other_process_queue):
+                try:
+                    if not process.is_alive():
+                        other_process_queue.remove((process_name, process))
+                        log.warning(f'Job {process_name} is done.')
+                except Exception as e:
+                    log.exception(f'Job {process_name} failed: {e}')
+                    other_process_queue.remove((process_name, process))
+
                     
 
             
@@ -1524,4 +1561,6 @@ def main():
     socketio.run(app)
 
 if __name__ == "__main__":
-    raise RuntimeError('Do not launch directly, launch with "FLASK=scitq.server flask run"')
+    #raise RuntimeError('Do not launch directly, launch with "FLASK=scitq.server flask run"')
+    #main()
+    pass

@@ -1,0 +1,7 @@
+- name: Prepare managing servers
+  hosts: managers
+  vars:
+    - nodename: "{{ item }}"
+  tasks:
+          - include_tasks: add_in_firewall.yaml
+            with_items: "{{ groups['workers'] }}"

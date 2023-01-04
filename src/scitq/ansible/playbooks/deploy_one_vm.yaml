@@ -73,8 +73,8 @@
           - name: Copy scitq source
             copy:
               remote_src: no
-              src: "{{ scitq_src }}/src"
-              dest: /opt/scitq/
+              src: "{{ scitq_src }}/"
+              dest: /opt/scitq
             become: true
             when: scitq_src is defined
           - include_tasks: add_docker.yaml

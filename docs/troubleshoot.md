@@ -201,5 +201,3 @@ With scitq, where you must protect from the initial shell and a python process, 
 ```bash
 scitq-launch echo "\"\\\"l'avion\\\"\""
 ```
-
-
