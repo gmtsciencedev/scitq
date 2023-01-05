@@ -530,7 +530,8 @@ class Client:
                                     'worker_id': self.w.worker_id,
                                     'status': self.executions_status[execution.execution_id]
                                 })
-                            self.s.execution_update(execution.execution_id, status='accepted')
+                            # force synchronous call to make it blocking
+                            self.s.execution_update(execution.execution_id, status='accepted', asynchronous=False)
                             p.start()
                             self.executions[execution.execution_id]=(p,execution_queue)
                             self.has_worked = True

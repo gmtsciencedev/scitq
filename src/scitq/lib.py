@@ -234,8 +234,9 @@ class Server:
 
         return the objects according to Server style (see style in class doc)
         (in asynchronous mode, return a lazy object)"""
-        timeout = self.put_timeout if timeout is None else timeout
         asynchronous = self.asynchronous if asynchronous is None else asynchronous
+        if timeout is None:
+            timeout = self.put_timeout if asynchronous else self.get_timeout
         try:
             return self._wrap(requests.put(
                 self.url+url, json=data, timeout=timeout
@@ -260,8 +261,9 @@ class Server:
         - data: extra data (payload of post operation) represented as dict
 
         return the objects according to Server style (see style in class doc)"""
-        timeout = self.put_timeout if timeout is None else timeout
         asynchronous = self.asynchronous if asynchronous is None else asynchronous
+        if timeout is None:
+            timeout = self.put_timeout if asynchronous else self.get_timeout
         try:
             return self._wrap(requests.post(
                 url=self.url+url, json=data, timeout=self.put_timeout
@@ -286,8 +288,9 @@ class Server:
 
         return the objects according to Server style (see style in class doc)
         (in asynchronous mode, return a lazy object)"""
-        timeout = self.put_timeout if timeout is None else timeout
         asynchronous = self.asynchronous if asynchronous is None else asynchronous
+        if timeout is None:
+            timeout = self.put_timeout if asynchronous else self.get_timeout
         try:
             return self._wrap(requests.delete(
                 self.url+url, timeout=timeout
@@ -311,40 +314,42 @@ class Server:
         return self.get('/workers/')
 
     def worker_update(self, id, name=None, hostname=None, concurrency=None, 
-                    status=None,batch=None, idle_callback=None, prefetch=None):
+                    status=None,batch=None, idle_callback=None, prefetch=None,
+                    asynchronous=True):
         """Update a specific worker with worker_id equal to id
         return the updated worker (or None if the server timeout)"""
         return self.put(f'/workers/{id}', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
             'status':status, 'batch':batch, 'idle_callback':idle_callback,
             'prefetch':prefetch}
-        ))
+        ), asynchronous=asynchronous)
 
     def worker_create(self, name, concurrency, hostname=None, status='paused',
-                batch=None, idle_callback=None, prefetch=0):
+                batch=None, idle_callback=None, prefetch=0, asynchronous=True):
         """Create a new worker
         return the new worker (or None if the server timeout)"""
         return self.post('/workers/', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
             'status':status, 'batch':batch, 'idle_callback':idle_callback,
             'prefetch':prefetch}
-        ))
+        ), asynchronous=asynchronous)
 
     def worker_get(self, id):
         """get a specific worker with worker_id equal to id
         return the worker"""
         return self.get(f'/workers/{id}')
 
-    def worker_ping(self, id, load, memory, read_bytes, written_bytes):
+    def worker_ping(self, id, load, memory, read_bytes, written_bytes, asynchronous=False):
         """Update a specific worker ping time (heartbit)
         return a updated worker object with attribute or key (depending on style)"""
-        return self.put(f'/workers/{id}/ping', data={'load':load,'memory':memory,'read_bytes':read_bytes,'written_bytes':written_bytes})
+        return self.put(f'/workers/{id}/ping', data={'load':load,'memory':memory,
+            'read_bytes':read_bytes,'written_bytes':written_bytes}, asynchronous=asynchronous)
 
-    def worker_callback(self, id, message):
+    def worker_callback(self, id, message, asynchronous=False):
         """Send a callback message (mainly idle) to trigger action on worker from the server
         return a object with result attribute, equal to ok"""
         return self.put(f'/workers/{id}/callback', data={'message':message},
-            asynchronous=False, timeout=GET_TIMEOUT)
+            asynchronous=asynchronous)
     
     def worker_executions(self, id, status=None):
         """Get a list of a worker current assigned executions. 
@@ -355,9 +360,9 @@ class Server:
         else:
             return self.get(f'/workers/{id}/executions/{status}')
 
-    def worker_delete(self, id):
+    def worker_delete(self, id, asynchronous=True):
         """Delete a worker"""
-        return self.delete(f'/workers/{id}')
+        return self.delete(f'/workers/{id}', asynchronous=asynchronous)
 
     def workers_tasks(self):
         """Return a list of all the different tasks for a certain worker"""
@@ -368,39 +373,39 @@ class Server:
         """
         return self.get(f'/executions/')
     
-    def execution_create(self, worker_id, task_id, status='pending'):
+    def execution_create(self, worker_id, task_id, status='pending', asynchronous=True):
         """Create a new execution, return the newly created execution
         """
         return self.post('/executions/', data={
             'worker_id':worker_id, 'task_id':task_id, 'status':status
-        })
+        }, asynchronous=asynchronous)
 
     def execution_update(self, id, status=None, pid=None, return_code=None, 
-                        output=None, output_files=None):
+                        output=None, output_files=None, asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/executions/{id}', data=_clean(
             {'status':status, 'pid':pid, 'return_code':return_code, 
                 'output':output, 'output_files':output_files}
-        ))
+        ), asynchronous=asynchronous)
 
-    def execution_output_write(self, id, output):
+    def execution_output_write(self, id, output, asynchronous=True):
         """Add some output to a specific execution, return the updated execution
         """
         if output is None:
             return None
         return self.put(f'/executions/{id}/output', data=_clean(
             {'text':output}
-        ))
+        ), asynchronous=asynchronous)
 
-    def execution_error_write(self, id, error):
+    def execution_error_write(self, id, error, asynchronous=True):
         """Add some error (stderr) to a specific execution, return the updated execution
         """
         if error is None:
             return None
         return self.put(f'/executions/{id}/error', data=_clean(
             {'text':error}
-        ))
+        ), asynchronous=asynchronous)
 
     def execution_get(self, id):
         """get a specific execution with execution_id equal to id
@@ -409,25 +414,25 @@ class Server:
 
     def task_create(self, command, name=None, status='pending',batch=None, 
             input=None, output=None, container=None, container_options='',
-            resource=None):
+            resource=None, asynchronous=True):
         """Create a new task, return the newly created task
         """
         return self.post('/tasks/', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
             'container_options':container_options, 'resource':resource
-        }))
+        }), asynchronous=asynchronous)
 
     def task_update(self, id, command=None, name=None, status=None, batch=None, 
             input=None, output=None, container=None, container_options=None,
-            resource=None):
+            resource=None, asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/tasks/{id}', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
             'container_options':container_options, 'resource':resource
-        }))
+        }), asynchronous=asynchronous)
 
     def task_get(self, id):
         """get a specific task with task_id equal to id
@@ -439,22 +444,23 @@ class Server:
         """
         return self.get(f'/tasks/')
 
-    def task_delete(self,id):
+    def task_delete(self,id, asynchronous=True):
         """delete a specific task"""
-        return self.delete(f'/tasks/{id}')
+        return self.delete(f'/tasks/{id}', asynchronous=asynchronous)
 
     def worker_signals(self, id):
         """Get a list of signals for this worker"""
         return self.get(f'/workers/{id}/signals')
 
-    def worker_create_signal(self, id, execution_id, signal):
+    def worker_create_signal(self, id, execution_id, signal, asynchronous=True):
         """Create a signal for this worker"""
         return self.post(f'/workers/{id}/signals', data={
             'execution_id': execution_id,
             'signal': signal
-        })
+        }, asynchronous=asynchronous)
     
-    def worker_deploy(self, number, batch, region, flavor, concurrency, prefetch=0):
+    def worker_deploy(self, number, batch, region, flavor, concurrency, prefetch=0,
+             asynchronous=True):
         """Deploy (and create) some workers"""
         return self.put('/workers/deploy', data={
             'number':int(number),
@@ -463,25 +469,27 @@ class Server:
             'batch':batch,
             'concurrency':concurrency,
             'prefetch': prefetch
-        })
+        }, asynchronous=asynchronous)
     
-    def batch_stop(self,batch,signal=0):
+    def batch_stop(self,batch,signal=0, asynchronous=True):
         """Pause all workers for this batch"""
         if signal==0:
             return self.put(f'/batch/{batch}/stop',data={})
-        return self.put(f'/batch/{batch}/stop',data={'signal':signal})
+        return self.put(f'/batch/{batch}/stop',data={'signal':signal}, 
+            asynchronous=asynchronous)
     
-    def batch_go(self,batch,signal=0):
+    def batch_go(self,batch,signal=0, asynchronous=True):
         """(re)set all workers affected to this batch to running"""
-        return self.put(f'/batch/{batch}/go',data={'signal':signal})
+        return self.put(f'/batch/{batch}/go',data={'signal':signal},
+            asynchronous=asynchronous)
 
     def batches(self):
         """List all batches, their tasks and workers"""
         return self.get(f'/batch/')
 
-    def batch_delete(self,batch):
+    def batch_delete(self,batch, asynchronous=True):
         """List all batches, their tasks and workers"""
-        return self.delete(f'/batch/{batch}')
+        return self.delete(f'/batch/{batch}', asynchronous=asynchronous)
 
     def join(self, task_list, retry=1, check=False):
         """Wait for a certain list of tasks to succeed. In case of failure, relaunch tasks
