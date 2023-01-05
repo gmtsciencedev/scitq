@@ -1,4 +1,3 @@
-import boto3
 import botocore.exceptions
 from ftplib import FTP
 import re
@@ -12,7 +11,7 @@ import glob
 import hashlib
 import threading
 import subprocess
-from .util import PropagatingThread
+from .util import PropagatingThread, boto3_resource
 import concurrent.futures
 
 # how many time do we retry
@@ -96,19 +95,9 @@ def untar(filepath):
 
 S3_REGEXP=re.compile(r'^s3://(?P<bucket>[^/]*)/(?P<path>.*)$')
 
-# this comes from here : https://github.com/boto/boto3/pull/2746
-class BotoSession(boto3.session.Session):
-    def client(self, *args, **kwargs):
-        if kwargs.get('endpoint_url') is None and os.environ.get("AWS_ENDPOINT_URL"):
-            kwargs['endpoint_url'] = os.environ.get("AWS_ENDPOINT_URL")
-        return super().client(*args, **kwargs)
-
 def get_s3():
-    if os.environ.get("AWS_ENDPOINT_URL"):
-        return boto3.resource('s3', 
-            endpoint_url=os.environ.get("AWS_ENDPOINT_URL"))
-    else:
-        return boto3.resource('s3')
+    """Replace boto3.resource('s3') using hack suggested in https://github.com/aws/aws-cli/issues/1270"""
+    return boto3_resource('s3')
 
 @retry_if_it_fails(RETRY_TIME)
 def s3_get(source, destination):
