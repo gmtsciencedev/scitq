@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitq"
-version = "1.0rc6"
+version = "1.0rc7"
 authors = [
   { name="Raynald de Lahondès" },
   { name="Rémi Tan" }

@@ -124,7 +124,7 @@ def s3_get(source, destination):
                     obj = jobs[job]
                     log.warning(f'Done for {obj}: {job.result()}')
         else:
-            get_s3().download_file(uri_match['bucket'],
+            xboto3().client('s3').download_file(uri_match['bucket'],
                 uri_match['path'],destination)
     except botocore.exceptions.ClientError as error:
         if 'Not Found' in error.response.get('Error',{}).get('Message',None):
