@@ -74,26 +74,3 @@ see [scitq-server](#path). Do not change that.
 
 ### SCITQ_SERVER
 The IP address or name (not the URL) where scitq-server can be reached. This is the one parameter that should always be changed. On a permanent server, it is even advised to set SCITQ_SERVER environment variable globally at system level so that all scitq commands executed on the system know where to go.
-
-### AWS_ENDPOINT_URL
-This is due to a bug in Python boto3 AWS client library: when using a non standard endpoint for AWS (that is mainly for non-AWS S3), the AWS CLI (awscli) requires a plugin (awscli-plugin-endpoint) and a specific parameter file, `.aws/config` and it works. `.aws/config` typically looks like this:
-
-```ini
-[plugins]
-endpoint = awscli_plugin_endpoint
-
-[profile default]
-region = gra
-s3 =
-  endpoint_url = https://s3.gra.perf.cloud.ovh.net
-  signature_version = s3v4
-s3api =
-  endpoint_url = https://s3.gra.perf.cloud.ovh.net
-```
-
-However boto3 does not work when using this, the environment variable AWS_ENDPOINT_URL must be set to `https://s3.gra.perf.cloud.ovh.net`, the same value as `endpoint_url` in `.aws/config` file.
-
-So to sumarise, this is required if you use OVH S3 (and has nothing to do with using OVH as an instance provider), in which case  `https://s3.gra.perf.cloud.ovh.net` is the right value for GRA region.
-
-See [S3](specific.md#aws-or-others-s3) for details.
-

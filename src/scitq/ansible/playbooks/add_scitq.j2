@@ -4,7 +4,6 @@ After=multi-user.target
 
 [Service]
 Environment=PATH=/usr/bin:/usr/local/bin
-Environment=AWS_ENDPOINT_URL={{ s3_url|default('') }}
 Type=simple
 ExecStart=scitq-worker -s {{ status }} {{ target }} {{ concurrency }}
 

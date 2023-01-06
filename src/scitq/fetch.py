@@ -11,7 +11,7 @@ import glob
 import hashlib
 import threading
 import subprocess
-from .util import PropagatingThread, boto3_resource
+from .util import PropagatingThread, xboto3
 import concurrent.futures
 
 # how many time do we retry
@@ -97,7 +97,7 @@ S3_REGEXP=re.compile(r'^s3://(?P<bucket>[^/]*)/(?P<path>.*)$')
 
 def get_s3():
     """Replace boto3.resource('s3') using hack suggested in https://github.com/aws/aws-cli/issues/1270"""
-    return boto3_resource('s3')
+    return xboto3().resource('s3')
 
 @retry_if_it_fails(RETRY_TIME)
 def s3_get(source, destination):
@@ -124,7 +124,7 @@ def s3_get(source, destination):
                     obj = jobs[job]
                     log.warning(f'Done for {obj}: {job.result()}')
         else:
-            BotoSession().client('s3').download_file(uri_match['bucket'],
+            get_s3().download_file(uri_match['bucket'],
                 uri_match['path'],destination)
     except botocore.exceptions.ClientError as error:
         if 'Not Found' in error.response.get('Error',{}).get('Message',None):
@@ -140,7 +140,7 @@ def s3_put(source, destination):
     log.info(f'S3 uploading {source} to {destination}')
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(destination).groupdict()
-    BotoSession().client('s3').upload_file(source,uri_match['bucket'],
+    xboto3().client('s3').upload_file(source,uri_match['bucket'],
         uri_match['path'])
 
 # FTP

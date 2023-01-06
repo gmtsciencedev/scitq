@@ -86,12 +86,7 @@ s3_url=https://s3.gra.perf.cloud.ovh.net
 
 You can also put these variables under more specific provider configuration (for instance you could replace `[workers:vars]` by `[ovh:vars]`), so that different provider use different s3 settings.
 
-You must also setup S3 access on your permanent workers, and be careful to set your AWS_ENDPOINT_URL variable in scitq-worker service `/etc/systemd/system/scitq-worker.service` definition as stated in [parameters](parameters.md#aws_endpoint_url). If you change this file do not forget to reload and apply:
-
-```bash
-systemctl daemon-reload
-systemctl restart scitq-worker
-```
+You must also setup S3 access on your permanent workers for root user.
 
 ## Docker private image: registry management
 

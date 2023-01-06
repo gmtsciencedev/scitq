@@ -338,7 +338,6 @@ In this file you will find these lines under the `[Service]` section:
 ```ini
 [Service]
 Environment=PATH=/usr/bin:/usr/local/bin
-Environment=AWS_ENDPOINT_URL=https://s3.gra.perf.cloud.ovh.net
 Environment=SCITQ_SERVER=127.0.0.1
 ```
 SCITQ_SERVER *must* be modified to your scitq-server IP address or DNS name (not the URL, the name or address). It may even be a good idea to set this SCITQ_SERVER variable into your /etc/environment global setting so that scitq commands on the system can reach the right scitq server automatically (not mandatory, whereas SCITQ_SERVER is mandatory in `/etc/systemd/system/scitq-worker.service`)
