@@ -142,6 +142,7 @@ function get_tasks(parameters) {
             element.scrollTop=999999;
         }
         await sleep(5000);
+        console.log('detailed_tasks: '+detailed_tasks);
         get_tasks({order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
         //    socket.emit('get', {object: 'task', order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
         //    });

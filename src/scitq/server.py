@@ -1168,10 +1168,12 @@ def handle_get():
         '''
         )])
         
-        if json.get('detailed_tasks',None):
+        detailed_tasks = json.getlist('detailed_tasks[]')
+        if detailed_tasks:
+            log.warning(f"detailing tasks {detailed_tasks}")
             for detailed_task in db.session.execute(f"""
                 SELECT execution_id,output,error FROM execution 
-                WHERE execution_id IN ({','.join([str(eid) for eid in json['detailed_tasks']])})"""):
+                WHERE execution_id IN ({','.join([str(eid) for eid in detailed_tasks])})"""):
                 for task in task_list:
                     if task[6]==detailed_task[0]:
                         task[7]=detailed_task[1]
