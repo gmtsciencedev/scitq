@@ -107,6 +107,7 @@ function get_workers() {
 
         worker_table += '</tbody>\n</table>\n';
         document.getElementById("workers").innerHTML = total_div +'<br/>' + worker_table;
+        get_jobs();
         await sleep(5000);
         get_workers();
     });
@@ -190,18 +191,40 @@ function get_jobs() {
                     '<td>'+job.target+'</td>'+
                     '<td class="text-center text-'+status_name[job.status]+'" title ="'+job.status+
                         '"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg></td>'+
-                    '<td style="text-align: left;">'+job.log+'</td>'+
+                    '<td style="text-align: left;">'+job.log.substr(0,60)+'<span class="truncated" id="job'+job.job_id+'">'+job.log.substr(60,job.log.length)+'</span></td>'+
                     '<td>'+action+'</td>'+
                     '</tr>\n';
             });
             table += '</tbody></table>\n';
         }
         document.getElementById('jobs').innerHTML = table;
-        await sleep(5000);
-        get_jobs();
+        my_collapse(); 
     });
 }
-$( document ).ready( function() { get_workers(); get_jobs(); } );
+
+var my_collapsed_elements = [];
+
+function my_collapse() {
+$('.truncated').hide() // Hide the text initially
+.after('<a title="expand text" href="#">[...]</a>') // Create toggle button
+.next().on('click', function () { // Attach behavior
+    $(this).text() == '[^]' // Swap the html
+      ? $(this).text('[...]').attr("title", "expand text")
+      : $(this).text('[^]').attr("title", "collapse text");
+    $(this).prev().toggle(); // Hide/show the text
+    $(this).text() == '[...]' 
+      ? my_collapsed_elements.pop($(this).parent().children(0).attr("id"))
+      : my_collapsed_elements.push($(this).parent().children(0).attr("id"));
+});
+my_collapsed_elements.forEach(
+ function(element_id) {
+    $('#'+element_id).show();
+    $('#'+element_id).next().text("[^]");
+ }
+);
+}
+
+$( document ).ready( get_workers() );
 </script>
 </head>
 
@@ -210,7 +233,7 @@ $( document ).ready( function() { get_workers(); get_jobs(); } );
 
 
 <span id="workers">
-Loading please wait...
+Loading please wait ...
 </span>
 
 <span id="addworker">

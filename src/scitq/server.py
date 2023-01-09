@@ -1073,7 +1073,6 @@ def batch():
 
 
 
-
 @app.route('/ui/get/')
 def handle_get():
     json = request.args
@@ -1426,7 +1425,7 @@ def delete_job():
     json = request.args
     job = db.session.query(Job).get(json['job_id'])
     if job:
-        db.session.delete()
+        db.session.delete(job)
         db.session.commit()
     else:
         log.warning(f"Job {json['job_id']} already deleted")
