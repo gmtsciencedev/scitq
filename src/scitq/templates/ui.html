@@ -3,53 +3,60 @@
 <head>
     <link href={{ url_for("static", filename="css/ui.css") }} rel="stylesheet">
     <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
-<!-- <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script> -->
+
+<script src="{{ url_for('static', filename='js/jquery-3.6.3.min.js') }}"></script>
 <link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
 <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
 <script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
 <script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
-<script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script>
-    <script type="text/javascript" charset="utf-8">
-    // All the class come from the Bootstrap v5 documentation and icon also come from bootstrap
-    //$SCRIPT_ROOT = {{ request.script_root|tojson }};
-    const delay = ms => new Promise(res => setTimeout(res, ms));
-    function sleep (time) {
-        return new Promise((resolve) => setTimeout(resolve, time));
-      }
-    function worker_concurrency_change(worker_id, change) {
-        socket.emit('concurrency_change', {object: 'worker', id: worker_id, change:change})
+<!-- <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script> -->
+<script type="text/javascript" charset="utf-8">
+// All the class come from the Bootstrap v5 documentation and icon also come from bootstrap
+//const delay = ms => new Promise(res => setTimeout(res, ms));
+function sleep (time) {
+    return new Promise((resolve) => setTimeout(resolve, time));
     }
-    function worker_prefetch_change(worker_id, change) {
-        socket.emit('prefetch_change', {object: 'worker', id: worker_id, change:change})
-    }
-    function add_worker(concurrency, prefetch, flavor, region, batch, number) {
-        console.log('Launching new workers: concurrency:',concurrency,
-            'flavor:',flavor, 'region:',region, 'batch:',batch, 'number:',number);
-        socket.emit('create_worker', {concurrency: concurrency, prefetch: prefetch, 
-            flavor: flavor, region: region, batch:batch, number: number});
-        //document.getElementById("awf-button").style.visibility = "hidden";
-        //document.getElementById("addworker-result").innerHTML = 'running...';
-    }
-    var socket = io();
-    socket.on('connect', function() {
-        console.log('connecting');
-        socket.emit('get', {object: 'workers'});
-    });
-    pause=false;
-    socket.on('workers', async function(data) {
+function worker_concurrency_change(worker_id, change) {
+    //socket.emit('concurrency_change', {object: 'worker', id: worker_id, change:change})
+    $.ajax({url: '/ui/concurrency_change', data: {object: 'worker', id: worker_id, change:change} });
+}
+function worker_prefetch_change(worker_id, change) {
+    //socket.emit('prefetch_change', {object: 'worker', id: worker_id, change:change})
+    $.ajax({url: '/ui/prefetch_change', data: {object: 'worker', id: worker_id, change:change} });
+}
+function add_worker(concurrency, prefetch, flavor, region, batch, number) {
+    console.log('Launching new workers: concurrency:',concurrency,
+        'flavor:',flavor, 'region:',region, 'batch:',batch, 'number:',number);
+    //socket.emit('create_worker', {concurrency: concurrency, prefetch: prefetch, 
+    //    flavor: flavor, region: region, batch:batch, number: number});
+    $.ajax({url: '/ui/create_worker', data:{concurrency: concurrency, prefetch: prefetch, 
+        flavor: flavor, region: region, batch:batch, number: number} });
+}
+/* var socket = io();
+socket.on('connect', function() {
+    console.log('connecting');
+    socket.emit('get', {object: 'workers'});
+}); */
+pause=false;
+//socket.on('workers', async function(data) {
+function get_workers() {
+    console.log('Fetching workers...')
+    $.getJSON('/ui/get/', {
+                object: 'workers'
+            }, async function(data) {
         //some action such as modify an action needs time to be done so the update of the page can be set on true 
         while(pause){
-            await delay(5000);
+            await sleep(5000);
         }
         workers = data.workers;
         totals = data.totals;
         console.log('Received workers ',workers);
         console.log('Received totals ',totals);
-        total_div = "<div class=\"container total-div\" style='margin-top:0.5em'><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=pending'>Pending: "+totals[0]
-            +"</a><a href='#'>Assigned: "+totals[1]
-            +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=running'>Running: "+totals[2]
-            +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=failed'>Failed: "+totals[3]
-            +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=succeeded'>Succeeded: "+totals[4]
+        total_div = "<div class=\"container total-div\" style='margin-top:0.5em'><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=pending'>Pending: "+totals.pending
+            +"</a><a href='#'>Assigned: "+totals.assigned
+            +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=running'>Running: "+totals.running
+            +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=failed'>Failed: "+totals.failed
+            +"</a><a target='_blank' href='/ui/task/?sortby=&worker=&batch=&show=succeeded'>Succeeded: "+totals.succeeded
             +"</a></div>"
             +"<p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>"
             +"<a type='button' id='downloadall' target='_blank' href='/ui/batch/'  class='btn btn-secondary' style='float:right;margin:0.35em'>Batch view</a>";
@@ -100,42 +107,51 @@
 
         worker_table += '</tbody>\n</table>\n';
         document.getElementById("workers").innerHTML = total_div +'<br/>' + worker_table;
-        await delay(5000);
-        socket.emit('get', {object: 'workers'});
-        socket.emit('jobs', {});
-        //sleep(5000).then( () => socket.emit('get', {object: 'workers'}) );
+        await sleep(5000);
+        get_workers();
     });
-    socket.on('worker_created', function(data) {
-        document.getElementById("addworker-result").innerHTML = data;
-        document.getElementById("awf-button").style.visibility = "visible";
-    });
-    //send an order to server to delete in db the worker
-    function DeleteWorker(worker_id){
-        socket.emit('delete_worker',{worker_id:worker_id});
-        console.log(('Deleting worker'));
-    }
-    //send an order to server to delete in db the worker
-    function DeleteJob(job_id){
-        socket.emit('delete_job',{job_id:job_id});
-        console.log(('Deleting job'));
-    }
-    //Function that open a text area in order to modify the batch and send the modification when the key "enter" triggers
-    function ChangeBatch(id_worker,i){
-        document.getElementById('batch-name-'+id_worker).innerHTML='<input class="col-9" id=batch-name-input-'+id_worker+' value="'+(workers[i][2]==null?'':workers[i][2])+'"><a type="button" class="btn btn-outline-dark border-0" style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" onclick="HideChangeBatch(\''+id_worker+'\','+i+')">X</a>';
-        document.getElementById('batch-name-input-'+id_worker).addEventListener("keypress",function(event){
-            if (event.key==='Enter'){
-                event.preventDefault();
-                socket.emit('change_batch',{batch_name : document.getElementById('batch-name-input-'+id_worker).value,worker_id:id_worker});
-                document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">Loading..</a>';
-                pause=false;
-            }
-        })
-    }
-    function HideChangeBatch(id_worker,i){
-        document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">'+(workers[i][2]==null?'':workers[i][2])+'</a><button type="button" onclick="ChangeBatch(\''+workers[i][0]+'\','+i+'); pause=true" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>';
-        pause=false;
-    }
-    socket.on('jobs', function(data) {
+};
+//socket.on('worker_created', function(data) {
+//    document.getElementById("addworker-result").innerHTML = data;
+//    document.getElementById("awf-button").style.visibility = "visible";
+//});
+//send an order to server to delete in db the worker
+function DeleteWorker(worker_id){
+    //socket.emit('delete_worker',{worker_id:worker_id});
+    $.ajax({url: '/ui/delete_worker/', data: {worker_id:worker_id} });
+    console.log(('Deleting worker'));
+}
+//send an order to server to delete in db the worker
+function DeleteJob(job_id){
+    //socket.emit('delete_job',{job_id:job_id});
+    $.ajax({url: '/ui/delete_job', data: {job_id:job_id} })
+    console.log(('Deleting job'));
+}
+//Function that open a text area in order to modify the batch and send the modification when the key "enter" triggers
+function ChangeBatch(id_worker,i){
+    document.getElementById('batch-name-'+id_worker).innerHTML='<input class="col-9" id=batch-name-input-'+id_worker+' value="'+(workers[i][2]==null?'':workers[i][2])+'"><a type="button" class="btn btn-outline-dark border-0" style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" onclick="HideChangeBatch(\''+id_worker+'\','+i+')">X</a>';
+    document.getElementById('batch-name-input-'+id_worker).addEventListener("keypress",function(event){
+        if (event.key==='Enter'){
+            event.preventDefault();
+            //socket.emit('change_batch',{batch_name : document.getElementById('batch-name-input-'+id_worker).value,worker_id:id_worker});
+            $.ajax({url: '/ui/change_batch', 
+                data: {batch_name : document.getElementById('batch-name-input-'+id_worker).value,worker_id:id_worker} });
+            document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">Loading..</a>';
+            pause=false;
+        }
+    })
+}
+function HideChangeBatch(id_worker,i){
+    document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">'+(workers[i][2]==null?'':workers[i][2])+'</a><button type="button" onclick="ChangeBatch(\''+workers[i][0]+'\','+i+'); pause=true" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>';
+    pause=false;
+}
+
+//socket.on('jobs', function(data) {
+function get_jobs() {
+    $.getJSON('/ui/get/', {}, async function(data) {
+        while(pause){
+            await sleep(5000);
+        }    
         console.log('jobs received', data);
         var action_pretify = {
             worker_create: "Create worker",
@@ -181,8 +197,11 @@
             table += '</tbody></table>\n';
         }
         document.getElementById('jobs').innerHTML = table;
-    
+        await sleep(5000);
+        get_jobs();
     });
+}
+$( document ).ready( function() { get_workers(); get_jobs(); } );
 </script>
 </head>
 

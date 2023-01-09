@@ -6,25 +6,29 @@
   <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
   <script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
   <script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
-  <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script>
+  <!-- <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script> -->
+  <script src="{{ url_for('static', filename='js/jquery-3.6.3.min.js') }}"></script>
   <script type="text/javascript" charset="utf-8">
     // All the class come from the Bootstrap v5 documentation and icon also come from bootstrap
-   const delay = ms => new Promise(res => setTimeout(res, ms));
+   //const delay = ms => new Promise(res => setTimeout(res, ms));
     function sleep (time) {
         return new Promise((resolve) => setTimeout(resolve, time));
       }
     pause=false;
-    var socket = io();
-    socket.on('connect', function() {
-        console.log('connecting');
-        socket.emit('get', {object: 'batch'});
-        });
+    //var socket = io();
+    //socket.on('connect', function() {
+    //    console.log('connecting');
+    //    socket.emit('get', {object: 'batch'});
+    //    });
         
-
-    socket.on('batch', async function(data){
+function get_batch() {
+  $.getJSON('/ui/get/', {
+    object: 'batch'
+  }, async function(data) {
+  //  socket.on('batch', async function(data){
       //some action such as modify a action needs time to be done so the update of the page can be set on true 
       while(pause){
-        await delay(5000);
+        await sleep(5000);
       }
         batches= data.batches;
         workers=data.workers;
@@ -101,57 +105,69 @@
         }
         batch_table +='</tbody>\n</table>\n';
         document.getElementById("batches").innerHTML=batch_table; 
-        await delay(5000);
-        socket.emit('get', {object:'batch'});
+        await sleep(5000);
+        get_batch();
+        //socket.emit('get', {object:'batch'});
     });
-      function displayModal(current_batch,type,status_paused=0) {
-            //Status is only used with type = go.
-            console.log(document.getElementById('batch-modal-'+current_batch));
-            if(type==='pause'||type==='go'){
-              document.getElementById('batch-modal-'+current_batch).innerHTML='<div class="modal-dialog modal-dialog-centered"><form class="modal-content"><div class="container"><h3>'+type+'</h3><p> Do you want to '+(type==='go'?'start/restart the batch ' : type +' the batch' ) +' '+current_batch+' '+(type==='go'?'and resume the tasks in pause ('+status_paused+') ?':'and the tasks in progress ?')+'</p>'
-                                                                    +'<div class="clearfix"><button type="button" class="btn btn-danger" onclick="document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false" >Cancel</button>'
-                                                                    +'<button type="button" class="btn btn-warning" onclick="action_batch(\''+current_batch+'\',\''+type+'\');document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false">Both</button>'
-                                                                    +'<button type="button" class="btn btn-primary" onclick="action_batch(\''+current_batch+'\',\'simple '+type+'\');document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false">Only Batch</button></div></div></form>';
-            }
-            else{
-            document.getElementById('batch-modal-'+current_batch).innerHTML='<div class="modal-dialog modal-dialog-centered"><form class="modal-content"><div class="container"><h3>'+type+'</h3><p>Are you sure you want to '+type+' '+current_batch+' ?</p>'
-                                                                    +'<div class="clearfix"><button type="button" class="btn btn-danger" onclick="document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false" >Cancel</button>'
-                                                                    +'<button type="button" class="btn btn-primary" onclick="action_batch(\''+current_batch+'\',\''+type+'\');document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false">Confirm</button></div></div></form>';
-            }
-            document.getElementById('batch-modal-'+current_batch).style.display = "block";
-            pause=true;
+  }
+
+  function displayModal(current_batch,type,status_paused=0) {
+        //Status is only used with type = go.
+        console.log(document.getElementById('batch-modal-'+current_batch));
+        if(type==='pause'||type==='go'){
+          document.getElementById('batch-modal-'+current_batch).innerHTML='<div class="modal-dialog modal-dialog-centered"><form class="modal-content"><div class="container"><h3>'+type+'</h3><p> Do you want to '+(type==='go'?'start/restart the batch ' : type +' the batch' ) +' '+current_batch+' '+(type==='go'?'and resume the tasks in pause ('+status_paused+') ?':'and the tasks in progress ?')+'</p>'
+                                                                +'<div class="clearfix"><button type="button" class="btn btn-danger" onclick="document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false" >Cancel</button>'
+                                                                +'<button type="button" class="btn btn-warning" onclick="action_batch(\''+current_batch+'\',\''+type+'\');document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false">Both</button>'
+                                                                +'<button type="button" class="btn btn-primary" onclick="action_batch(\''+current_batch+'\',\'simple '+type+'\');document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false">Only Batch</button></div></div></form>';
         }
-      function getAvg(diff_in_second){
-        if (diff_in_second>3600*24) {
-            return [(diff_in_second/(3600*24)).toFixed(1),'d'];
+        else{
+        document.getElementById('batch-modal-'+current_batch).innerHTML='<div class="modal-dialog modal-dialog-centered"><form class="modal-content"><div class="container"><h3>'+type+'</h3><p>Are you sure you want to '+type+' '+current_batch+' ?</p>'
+                                                                +'<div class="clearfix"><button type="button" class="btn btn-danger" onclick="document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false" >Cancel</button>'
+                                                                +'<button type="button" class="btn btn-primary" onclick="action_batch(\''+current_batch+'\',\''+type+'\');document.getElementById(\'batch-modal-'+current_batch+'\').style.display=\''+'none'+'\'; pause = false">Confirm</button></div></div></form>';
         }
-        else if(diff_in_second>3600){
-          return [(diff_in_second/3600).toFixed(1),'h'] ;
+        document.getElementById('batch-modal-'+current_batch).style.display = "block";
+        pause=true;
+    }
+
+  function getAvg(diff_in_second){
+    if (diff_in_second>3600*24) {
+        return [(diff_in_second/(3600*24)).toFixed(1),'d'];
+    }
+    else if(diff_in_second>3600){
+      return [(diff_in_second/3600).toFixed(1),'h'] ;
+    }
+    else if(diff_in_second>60){
+      return [(diff_in_second/60).toFixed(1),'min'];
         }
-        else if(diff_in_second>60){
-          return [(diff_in_second/60).toFixed(1),'min'];
-            }
-      return [(diff_in_second).toFixed(1),'s'];
-      }
-      function getDiffMax(diff_min,diff_maxi,unit){
-        if(diff_min>diff_maxi){diff=diff_min;}
-        else{diff=diff_maxi;}
-        switch(unit){
-          case'd':
-          return (diff/(24*3600)).toFixed(1);
-          case'h':
-          return (diff/(3600)).toFixed(1);
-          case'min':
-          return (diff/(60)).toFixed(1);
-          case's':
-          return (diff).toFixed(1);
-        }
-      }
-      //Send an action to the server
-      function action_batch(batch_name,action,signal=0){
-        socket.emit('batch_action',{action : action, name:batch_name, signal:signal});
-        console.log('Sending action',{action : action, name:batch_name, signal:signal});
-        }
+  return [(diff_in_second).toFixed(1),'s'];
+  }
+  
+  function getDiffMax(diff_min,diff_maxi,unit){
+    if(diff_min>diff_maxi){diff=diff_min;}
+    else{diff=diff_maxi;}
+    switch(unit){
+      case'd':
+      return (diff/(24*3600)).toFixed(1);
+      case'h':
+      return (diff/(3600)).toFixed(1);
+      case'min':
+      return (diff/(60)).toFixed(1);
+      case's':
+      return (diff).toFixed(1);
+    }
+  }
+
+  //Send an action to the server
+  function action_batch(batch_name,action,signal=0){
+    //socket.emit('batch_action',{action : action, name:batch_name, signal:signal});
+    $.ajax({
+      url: '/ui/batch/action',
+      data: {action : action, name:batch_name, signal:signal}
+    });
+    console.log('Sending action',{action : action, name:batch_name, signal:signal});
+    }
+  
+  $(document).ready( get_batch() );
 </script>
 </head>
 <body style="margin-top:-16px;">

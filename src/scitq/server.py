@@ -1,12 +1,11 @@
 from argparse import Namespace
 from datetime import datetime
-from flask import Flask, render_template, request, g
+from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, select, delete, true
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import ProgrammingError
 from flask_restx import Api, Resource, fields
-from flask_socketio import SocketIO, emit
 from werkzeug.middleware.proxy_fix import ProxyFix
 from time import sleep
 from threading import Thread
@@ -108,7 +107,6 @@ if SQLALCHEMY_POOL_SIZE is not None:
     db = SQLAlchemy(app, engine_options={'pool_size': int(SQLALCHEMY_POOL_SIZE)})
 else:
     db = SQLAlchemy(app)
-socketio = SocketIO(app)
 
 
  #######  ######   ######  
@@ -1060,19 +1058,6 @@ class BatchDelete(Resource):
 #     #  #  
  #####  ### 
 
-ui_session = db.session
-
-def ui_wrapper(f):
-    """A wrapper to regen ui_session in case it gets corrupted"""
-    def g(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except (KeyError,ProgrammingError):
-            global ui_session
-            with app.app_context():
-                ui_session = Session(db.engine)
-            return f(*args, **kwargs)
-    return g
 
 package_version = package_version()
 @app.route('/ui/')
@@ -1086,20 +1071,18 @@ def task():
 def batch():
     return render_template('batch.html', package_version=package_version)
 
-#@app.route('/test/')
 
 
 
-@ui_wrapper
-@socketio.on('get')
-def handle_get(json):
+@app.route('/ui/get/')
+def handle_get():
+    json = request.args
     if 'delay' in json:
         sleep(int(json['delay']))
     if json['object']=='workers':
         log.info('sending workers')
-        #emit('workers', [(w.name, w.status, len(w.executions)) for w in Worker.query.all()])
-        emit('workers', {
-            'workers':list([dict(row) for row in ui_session.execute(
+        return jsonify({
+            'workers':list([dict(row) for row in db.session.execute(
                 '''SELECT 
                     worker_id,
                     name, 
@@ -1122,32 +1105,35 @@ def handle_get(json):
                     written_bytes 
                 FROM worker
                 ORDER BY worker.batch,worker.name''')]),
-            'totals': list([list(row) for row in db.session.execute(
+            'totals': next(iter([dict(row) for row in db.session.execute(
                 '''SELECT
-                    (SELECT count(task_id) FROM task WHERE status='pending'),
-                    (SELECT count(task_id) FROM task WHERE status IN ('assigned','accepted')),
-                    (SELECT count(task_id) FROM task WHERE status='running'),
-                    (SELECT count(task_id) FROM task WHERE status='failed'),
-                    (SELECT count(task_id) FROM task WHERE status='succeeded')
+                    (SELECT count(task_id) FROM task WHERE status='pending') as pending,
+                    (SELECT count(task_id) FROM task WHERE status IN ('assigned','accepted')) as assigned,
+                    (SELECT count(task_id) FROM task WHERE status='running') as running,
+                    (SELECT count(task_id) FROM task WHERE status='failed') as failed,
+                    (SELECT count(task_id) FROM task WHERE status='succeeded') as succeeded
                 '''
-            )])[0] })
+            )])) })
 
-    if json['object']=='task':
-        log.warning(f"sending task ordered by {json['order_by']} filter by {json['filter_by']}")
+    elif json['object']=='tasks':
+        order_by = json.get('order_by', None)
+        filter_by = json.get('filter_by', None)
+        log.warning(f"sending task ordered by {order_by} filter by {filter_by}")
 
-        if json['order_by'] =='worker':
+
+        if order_by=='worker':
             sort_clause='ORDER BY worker.name, task.task_id DESC'
-        elif json['order_by'] =='batch':
+        elif order_by=='batch':
             sort_clause='ORDER BY task.batch, task.task_id DESC'
         else:
             sort_clause='ORDER BY task.task_id DESC'
         
-        if json['filter_by']=='terminated':
+        if filter_by=='terminated':
             where_clause = "WHERE execution.status IN ('succeeded','failed')"
-        elif json['filter_by']=='all':
+        elif filter_by=='all':
             where_clause = ""
-        elif json['filter_by']:
-            where_clause = f"WHERE execution.status='{json['filter_by']}'"
+        elif filter_by:
+            where_clause = f"WHERE execution.status='{filter_by}'"
         else:
             where_clause = ""
 
@@ -1158,7 +1144,8 @@ def handle_get(json):
             trunc_output=f'RIGHT(execution.output,{UI_OUTPUT_TRUNC})'
             trunc_error=f'RIGHT(execution.error,{UI_OUTPUT_TRUNC})'
         
-        task_list = list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in ui_session.execute(
+
+        task_list = list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in db.session.execute(
         f'''SELECT
         task.task_id,
         task.name,
@@ -1180,9 +1167,9 @@ def handle_get(json):
         {sort_clause}
         '''
         )])
-
+        
         if json.get('detailed_tasks',None):
-            for detailed_task in ui_session.execute(f"""
+            for detailed_task in db.session.execute(f"""
                 SELECT execution_id,output,error FROM execution 
                 WHERE execution_id IN ({','.join([str(eid) for eid in json['detailed_tasks']])})"""):
                 for task in task_list:
@@ -1191,28 +1178,9 @@ def handle_get(json):
                         task[8]=detailed_task[2]
                         break
 
-        emit('task',{'tasks':task_list})
+        return jsonify({'tasks':task_list})
         
-    #if json['object'] in ['succeeded','failed','running','pending']:
-    #    log.info('sending executions')
-    #    type_execution = json['object']
-    #    emit('execution',{'executions':list([list(row) for row in db.session.execute(
-    #    f'''SELECT 
-    #    execution_id,
-    #    worker_id,
-    #    task_id,
-    #    status,
-    #    return_code,
-    #    pid,
-    #    output,
-    #    error
-    #    FROM execution
-    #    WHERE execution.status 
-    #    LIKE '{type_execution}'
-
-    #   '''
-    #    )])})
-    if json['object'] == 'batch':
+    elif json['object'] == 'batch':
         log.info('sending batch')
         if IS_SQLITE:
             duration_query='(JULIANDAY(e1.modification_date)-JULIANDAY(e1.creation_date))*24'
@@ -1232,22 +1200,23 @@ def handle_get(json):
     SELECT batch,status, COUNT(task_id),NULL,NULL,NULL 
     FROM task WHERE task_id NOT IN (SELECT task_id FROM execution) GROUP BY batch,status
 ) AS b ORDER BY batch, status'''
-        emit('batch',{'batches':list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in ui_session.execute(
-        batch_query
-        )]),
-        'workers': list([list(row) for row in ui_session.execute(worker_query)])})
+        return jsonify({'batches':list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)
+                                        ) for row in db.session.execute(batch_query)]),
+                        'workers': list([list(row) for row in db.session.execute(worker_query)])})
 
-@ui_wrapper        
-@socketio.on('change_batch')
-def handle_change_batch(json):
+#@socketio.on('change_batch')
+@app.route('/ui/change_batch')
+def handle_change_batch():
+    json = request.args
     Worker.query.filter(Worker.worker_id==json['worker_id']).update(
         {Worker.batch:json['batch_name'] or None})
-    ui_session.commit()
+    db.session.commit()
 
 
-@ui_wrapper
-@socketio.on('concurrency_change')
-def handle_concurrency_change(json):
+#@socketio.on('concurrency_change')
+@app.route('/ui/concurrency_change')
+def handle_concurrency_change():
+    json = request.args
     worker_id = json['id']
     change = json['change']
     log.info(f'changing concurrency for worker {worker_id}: {change}')
@@ -1259,11 +1228,12 @@ def handle_concurrency_change(json):
         log.info('Using standard SQL')
         Worker.query.filter(Worker.worker_id==worker_id).update(
             {Worker.concurrency: func.greatest(Worker.concurrency+change,0)})
-    ui_session.commit()
+    db.session.commit()
 
-@ui_wrapper
-@socketio.on('prefetch_change')
-def handle_prefetch_change(json):
+#@socketio.on('prefetch_change')
+@app.route('/ui/prefetch_change')
+def handle_prefetch_change():
+    json = request.args
     worker_id = json['id']
     change = json['change']
     log.info(f'changing prefetch for worker {worker_id}: {change}')
@@ -1275,26 +1245,27 @@ def handle_prefetch_change(json):
         log.info('Using standard SQL')
         Worker.query.filter(Worker.worker_id==worker_id).update(
             {Worker.prefetch: func.greatest(Worker.prefetch+change,0)})
-    ui_session.commit()
+    db.session.commit()
 
 
-@ui_wrapper
-@socketio.on('create_worker')
-def handle_create_worker(json):
+#@socketio.on('create_worker')
+@app.route('/ui/create_worker')
+def handle_create_worker():
+    json = request.args
     concurrency = int(json['concurrency'])
     flavor = json['flavor']
     if not flavor:
-        emit('worker_created', 'Flavor must be specified')
-        return None
+        return jsonify(error='Flavor must be specified')
+        #return None
     region = json['region']
     if not region:
-        emit('worker_created', 'Region must be specified')
-        return None
+        return jsonify(error='Region must be specified')
+        #return None
     batch = json['batch'] or None
     prefetch = int(json['prefetch'])
     number = int(json['number'])
     for _ in range(number):
-        ui_session.add(
+        db.session.add(
             Job(target='', 
                 action='worker_create', 
                 args={
@@ -1306,12 +1277,13 @@ def handle_create_worker(json):
                 }
             )
         )
-        ui_session.commit()
+        db.session.commit()
 
-@ui_wrapper
-@socketio.on('batch_action')
-def handle_batch_action(json):
+#@socketio.on('batch_action')
+@app.route('/ui/batch/action')
+def handle_batch_action():
     """Gathering all the action dealing with batch like pause, break, stop, clear, go."""
+    json = request.args
     if json['action'] in ['stop','break','pause','simple pause','pause only batch']:
         #Same function as in the API set all workers affected to this batch to running and can also interrupt the running tasks with signal 3 and 9
         name=json['name']
@@ -1332,16 +1304,16 @@ def handle_batch_action(json):
                         Task.status.in_(['running','accepted']))):
                 t.status = 'paused'
             signal = 20
-            ui_session.commit()
+            db.session.commit()
         log.warning(f'Sending signal {signal} to executions for batch {name}')
         for e in db.session.scalars(select(Execution).join(Execution.task).where(
                                         Execution.status=='running',
                                         Task.batch==name)):
             log.warning(f'Sending signal {signal} to execution {e.execution_id}')
-            ui_session.add(Signal(e.execution_id, e.worker_id, signal ))
-        ui_session.commit()
+            db.session.add(Signal(e.execution_id, e.worker_id, signal ))
+        db.session.commit()
         log.warning('result pause :Ok')
-    if json['action'] in ['go','simple go']: 
+    elif json['action'] in ['go','simple go']: 
         #Same function as in the API (re)set all workers affected to this batch to running
         name=json['name']
         """(re)set all workers affected to this batch to running"""
@@ -1352,14 +1324,14 @@ def handle_batch_action(json):
             for t in Task.query.filter(Task.batch==name):
                 if t.status == 'paused':
                     t.status='running'
-            for e in ui_session.scalars(select(Execution).join(Execution.task).where(
+            for e in db.session.scalars(select(Execution).join(Execution.task).where(
                                             Execution.status=='running',
                                             Task.batch==name)):
                 log.warning(f'Sending signal {signal} to execution {e.execution_id}')
-                ui_session.add(Signal(e.execution_id, e.worker_id, signal ))
-        ui_session.commit()
+                db.session.add(Signal(e.execution_id, e.worker_id, signal ))
+        db.session.commit()
         log.warning('result go : Ok')
-    if json['action']=='clear':
+    elif json['action']=='clear':
         #Same function as in the API clear() Delete all tasks and executions for this batch
         name=json['name']
         """Delete all tasks and executions for this batch"""
@@ -1367,15 +1339,16 @@ def handle_batch_action(json):
         if name=='Default':
             name=None
         for t in Task.query.filter(Task.batch==name):
-            ui_session.delete(t)
-        ui_session.commit()
+            db.session.delete(t)
+        db.session.commit()
         log.warning(f'result clear batch {name}: Ok ')
 
-@ui_wrapper
-@socketio.on('task_action')
-def handle_task_action(json):
+#@socketio.on('task_action')
+@app.route('/ui/task/action')
+def handle_task_action():
     """Gathering all the action dealing with task like break, stop, delete, modify, restart"""
     #The code essentially is from the API code with a few modifications
+    json = request.args
     task=json['task_id']
     if json['action'] in ['break','stop','pause','resume']: 
         #A signal 3 or 9 is created and causes only the interruption of the task with id same structure as in the API 
@@ -1396,51 +1369,54 @@ def handle_task_action(json):
                 type='resume'
                 t.status='running'
             log.warning(f'Sending signal {signal} to executions for task {task}')
-            for e in ui_session.scalars(select(Execution).join(Execution.task).where(
+            for e in db.session.scalars(select(Execution).join(Execution.task).where(
                                             Execution.status=='running',
                                             Task.task_id==task)):
                 log.warning(f'Sending signal {signal} to execution {e.execution_id}')
-                ui_session.add(Signal(e.execution_id, e.worker_id, signal ))
-        ui_session.commit()
+                db.session.add(Signal(e.execution_id, e.worker_id, signal ))
+        db.session.commit()
         log.warning(f'result {type} : Ok')
-    if json['action']=='delete': 
+    elif json['action']=='delete': 
         #Delete the task in the data base
         for t in Task.query.filter(Task.task_id==task):
-            ui_session.delete(t)
-        ui_session.commit()
+            db.session.delete(t)
+        db.session.commit()
         log.warning('result delete: Ok')
-    if json['action']=='modify': 
+    elif json['action']=='modify': 
         #Changing the command for a task in the data base and moving it in the task queue. It doesn't create a new task.
         for t in Task.query.filter(Task.task_id==task):
             t.command =json["modification"]
             t.status='pending'
-        ui_session.commit()
+        db.session.commit()
         log.warning('result modify : Ok')
-    if json['action']=='restart': 
+    elif json['action']=='restart': 
         #Relaunching the execution of a task.
         for t in Task.query.filter(Task.task_id==task):
             t.status='pending'
-        ui_session.commit()
+        db.session.commit()
         log.warning('result restart : Ok')
 
-@ui_wrapper
-@socketio.on('delete_worker') #Delete a worker.
-def delete_worker(json):
+#@socketio.on('delete_worker') #Delete a worker.
+@app.route('/ui/delete_worker')
+def delete_worker():
     """Delete a worker in db"""
-    return worker_dao.delete(json['worker_id'], session=ui_session)
+    json = request.args
+    worker_dao.delete(json['worker_id'], session=db.session)
     
 
-@ui_wrapper
-@socketio.on('jobs')
-def handle_jobs(json):
-    emit('jobs',{'jobs':[to_dict(job) for job in ui_session.query(Job).order_by(Job.job_id.desc()).all()]})
+#@socketio.on('jobs')
+@app.route('/ui/jobs')
+def handle_jobs():
+    """Provide UI with job list"""
+    return jsonify(jobs = [to_dict(job) for job in db.session.query(Job).order_by(Job.job_id.desc()).all()])
 
-@ui_wrapper
-@socketio.on('delete_job') #Delete a worker.
-def delete_job(json):
+#@socketio.on('delete_job') #Delete a worker.
+@app.route('/ui/delete_job')
+def delete_job():
     """Delete a job in db"""
-    ui_session.delete(ui_session.query(Job).get(json['job_id']))
-    ui_session.commit()
+    json = request.args
+    db.session.delete(db.session.query(Job).get(json['job_id']))
+    db.session.commit()
     
 
 
