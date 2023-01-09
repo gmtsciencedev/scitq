@@ -46,7 +46,7 @@ def main():
     subsubparser=worker_parser.add_subparsers(dest='action')
     list_worker_parser=subsubparser.add_parser('list', help='List all workers')
     list_worker_parser.add_argument('-b','--batch',help="Give you a list of workers according to his name",type=str,default='')
-    list_worker_parser.add_argument('-S','--status',help="give you a list of workers according to his status",type=str,default='',choices=['','running','paused','offline','terminated'])
+    list_worker_parser.add_argument('-S','--status',help="give you a list of workers according to his status",type=str,default='',choices=['','running','paused','offline','failed'])
     list_worker_parser.add_argument('-H','--no-header',help='Do not print headers',action='store_true')
     list_worker_parser.add_argument('-L','--long',help='Print the entire command',action='store_true')
 

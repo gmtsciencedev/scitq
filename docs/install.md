@@ -91,19 +91,30 @@ python3 -m pip install .
 
 ### install the service
 
-Copy the template from https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_uwsgi_service.tpl:
+Since v1.0rc5, uwsgi is the default deploy mode. If you want to keep old style deploy go to [next chapter](#old-style-deploy). Old style deploy uses Flask development server and is used in debug or simple setups. It does not depends upon uwsgi and is more straight forward to understand but it behaves poorly under heavy load.
+
+**new in v1.0rc8** Since v1.0rc8 there are three different service for scitq which enable a much better performance under heavy load.
+
+Copy the production template 
 ```bash
-curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_uwsgi_service.tpl -o /etc/systemd/system/scitq.service
+for item in main socketio queue
+do
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq-$item.service -o /etc/systemd/system/scitq-$item.service
+done
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq.target -o /etc/systemd/system/scitq-target
 ```
 (this template_uwsgi_service.tpl is also in `/root/scitq/templates` it you installed by source)
 
+If this is you first time install you will have to create an `/etc/scitq.conf`:
 
-!!! note
-    uwsgi is the new way to deploy scitq starting from v1.0rc5. If for some reason you prefer old style deploy (which use development server included in Flask), use template_service.tpl instead of template_uwsgi_service.tpl. If you use old style deploy, you will not need to do the following install of uwsgi with specific support extension.
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq.conf -o /etc/scitq.conf
+
+!!! Note
+    If you upgrade from v1.0rc5/6/7 you must recompile uwsgi as the new deploy system requires pcre (for uwsgi routing)
 
 If you use uwsgi which is the new default, you must install uwsgi in a specific way, so that it includes SSL (needed for "handshake") and gevent support:
 ```bash
-apt install -y libssl-dev
+apt install -y libssl-dev libpcre3-dev
 python3 -m pip install --upgrade pip
 export CFLAGS="-I/usr/include/openssl"
 export LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
@@ -112,60 +123,43 @@ python3 -m pip install -I --no-binary=:all: --no-cache-dir pyuwsgi uwsgi
 python3 -m pip install gevent
 ```
 
-Now edit `/etc/systemd/system/scitq.service` to suit your need. Keeping 
+Now edit `/etc/scitq.conf` to suit your need. Keeping 
 most variables as they are should be fine, *except SCITQ_SERVER variable*:
 
 * SCITQ_SERVER variable is used by workers deployed by ansible to contact the server, so it must be the public name or IP address of the server or at least some network address or name accessible to workers (like a private LAN on the cloud). The default value 127.0.0.1 must be changed. In doubt put the public IP address of scitq-server dedicated server.
 
-Look into [Parameters](parameters.md#scitq-server-parameters) to have more details about the parameters that can be set in this file.
+Look into [Parameters](parameters.md#scitq-server-parameters) to have more details about the parameters that can be set in this file. Notably with OVH you will need to place the parameters and secrets that make CLI work (and SCITQ ansible code too).
+
+!!! note 
+    if you upgrade from an old style deploy (v1.0rc4 or below - or a newer version in old style deploy), remove scitq.service
+    ```bash
+    systemctl stop scitq.service
+    systemctl disable scitq.service
+    mv /etc/systemd/system/scitq.service /root/
+    ```
+    You may want to recover all your `Environment=` lines to put them in `/etc/scitq.conf` (but removing `Environment=` and keeping only what is next)
 
 ```bash
 mkdir /var/log/scitq
 systemctl daemon-reload
-systemctl enable scitq
-systemctl start scitq
+for item in main socketio queue
+do
+systemctl enable scitq-$item
+done
+systemctl start scitq.target
 ```
 
 Look with `systemctl status scitq` that all is fine and that should be it. In case of trouble, you'll find details in `/var/log/scitq/scitq.log` file or whatever file you have specified in [LOG_FILE](parameters.md#log_file) parameter. 
 
-#### Using uwsgi
+#### Old style deploy
 
-**New in 1.0rc5**: you can now use uwsgi. Be careful that uwsgi is a complex and delicate system and stick to those instructions unless you really know what you are doing.
+uwsgi is the new way to deploy scitq starting from v1.0rc5. If for some reason you prefer old style deploy (which use development server included in Flask), you're in the right place. This system is more simple (a unique service that does everything) and it does not depend upon uwsgi. However it is not recommanded by Flask in production, it behaves poorly under heavy load, is more fragile (some exception may crash all services) and offers less flexibility than the split service uwsgi deploy.
 
-As specified above, uwsgi must be installed with SSL and gevent support, on Ubuntu this is done this way:
 ```bash
-apt install -y libssl-dev
-python3 -m pip install --upgrade pip
-export CFLAGS="-I/usr/include/openssl"
-export LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
-export UWSGI_PROFILE_OVERRIDE=ssl=true
-python3 -m pip install -I --no-binary=:all: --no-cache-dir pyuwsgi uwsgi
-python3 -m pip install gevent
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_service.tpl -o /etc/systemd/system/scitq.service
 ```
 
-Then you can run with:
-```bash
-export SQLALCHEMY_DATABASE_URI=postgresql://root@/scitq
-export LOG_FILE=/var/log/scitq/scitq.log
-export LOG_FILE_MAX_SIZE=10000000
-export LOG_FILE_KEEP=10
-export SCITQ_SERVER=gamma.gmt.bio
-export OS_AUTH_URL=https://auth.cloud.ovh.net/v3
-export OS_PROJECT_ID=1dbb2f509809809dfh89
-export OS_PROJECT_NAME="1234567890123435"
-export OS_USER_DOMAIN_NAME="Default"
-export OS_PROJECT_DOMAIN_ID="default"
-export OS_USERNAME="user-MLKMLKMLKMLD"
-export OS_PASSWORD_INPUT="xxxxxxxxxxxxxxxxxxxxxx"
-export OS_PASSWORD="xxxxxxxxxxxxxxxxxxxxx"
-export OS_REGION_NAME="GRA7"
-export OS_INTERFACE=public
-export OS_IDENTITY_API_VERSION=3
-# the line below is needed for ubuntu, not necessarily for all distrib
-export PYTHONPATH=/usr/lib/python3.8/site-packages/
-pyuwsgi --http :5000 --gevent 1000 --http-websockets --master -w scitq.wsgi:app
-```
-
+You should edit it to change the `Environment=` lines and modify them (notably SCITQ_SERVER which must be changed). Look into [Parameters](parameters.md#scitq-server-parameters), but remember that the parameters must be put into `/etc/systemd/system/scitq.service` in `[Service]` section 
 
 
 ## Ansible

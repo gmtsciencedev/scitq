@@ -1,0 +1,11 @@
+[Unit]
+Description=scitq-main
+After=multi-user.target
+
+[Service]
+EnvironmentFile=/etc/scitq.conf
+Type=simple
+ExecStart=pyuwsgi --http :5000 --gevent 1000 --http-websockets --gevent-early-monkey-patch --master -p $SCITQ_SERVER_PROCESS --enable-threads --route="^/socket.io uwsgi:127.0.0.1:5001,0,0"  -w scitq.server:app
+
+[Install]
+WantedBy=scitq.target

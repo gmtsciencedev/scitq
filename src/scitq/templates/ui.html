@@ -27,8 +27,8 @@
             'flavor:',flavor, 'region:',region, 'batch:',batch, 'number:',number);
         socket.emit('create_worker', {concurrency: concurrency, prefetch: prefetch, 
             flavor: flavor, region: region, batch:batch, number: number});
-        document.getElementById("awf-button").style.visibility = "hidden";
-        document.getElementById("addworker-result").innerHTML = 'running...';
+        //document.getElementById("awf-button").style.visibility = "hidden";
+        //document.getElementById("addworker-result").innerHTML = 'running...';
     }
     var socket = io();
     socket.on('connect', function() {
@@ -37,7 +37,7 @@
     });
     pause=false;
     socket.on('workers', async function(data) {
-        //some action such as modify a action needs time to be done so the update of the page can be set on true 
+        //some action such as modify an action needs time to be done so the update of the page can be set on true 
         while(pause){
             await delay(5000);
         }
@@ -57,8 +57,8 @@
         worker_table = '<table class="table table-responsive text-center table-hover table-striped"><thead class=" table-secondary"><tr><th>Worker Name</th><th>Batch</th><th>Status</th><th>Concurrency</th><th>Prefetch</th><th>Accepted Tasks</th><th>Running Tasks</th><th>Successes</th><th>Failures</th><th>Total Tasks</th><th>CPU load / IOwait %</th><th>Free memory %</th><th>read/write GB</th><th></th></tr></thead>\n<tbody>\n';
         for (i=0; i<workers.length; i++) {
             switch(workers[i].status){
-                case 'terminated':
-                    var worker_status = 'success';
+                case 'failed':
+                    var worker_status = 'danger';
                     break;
                 case 'paused':
                     var worker_status = 'warning';
@@ -102,6 +102,7 @@
         document.getElementById("workers").innerHTML = total_div +'<br/>' + worker_table;
         await delay(5000);
         socket.emit('get', {object: 'workers'});
+        socket.emit('jobs', {});
         //sleep(5000).then( () => socket.emit('get', {object: 'workers'}) );
     });
     socket.on('worker_created', function(data) {
@@ -109,9 +110,14 @@
         document.getElementById("awf-button").style.visibility = "visible";
     });
     //send an order to server to delete in db the worker
-    function DeleteWorker(id_worker){
-        socket.emit('delete_worker',{worker_id:id_worker});
+    function DeleteWorker(worker_id){
+        socket.emit('delete_worker',{worker_id:worker_id});
         console.log(('Deleting worker'));
+    }
+    //send an order to server to delete in db the worker
+    function DeleteJob(job_id){
+        socket.emit('delete_job',{job_id:job_id});
+        console.log(('Deleting job'));
     }
     //Function that open a text area in order to modify the batch and send the modification when the key "enter" triggers
     function ChangeBatch(id_worker,i){
@@ -129,6 +135,54 @@
         document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">'+(workers[i][2]==null?'':workers[i][2])+'</a><button type="button" onclick="ChangeBatch(\''+workers[i][0]+'\','+i+'); pause=true" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>';
         pause=false;
     }
+    socket.on('jobs', function(data) {
+        console.log('jobs received', data);
+        var action_pretify = {
+            worker_create: "Create worker",
+            worker_deploy: "Deploy worker",
+            worker_destroy: "Destroy worker"
+        } ;
+        var table='';
+        var status_name = {
+            succeeded: "success",
+            pending: "secondary",
+            running: "warning",
+            failed: "danger"
+        } ;
+        var status_action = {
+            succeeded: 1,
+            pending: 0,
+            running: 0,
+            failed: 1
+        } ;
+        if (data.jobs.length>0) {
+            table = '<table class="table table-responsive text-center table-hover table-striped">\n' +
+                '<thead class=" table-secondary"><tr><th>Job</th> <th>Target</th> <th>Status</th> <th style="width: 40em;">Details</th> <th>Action</th> </tr> </thead>\n'+
+                '<tbody>\n';
+            data.jobs.forEach(function(job){
+
+                var action = '';
+                if (job.status=='succeeded' || job.status=='failed') {
+                    action = '<button type="button" title="delete" onclick="DeleteJob('+
+                            job.job_id+
+                            ')" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash3-fill" viewBox="0 0 16 16"><path d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5Zm-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5ZM4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06Zm6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528ZM8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5Z"/></svg>'
+                            +'</button>';
+                }
+
+                table += '<tr>'+
+                    '<td>'+action_pretify[job.action]+'</td>'+
+                    '<td>'+job.target+'</td>'+
+                    '<td class="text-center text-'+status_name[job.status]+'" title ="'+job.status+
+                        '"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg></td>'+
+                    '<td style="text-align: left;">'+job.log+'</td>'+
+                    '<td>'+action+'</td>'+
+                    '</tr>\n';
+            });
+            table += '</tbody></table>\n';
+        }
+        document.getElementById('jobs').innerHTML = table;
+    
+    });
 </script>
 </head>
 
@@ -163,6 +217,7 @@ Loading please wait...
             class="awf-button" id="awf-button" type="button">Add</button>
     </form>
     <span id="addworker-result" style="float:left; color:red; margin-top: 5px; margin-left:10px"></span>
+    <span id="jobs" style="float:left;clear: both;margin: 1em;font-size:small"></span>
 </span>
 
 

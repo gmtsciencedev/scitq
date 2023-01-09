@@ -1,0 +1,12 @@
+[Unit]
+Description=scitq-main
+After=multi-user.target
+
+[Service]
+EnvironmentFile=/etc/scitq.conf
+Environment=QUEUE_PROCESS=1
+Type=simple
+ExecStart=scitq-queue
+
+[Install]
+WantedBy=scitq.target

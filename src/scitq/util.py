@@ -118,3 +118,13 @@ class xboto3:
         return boto3.client(service_name=service_name,
                                 **self.__get_config__(service_name), **kwargs)
     
+
+def check_dir(path):
+    """Try to create dir for this path if it does not exists"""
+    path,_ = os.path.split(path)
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+def to_dict(obj):
+    """Return a dict from an object filtering on "normal" attributes"""
+    return {k:v if type(v) in [str,int,float] else '' if v is None else str(v) for k,v in obj.__dict__.items() if not k.startswith('_')}

@@ -8,6 +8,7 @@
     comment: "scitq : {{ nodename }}"
     state: absent
   become: true
+  when: hostvars[nodename].ipv4 is defined
 - name: Update the firewall with node IPv6
   ansible.builtin.iptables:
     chain: INPUT

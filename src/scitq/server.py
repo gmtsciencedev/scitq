@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, g
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, select, delete, true
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import ProgrammingError
 from flask_restx import Api, Resource, fields
 from flask_socketio import SocketIO, emit
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -13,11 +14,11 @@ import queue
 import logging as log
 from logging.config import dictConfig
 import os
-from subprocess import run
+from subprocess import run, Popen, PIPE
 import signal
 import json
 from sqlalchemy.dialects import sqlite
-from .util import PropagatingThread, package_path, package_version
+from .util import PropagatingThread, package_path, package_version, check_dir, to_dict
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 from .ansible.scitq.sqlite_inventory import scitq_inventory
 
@@ -39,27 +40,54 @@ WORKER_CREATE_RETRY_SLEEP=30
 UI_OUTPUT_TRUNC=100
 WORKER_DESTROY_RETRY=2
 
-dictConfig({
-    'version': 1,
-    'formatters': {'default': {
-        'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-    }},
-    'handlers': {'wsgi': {
-        'class': 'logging.StreamHandler',
-        'stream': 'ext://flask.logging.wsgi_errors_stream',
-        'formatter': 'default'
-    }, "file": {
-        "class": "logging.handlers.RotatingFileHandler",
-        "formatter": "default",
-        "filename": os.environ.get('LOG_FILE',"/tmp/scitq.log"),
-        "maxBytes": int(os.environ.get('LOG_FILE_MAX_SIZE',"10000000")),
-        "backupCount": int(os.environ.get('LOG_FILE_KEEP',"3"))
-    }},
-    'root': {
-        'level': os.environ.get('LOG_LEVEL',"INFO"),
-        'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
-    }
-})
+if os.environ.get('QUEUE_PROCESS') and os.environ.get('QUEUE_LOG_FILE'):
+    check_dir(os.environ.get('QUEUE_LOG_FILE'))
+    dictConfig({
+        'version': 1,
+        'formatters': {'default': {
+            'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+        }},
+        'handlers': {'wsgi': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://flask.logging.wsgi_errors_stream',
+            'formatter': 'default'
+        }, "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "default",
+            "filename": os.environ.get('QUEUE_LOG_FILE'),
+            "maxBytes": int(os.environ.get('QUEUE_LOG_FILE_MAX_SIZE',
+                os.environ.get('LOG_FILE_MAX_SIZE',"10000000"))),
+            "backupCount": int(os.environ.get('QUEUE_LOG_FILE_KEEP',
+                os.environ.get('LOG_FILE_KEEP',"3")))
+        }},
+        'root': {
+            'level': os.environ.get('LOG_LEVEL',"INFO"),
+            'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
+        }
+    })
+else:
+    check_dir(os.environ.get('LOG_FILE',"/tmp/scitq.log"))
+    dictConfig({
+        'version': 1,
+        'formatters': {'default': {
+            'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+        }},
+        'handlers': {'wsgi': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://flask.logging.wsgi_errors_stream',
+            'formatter': 'default'
+        }, "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "default",
+            "filename": os.environ.get('LOG_FILE',"/tmp/scitq.log"),
+            "maxBytes": int(os.environ.get('LOG_FILE_MAX_SIZE',"10000000")),
+            "backupCount": int(os.environ.get('LOG_FILE_KEEP',"3"))
+        }},
+        'root': {
+            'level': os.environ.get('LOG_LEVEL',"INFO"),
+            'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
+        }
+    })
 
 IS_SQLITE = 'sqlite' in SQLALCHEMY_DATABASE_URI
 
@@ -67,7 +95,7 @@ IS_SQLITE = 'sqlite' in SQLALCHEMY_DATABASE_URI
 log.info('Starting')
 log.warning(f'WORKER_CREATE is {WORKER_CREATE}')
 
-worker_create_queue = queue.Queue()
+#worker_create_queue = queue.Queue()
 
 
 # via https://github.com/pallets/flask-sqlalchemy/blob/main/examples/hello/hello.py
@@ -81,6 +109,18 @@ if SQLALCHEMY_POOL_SIZE is not None:
 else:
     db = SQLAlchemy(app)
 socketio = SocketIO(app)
+
+
+ #######  ######   ######  
+ #     #  #     #  #     # 
+ #     #  #     #  #     # 
+ #     #  ######   ######  
+ #     #  #   #    #     # 
+ #     #  #    #   #     # 
+ #######  #     #  ######  
+
+
+
 
 class Task(db.Model):
     __tablename__ = "task"
@@ -160,7 +200,6 @@ class Worker(db.Model):
                 break
             else:
                 log.exception(f'Worker {self.name} was not properly destroyed (f{worker_check}), retrying.')
-
 class Execution(db.Model):
     __tablename__ = "execution"
     execution_id = db.Column(db.Integer, primary_key=True)
@@ -209,8 +248,52 @@ class Signal(db.Model):
         self.worker_id = worker_id
         self.signal = signal
 
+
+class Job(db.Model):
+    __tablename__ = "job"
+    job_id = db.Column(db.Integer, primary_key=True)
+    target = db.Column(db.String)
+    action = db.Column(db.String)
+    args = db.Column(db.JSON, default={})
+    retry =  db.Column(db.Integer, default = 0)
+    status = db.Column(db.String, default = 'pending')
+    log = db.Column(db.Text, nullable=True)
+    creation_date = db.Column(db.DateTime, server_default=func.now())
+    modification_date = db.Column(db.DateTime, onupdate=func.now())
+    
+
+    def __init__(self, target, action, args={}, retry=0):
+        self.target = target
+        self.action = action
+        self.args = args
+        self.retry = retry
+
+
+def create_worker_destroy_job(worker, session, commit=True):
+    job = Job(target = worker.name,
+        action='worker_destroy',
+        args=to_dict(worker),
+        retry=WORKER_DESTROY_RETRY)
+    session.add(job)
+    if commit:
+        session.commit()
+
+
 with app.app_context():
     db.create_all()
+
+
+ ######      #     ####### 
+ #     #    # #    #     # 
+ #     #   #   #   #     # 
+ #     #  #     #  #     # 
+ #     #  #######  #     # 
+ #     #  #     #  #     # 
+ ######   #     #  ####### 
+                           
+
+
+
 
 
 # via https://flask-restx.readthedocs.io/en/latest/example.html
@@ -384,7 +467,7 @@ ns = api.namespace('workers', description='WORKER operations')
 
 class WorkerDAO(BaseDAO):
     ObjectType = Worker
-    authorized_status = ['paused','running','offline','terminated']
+    authorized_status = ['paused','running','offline','failed']
 
     def update_contact(self, id, load,memory,read_bytes,written_bytes):
         db.engine.execute(
@@ -395,23 +478,19 @@ class WorkerDAO(BaseDAO):
         )
         db.session.commit()
 
-    def delete(self,id):
+    def delete(self,id,is_destroyed=False, session=db.session):
         """Delete a worker
         """
         worker=self.get(id)
         log.warning(f'Deleting worker {id} ({worker.idle_callback})')
-        if worker.idle_callback is not None:
-            with app.app_context():
-                session = Session(db.engine)
-            def _this_worker_destroy():
-                worker.destroy()
-                session.delete(worker)
-                session.commit()
-                session.close()
-            Thread(target=_this_worker_destroy).start()
+        if worker.idle_callback is not None and not is_destroyed:
+            create_worker_destroy_job(worker, session)
             return worker
         else:
-            return super().delete(id)
+            object = self.get(id)
+            session.delete(object)
+            session.commit()
+            return object
 
     def list(self):
         return super().list(sorting_column='worker_id')
@@ -551,7 +630,9 @@ class WorkerCallback(Resource):
                 log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
                 return {'result':'still some work to do, lazy one!'}
             log.warning(f'Worker {worker.name} called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
-            worker.destroy()
+            #worker.destroy()
+            create_worker_destroy_job(worker, db.session, commit=False)
+
             db.session.delete(worker)
             db.session.commit()
             return {'result':'ok'}
@@ -576,12 +657,21 @@ class WorkerDeploy(Resource):
         deploy_args = deploy_parser.parse_args()
 
         for _ in range(deploy_args['number']):
-            worker_create_queue.put(Namespace(concurrency=deploy_args['concurrency'], 
-                prefetch=deploy_args['prefetch'],
-                flavor=deploy_args['flavor'],
-                region=deploy_args['region'],
-                batch=deploy_args['batch']))
-        
+            db.session.add(
+                Job(target='', 
+                    action='worker_create', 
+                    args={
+                        'concurrency': deploy_args['concurrency'], 
+                        'prefetch':deploy_args['prefetch'],
+                        'flavor':deploy_args['flavor'],
+                        'region':deploy_args['region'],
+                        'batch':deploy_args['batch']
+                    }
+                )
+            )
+        db.session.commit()
+
+
         return {'result':'ok'}
 
 class ExecutionDAO(BaseDAO):
@@ -960,6 +1050,8 @@ class BatchDelete(Resource):
         db.session.commit()
         return {'result':'Ok'}
 
+
+
 #     # ### 
 #     #  #  
 #     #  #  
@@ -968,6 +1060,19 @@ class BatchDelete(Resource):
 #     #  #  
  #####  ### 
 
+ui_session = db.session
+
+def ui_wrapper(f):
+    """A wrapper to regen ui_session in case it gets corrupted"""
+    def g(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except (KeyError,ProgrammingError):
+            global ui_session
+            with app.app_context():
+                ui_session = Session(db.engine)
+            return f(*args, **kwargs)
+    return g
 
 package_version = package_version()
 @app.route('/ui/')
@@ -984,6 +1089,8 @@ def batch():
 #@app.route('/test/')
 
 
+
+@ui_wrapper
 @socketio.on('get')
 def handle_get(json):
     if 'delay' in json:
@@ -992,7 +1099,7 @@ def handle_get(json):
         log.info('sending workers')
         #emit('workers', [(w.name, w.status, len(w.executions)) for w in Worker.query.all()])
         emit('workers', {
-            'workers':list([dict(row) for row in db.session.execute(
+            'workers':list([dict(row) for row in ui_session.execute(
                 '''SELECT 
                     worker_id,
                     name, 
@@ -1051,7 +1158,7 @@ def handle_get(json):
             trunc_output=f'RIGHT(execution.output,{UI_OUTPUT_TRUNC})'
             trunc_error=f'RIGHT(execution.error,{UI_OUTPUT_TRUNC})'
         
-        task_list = list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in db.session.execute(
+        task_list = list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in ui_session.execute(
         f'''SELECT
         task.task_id,
         task.name,
@@ -1075,7 +1182,7 @@ def handle_get(json):
         )])
 
         if json.get('detailed_tasks',None):
-            for detailed_task in db.session.execute(f"""
+            for detailed_task in ui_session.execute(f"""
                 SELECT execution_id,output,error FROM execution 
                 WHERE execution_id IN ({','.join([str(eid) for eid in json['detailed_tasks']])})"""):
                 for task in task_list:
@@ -1125,18 +1232,20 @@ def handle_get(json):
     SELECT batch,status, COUNT(task_id),NULL,NULL,NULL 
     FROM task WHERE task_id NOT IN (SELECT task_id FROM execution) GROUP BY batch,status
 ) AS b ORDER BY batch, status'''
-        emit('batch',{'batches':list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in db.session.execute(
+        emit('batch',{'batches':list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in ui_session.execute(
         batch_query
         )]),
-        'workers': list([list(row) for row in db.session.execute(worker_query)])})
-        
+        'workers': list([list(row) for row in ui_session.execute(worker_query)])})
+
+@ui_wrapper        
 @socketio.on('change_batch')
 def handle_change_batch(json):
     Worker.query.filter(Worker.worker_id==json['worker_id']).update(
         {Worker.batch:json['batch_name'] or None})
-    db.session.commit()
+    ui_session.commit()
 
 
+@ui_wrapper
 @socketio.on('concurrency_change')
 def handle_concurrency_change(json):
     worker_id = json['id']
@@ -1150,8 +1259,9 @@ def handle_concurrency_change(json):
         log.info('Using standard SQL')
         Worker.query.filter(Worker.worker_id==worker_id).update(
             {Worker.concurrency: func.greatest(Worker.concurrency+change,0)})
-    db.session.commit()
+    ui_session.commit()
 
+@ui_wrapper
 @socketio.on('prefetch_change')
 def handle_prefetch_change(json):
     worker_id = json['id']
@@ -1165,19 +1275,10 @@ def handle_prefetch_change(json):
         log.info('Using standard SQL')
         Worker.query.filter(Worker.worker_id==worker_id).update(
             {Worker.prefetch: func.greatest(Worker.prefetch+change,0)})
-    db.session.commit()
-
-def get_nodename():
-    worker_names = list(map(lambda x: x[0], 
-        db.session.execute(select(Worker.name))))
-    log.warning(f'Worker names: {worker_names}')
-    i=1
-    while f'node{i}' in worker_names:
-        i+=1
-    return f'node{i}'
+    ui_session.commit()
 
 
-
+@ui_wrapper
 @socketio.on('create_worker')
 def handle_create_worker(json):
     concurrency = int(json['concurrency'])
@@ -1192,14 +1293,22 @@ def handle_create_worker(json):
     batch = json['batch'] or None
     prefetch = int(json['prefetch'])
     number = int(json['number'])
-    global worker_create_queue
     for _ in range(number):
-        worker_create_queue.put(Namespace(concurrency=concurrency, 
-            prefetch=prefetch,
-            flavor=flavor,
-            region=region,
-            batch=batch))
+        ui_session.add(
+            Job(target='', 
+                action='worker_create', 
+                args={
+                    'concurrency': concurrency, 
+                    'prefetch':prefetch,
+                    'flavor':flavor,
+                    'region':region,
+                    'batch':batch
+                }
+            )
+        )
+        ui_session.commit()
 
+@ui_wrapper
 @socketio.on('batch_action')
 def handle_batch_action(json):
     """Gathering all the action dealing with batch like pause, break, stop, clear, go."""
@@ -1217,19 +1326,20 @@ def handle_batch_action(json):
         elif json['action']=='simple pause':
             signal = 0
         elif json['action']=='pause':
+            #TODO: make a more efficient query
             for t in Task.query.filter(and_(
                         Task.batch==name,
                         Task.status.in_(['running','accepted']))):
                 t.status = 'paused'
             signal = 20
-            db.session.commit()
+            ui_session.commit()
         log.warning(f'Sending signal {signal} to executions for batch {name}')
         for e in db.session.scalars(select(Execution).join(Execution.task).where(
                                         Execution.status=='running',
                                         Task.batch==name)):
             log.warning(f'Sending signal {signal} to execution {e.execution_id}')
-            db.session.add(Signal(e.execution_id, e.worker_id, signal ))
-        db.session.commit()
+            ui_session.add(Signal(e.execution_id, e.worker_id, signal ))
+        ui_session.commit()
         log.warning('result pause :Ok')
     if json['action'] in ['go','simple go']: 
         #Same function as in the API (re)set all workers affected to this batch to running
@@ -1242,12 +1352,12 @@ def handle_batch_action(json):
             for t in Task.query.filter(Task.batch==name):
                 if t.status == 'paused':
                     t.status='running'
-            for e in db.session.scalars(select(Execution).join(Execution.task).where(
+            for e in ui_session.scalars(select(Execution).join(Execution.task).where(
                                             Execution.status=='running',
                                             Task.batch==name)):
                 log.warning(f'Sending signal {signal} to execution {e.execution_id}')
-                db.session.add(Signal(e.execution_id, e.worker_id, signal ))
-        db.session.commit()
+                ui_session.add(Signal(e.execution_id, e.worker_id, signal ))
+        ui_session.commit()
         log.warning('result go : Ok')
     if json['action']=='clear':
         #Same function as in the API clear() Delete all tasks and executions for this batch
@@ -1257,10 +1367,11 @@ def handle_batch_action(json):
         if name=='Default':
             name=None
         for t in Task.query.filter(Task.batch==name):
-            db.session.delete(t)
-        db.session.commit()
+            ui_session.delete(t)
+        ui_session.commit()
         log.warning(f'result clear batch {name}: Ok ')
 
+@ui_wrapper
 @socketio.on('task_action')
 def handle_task_action(json):
     """Gathering all the action dealing with task like break, stop, delete, modify, restart"""
@@ -1285,110 +1396,52 @@ def handle_task_action(json):
                 type='resume'
                 t.status='running'
             log.warning(f'Sending signal {signal} to executions for task {task}')
-            for e in db.session.scalars(select(Execution).join(Execution.task).where(
+            for e in ui_session.scalars(select(Execution).join(Execution.task).where(
                                             Execution.status=='running',
                                             Task.task_id==task)):
                 log.warning(f'Sending signal {signal} to execution {e.execution_id}')
-                db.session.add(Signal(e.execution_id, e.worker_id, signal ))
-        db.session.commit()
+                ui_session.add(Signal(e.execution_id, e.worker_id, signal ))
+        ui_session.commit()
         log.warning(f'result {type} : Ok')
     if json['action']=='delete': 
         #Delete the task in the data base
         for t in Task.query.filter(Task.task_id==task):
-            db.session.delete(t)
-        db.session.commit()
+            ui_session.delete(t)
+        ui_session.commit()
         log.warning('result delete: Ok')
     if json['action']=='modify': 
         #Changing the command for a task in the data base and moving it in the task queue. It doesn't create a new task.
         for t in Task.query.filter(Task.task_id==task):
             t.command =json["modification"]
             t.status='pending'
-        db.session.commit()
+        ui_session.commit()
         log.warning('result modify : Ok')
     if json['action']=='restart': 
         #Relaunching the execution of a task.
         for t in Task.query.filter(Task.task_id==task):
             t.status='pending'
-        db.session.commit()
+        ui_session.commit()
         log.warning('result restart : Ok')
 
+@ui_wrapper
 @socketio.on('delete_worker') #Delete a worker.
 def delete_worker(json):
     """Delete a worker in db"""
-    return worker_dao.delete(json['worker_id'])
+    return worker_dao.delete(json['worker_id'], session=ui_session)
     
 
-def create_worker_object(concurrency, flavor, region, batch, prefetch, db_session):
-    """Create a worker object in db - this must be called linearly not in async way
-    """
-    hostname = get_nodename()
-    idle_callback = WORKER_IDLE_CALLBACK.format(hostname=hostname)
-    log.info(f'Creating a new worker {hostname}: concurrency:{concurrency}, flavor:{flavor}, region:{region}, prefetch:{prefetch}')
-    w = Worker(name=hostname, hostname=hostname, concurrency=concurrency, status='offline', 
-            batch=batch, idle_callback=idle_callback, prefetch=prefetch)
-    db_session.add(w)
-    db_session.commit()
-    return hostname, w
-    
-    
-def create_worker_process(hostname, concurrency, flavor, region, batch, w, 
-        db_session, prefetch=None):
-    """Deploy a worker - can be called parallely up to a certain limit
-    (WORKER_CREATE_CONCURRENCY)
-    """
-    try:
-        regions = region.split()
-        if len(regions)>1:
-            region=regions[0]
-            len(f'Splitting regions and using region {region}')
-        retry=WORKER_CREATE_RETRY
-        # be careful with lazy objects in case they got deleted
-        worker_id,worker_name = w.worker_id,w.name
-        while retry>=0 and worker_exists(worker_id, db_session):
-            log.warning(f'''Command is {WORKER_CREATE.format(
-                hostname=hostname,
-                concurrency=concurrency,
-                flavor=flavor,
-                region=region
-            )}''')
-            process = run([WORKER_CREATE.format(
-                hostname=hostname,
-                concurrency=concurrency,
-                flavor=flavor,
-                region=region
-            )],shell=True, capture_output=True, encoding='utf-8')
-            if process.returncode == 0:
-                log.warning(f'worker created: done for {hostname}')
-                socketio.emit('worker_created', f'done for {hostname}',broadcast=True)
-                db_session.close()
-                break
-            else:
-                log.warning(f'worker not created: error for {hostname}: {process.stdout.strip()} {process.stderr.strip()}')
-                socketio.emit('worker_created', f'error for {hostname}: {process.stdout.strip()} {process.stderr.strip()}',broadcast=True)
-                log.warning(f'Broadcast message sent for {worker_name} failure')
-                if retry>=0:
-                    log.warning('Retrying...')
-                    sleep(WORKER_CREATE_RETRY_SLEEP)
-                else:
-                    db_session.close()
-            #if w.idle_callback:
-            #    log.warning(f'Worker {w.name} called idle callback, launching: '+w.idle_callback.format(**(worker.__dict__)))
-            #    process = run([w.idle_callback.format(**(w.__dict__))],shell=True,capture_output=True, encoding='utf-8')
-            #    if process.returncode != 0:
-            #        log.warning(f'worker callback failed: error for {hostname}: {process.stdout.strip()} {process.stderr.strip()}')
-            #    else:
-            #        log.warning(f'Worker {w.name} was successfully undeployed')
-            #        if len(regions)>1:
-            #            log.warning("Trying next regions")
-            #            create_worker_process(hostname, concurrency, flavor, " ".join(regions[1:]), batch, w)
-    except Exception as e:
-        socketio.emit('worker_created', f'error for {hostname}: {e}',broadcast=True)
-        log.exception(f'Creation failed for {hostname}...')
-        raise
+@ui_wrapper
+@socketio.on('jobs')
+def handle_jobs(json):
+    emit('jobs',{'jobs':[to_dict(job) for job in ui_session.query(Job).order_by(Job.job_id.desc()).all()]})
 
-def worker_exists(worker_id, db_session):
-    """Return true if this worker_id is in database"""
-    return db_session.query(Worker).filter(Worker.worker_id==worker_id).count()>0
+@ui_wrapper
+@socketio.on('delete_job') #Delete a worker.
+def delete_job(json):
+    """Delete a job in db"""
+    ui_session.delete(ui_session.query(Job).get(json['job_id']))
+    ui_session.commit()
+    
 
 
 
@@ -1399,19 +1452,40 @@ def worker_exists(worker_id, db_session):
  #    #  ######  #       #  #    #  ###  #####   #    #  #    #  #    #        #    #    #  #####   #       ######  #    # 
  #    #  #    #  #    #  #   #   #    #  #   #   #    #  #    #  #    #        #    #    #  #   #   #       #    #  #    # 
  #####   #    #   ####   #    #   ####   #    #   ####    ####   #####         #    #    #  #    #  ######  #    #  #####  
-                                                                                                                           
 
 
+def get_nodename(session):
+    worker_names = list(map(lambda x: x[0], 
+        session.execute(select(Worker.name))))
+    log.warning(f'Worker names: {worker_names}')
+    i=1
+    while f'node{i}' in worker_names:
+        i+=1
+    return f'node{i}'
 
+
+def create_worker_object(concurrency, flavor, region, batch, prefetch, db_session):
+    """Create a worker object in db - this must be called linearly not in async way
+    """
+    hostname = get_nodename(db_session)
+    idle_callback = WORKER_IDLE_CALLBACK.format(hostname=hostname)
+    log.info(f'Creating a new worker {hostname}: concurrency:{concurrency}, flavor:{flavor}, region:{region}, prefetch:{prefetch}')
+    w = Worker(name=hostname, hostname=hostname, concurrency=concurrency, status='offline', 
+            batch=batch, idle_callback=idle_callback, prefetch=prefetch)
+    db_session.add(w)
+    db_session.commit()
+    return w
+    
 
 def background():
     # while some tasks are pending without executions:
     #   look for a running worker:
     #      create a pending execution of this task for this worker
+
+
     with app.app_context():
         session = Session(db.engine)
-    worker_create_process_waiting_queue = []
-    worker_create_process_queue = []
+    worker_process_queue = {}
     other_process_queue = []
     log.info('Starting thread for {}'.format(os.getpid()))
     ansible_workers = list(session.query(Worker).filter(and_(
@@ -1484,45 +1558,111 @@ def background():
                         worker.status = 'running'
                         change = True
                 if change:
-                    session.commit()  
-            try:
-                while True:
-                    new_worker = worker_create_queue.get(block=False)
-                    new_worker.hostname, new_worker.w = create_worker_object(
-                        concurrency=new_worker.concurrency,
-                        flavor=new_worker.flavor,
-                        region=new_worker.region,
-                        batch=new_worker.batch,
-                        prefetch=new_worker.prefetch,
-                        db_session=session)
-                    worker_create_process_waiting_queue.append(
-                        new_worker
-                    )
-            except queue.Empty:
-                pass
-            while len(worker_create_process_waiting_queue)>0 \
-                    and len(worker_create_process_queue)<WORKER_CREATE_CONCURRENCY:
-                new_worker = worker_create_process_waiting_queue.pop(0)
-                with app.app_context():
-                    new_worker.db_session = Session(db.engine)
-                # verifying that the object is still in db to prevent recreation
-                if worker_exists(new_worker.w.worker_id, session):
-                    log.warning(f'Launching creation process for worker {new_worker.hostname}.')
-                    worker_create_process = PropagatingThread(
-                        target = create_worker_process,
-                        kwargs = new_worker.__dict__)
-                    worker_create_process.start()
-                    worker_create_process_queue.append((new_worker, worker_create_process))
-                else:
-                    log.warning(f'Not queuing {new_worker.hostname} for creation as it was deleted')
-            for new_worker,worker_create_process in list(worker_create_process_queue):
-                try:
-                    if not worker_create_process.is_alive():
-                        worker_create_process_queue.remove((new_worker, worker_create_process))
-                        log.warning(f'Creation process over for worker {new_worker.hostname}.')
-                except Exception as e:
-                    log.exception(f'Creation failed: {e}')
-                    worker_create_process_queue.remove((new_worker, worker_create_process))
+                    session.commit()
+            
+            change = False
+            for job in list(session.query(Job).filter(Job.status == 'pending')):
+
+                if job.action == 'worker_destroy':
+                    change=True
+                    if ('create',job.target) in worker_process_queue:
+                        worker,worker_create_process,job_id = worker_process_queue[('create',job.target)]
+                        if worker_create_process.poll() is None:
+                            worker_create_process.terminate()
+                            log.warning(f'Worker {job.target} creation process has been terminated')
+                            del(worker_process_queue[('create',job.target)])
+                            session.query(Job).get(job_id).status='failed'
+                    worker = Namespace(**job.args)
+                    log.warning(f'Launching destroy process for {job.target}, command is "{worker.idle_callback}"')
+                    worker_delete_process = Popen(
+                            worker.idle_callback,
+                            stdout = PIPE,
+                            stderr = PIPE,
+                            shell = True,
+                            encoding = 'utf-8'
+                        )
+                    job.status='running'
+                    worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process,job.job_id)
+                    log.warning(f'Worker {job.target} destruction process has been launched')
+                
+                if job.action == 'worker_create':
+                    change = True
+                    worker = create_worker_object(db_session=session,
+                        **job.args)
+                    job.action = 'worker_deploy'
+                    job.target = worker.name
+                    job.args = dict(job.args)
+                    job.args['worker_id'] = worker.worker_id
+                    job.retry = WORKER_CREATE_RETRY
+                    job.status = 'pending'
+                
+                if job.action == 'worker_deploy':
+                    if job.target not in worker_process_queue and len(
+                                worker_process_queue)<WORKER_CREATE_CONCURRENCY:
+                        if ('destroy',job.target) in worker_process_queue:
+                            log.warning(f'Trying to recreate worker {job.target} after destruction too soon, waiting a little bit...')
+                            continue
+                        change = True
+                        log.warning(f'Launching creation process for worker {job.target}.')
+                        worker = Namespace(**job.args)
+                        log.warning(f'Launching command is "'+WORKER_CREATE.format(
+                                hostname=job.target,
+                                concurrency=worker.concurrency,
+                                flavor=worker.flavor,
+                                region=worker.region
+                            )+'"')
+                        worker_create_process = Popen(
+                            WORKER_CREATE.format(
+                                hostname=job.target,
+                                concurrency=worker.concurrency,
+                                flavor=worker.flavor,
+                                region=worker.region
+                            ),
+                            stdout = PIPE,
+                            stderr = PIPE,
+                            shell = True,
+                            encoding = 'utf-8'
+                        )
+                        worker.name = worker.hostname = job.target
+                        job.status = 'running'
+                        worker_process_queue[('create',job.target)]=(worker, worker_create_process, job.job_id)
+                        log.warning(f'Worker {job.target} creation process has been launched')
+
+            if change:
+                session.commit()                
+
+            change = False
+            for ((action,worker_name),(worker,worker_process,job_id)) in list(worker_process_queue.items()):
+                returncode = worker_process.poll()
+                if returncode is not None:
+                    change = True
+                    job = session.query(Job).get(job_id)
+                    del(worker_process_queue[(action,worker_name)])
+                    if returncode == 0:
+                        log.warning(f'Process {action} succeeded for worker {worker.name}.')
+                        job.log = worker_process.stdout.read()
+                        job.status = 'succeeded'
+
+                        if action=='destroy':
+                            log.warning(f'Deleting worker ')
+                            #session.execute(Worker.__table__.delete().where(
+                            #    Worker.__table__.c.worker_id==worker.worker_id))
+                            worker_dao.delete(worker.worker_id, is_destroyed=True)
+                    else:
+                        stderr = worker_process.stderr.read()
+                        log.warning(f'Process {action} failed for worker {worker.name}: {stderr}')
+                        job.log = worker_process.stdout.read() + stderr
+                        if job.retry > 0:
+                            job.retry -= 1
+                            job.status = 'pending'
+                        else:
+                            job.status = 'failed'
+                            if action=='create':
+                                worker = session.query(Worker).get(job.args['worker_id'])
+                                worker.status = 'failed'
+            if change:
+                session.commit()
+                
             for process_name, process in list(other_process_queue):
                 try:
                     if not process.is_alive():
@@ -1552,8 +1692,8 @@ def background():
                     pass
         sleep(MAIN_THREAD_SLEEP)
 
-
-Thread(target=background).start()
+if not os.environ.get('SCITQ_PRODUCTION'):
+    Thread(target=background).start()
 
 
 def main():
