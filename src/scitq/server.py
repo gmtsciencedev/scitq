@@ -1213,6 +1213,7 @@ def handle_change_batch():
     Worker.query.filter(Worker.worker_id==json['worker_id']).update(
         {Worker.batch:json['batch_name'] or None})
     db.session.commit()
+    return '"ok"'
 
 
 #@socketio.on('concurrency_change')
@@ -1231,6 +1232,7 @@ def handle_concurrency_change():
         Worker.query.filter(Worker.worker_id==worker_id).update(
             {Worker.concurrency: func.greatest(Worker.concurrency+change,0)})
     db.session.commit()
+    return '"ok"'
 
 #@socketio.on('prefetch_change')
 @app.route('/ui/prefetch_change')
@@ -1248,6 +1250,7 @@ def handle_prefetch_change():
         Worker.query.filter(Worker.worker_id==worker_id).update(
             {Worker.prefetch: func.greatest(Worker.prefetch+change,0)})
     db.session.commit()
+    return '"ok"'
 
 
 #@socketio.on('create_worker')
@@ -1279,7 +1282,8 @@ def handle_create_worker():
                 }
             )
         )
-        db.session.commit()
+    db.session.commit()
+    return '"ok"'
 
 #@socketio.on('batch_action')
 @app.route('/ui/batch/action')
@@ -1344,6 +1348,7 @@ def handle_batch_action():
             db.session.delete(t)
         db.session.commit()
         log.warning(f'result clear batch {name}: Ok ')
+    return '"ok"'
 
 #@socketio.on('task_action')
 @app.route('/ui/task/action')
@@ -1397,6 +1402,7 @@ def handle_task_action():
             t.status='pending'
         db.session.commit()
         log.warning('result restart : Ok')
+    return '"ok"'
 
 #@socketio.on('delete_worker') #Delete a worker.
 @app.route('/ui/delete_worker')
@@ -1404,6 +1410,7 @@ def delete_worker():
     """Delete a worker in db"""
     json = request.args
     worker_dao.delete(json['worker_id'], session=db.session)
+    return '"ok"'
     
 
 #@socketio.on('jobs')
@@ -1417,9 +1424,13 @@ def handle_jobs():
 def delete_job():
     """Delete a job in db"""
     json = request.args
-    db.session.delete(db.session.query(Job).get(json['job_id']))
-    db.session.commit()
-    
+    job = db.session.query(Job).get(json['job_id'])
+    if job:
+        db.session.delete()
+        db.session.commit()
+    else:
+        log.warning(f"Job {json['job_id']} already deleted")
+    return '"ok"'
 
 
 
@@ -1551,17 +1562,18 @@ def background():
                             del(worker_process_queue[('create',job.target)])
                             session.query(Job).get(job_id).status='failed'
                     worker = Namespace(**job.args)
-                    log.warning(f'Launching destroy process for {job.target}, command is "{worker.idle_callback}"')
-                    worker_delete_process = Popen(
-                            worker.idle_callback,
-                            stdout = PIPE,
-                            stderr = PIPE,
-                            shell = True,
-                            encoding = 'utf-8'
-                        )
-                    job.status='running'
-                    worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process,job.job_id)
-                    log.warning(f'Worker {job.target} destruction process has been launched')
+                    if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
+                        log.warning(f'Launching destroy process for {job.target}, command is "{worker.idle_callback}"')
+                        worker_delete_process = Popen(
+                                worker.idle_callback,
+                                stdout = PIPE,
+                                stderr = PIPE,
+                                shell = True,
+                                encoding = 'utf-8'
+                            )
+                        job.status='running'
+                        worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process,job.job_id)
+                        log.warning(f'Worker {job.target} destruction process has been launched')
                 
                 if job.action == 'worker_create':
                     change = True

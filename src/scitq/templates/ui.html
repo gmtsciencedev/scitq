@@ -118,7 +118,7 @@ function get_workers() {
 //send an order to server to delete in db the worker
 function DeleteWorker(worker_id){
     //socket.emit('delete_worker',{worker_id:worker_id});
-    $.ajax({url: '/ui/delete_worker/', data: {worker_id:worker_id} });
+    $.ajax({url: '/ui/delete_worker', data: {worker_id:worker_id} });
     console.log(('Deleting worker'));
 }
 //send an order to server to delete in db the worker
@@ -148,7 +148,7 @@ function HideChangeBatch(id_worker,i){
 
 //socket.on('jobs', function(data) {
 function get_jobs() {
-    $.getJSON('/ui/get/', {}, async function(data) {
+    $.getJSON('/ui/jobs', {}, async function(data) {
         while(pause){
             await sleep(5000);
         }    
