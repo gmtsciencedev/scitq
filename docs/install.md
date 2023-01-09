@@ -93,14 +93,12 @@ python3 -m pip install .
 
 Since v1.0rc5, uwsgi is the default deploy mode. If you want to keep old style deploy go to [next chapter](#old-style-deploy). Old style deploy uses Flask development server and is used in debug or simple setups. It does not depends upon uwsgi and is more straight forward to understand but it behaves poorly under heavy load.
 
-**new in v1.0rc8** Since v1.0rc8 there are three different service for scitq which enable a much better performance under heavy load.
+**new in v1.0rc8** Since v1.0rc8 there are two different service for scitq which enable a much better performance under heavy load.
 
 Copy the production template 
 ```bash
-for item in main socketio queue
-do
-curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq-$item.service -o /etc/systemd/system/scitq-$item.service
-done
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq-main.service -o /etc/systemd/system/scitq-main.service
+curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq-queue.service -o /etc/systemd/system/scitq-queue.service
 curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq.target -o /etc/systemd/system/scitq-target
 ```
 (this template_uwsgi_service.tpl is also in `/root/scitq/templates` it you installed by source)
@@ -109,12 +107,10 @@ If this is you first time install you will have to create an `/etc/scitq.conf`:
 
 curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq.conf -o /etc/scitq.conf
 
-!!! Note
-    If you upgrade from v1.0rc5/6/7 you must recompile uwsgi as the new deploy system requires pcre (for uwsgi routing)
 
 If you use uwsgi which is the new default, you must install uwsgi in a specific way, so that it includes SSL (needed for "handshake") and gevent support:
 ```bash
-apt install -y libssl-dev libpcre3-dev
+apt install -y libssl-dev
 python3 -m pip install --upgrade pip
 export CFLAGS="-I/usr/include/openssl"
 export LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
@@ -142,10 +138,8 @@ Look into [Parameters](parameters.md#scitq-server-parameters) to have more detai
 ```bash
 mkdir /var/log/scitq
 systemctl daemon-reload
-for item in main socketio queue
-do
-systemctl enable scitq-$item
-done
+systemctl enable scitq-main
+systemctl enable scitq-queue
 systemctl start scitq.target
 ```
 
