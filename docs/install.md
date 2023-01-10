@@ -145,6 +145,15 @@ systemctl start scitq.target
 
 Look with `systemctl status scitq` that all is fine and that should be it. In case of trouble, you'll find details in `/var/log/scitq/scitq.log` file or whatever file you have specified in [LOG_FILE](parameters.md#log_file) parameter. 
 
+!!! note
+    About workers: in SCITQ documentation what we call a worker is a working node in the pseudo HPC cluster managed by SCITQ. It is not a uwsgi worker, which is a forking subprocess of uwsgi to serve requests. We will always refer to uwsgi workers as uwsgi workers, worker without uwsgi prefixed mean SCITQ node executing the scitq-worker process. The number of uwsgi workers is defined in /etc/scitq.conf, with SCITQ_SERVER_PROCESS paramater (it defaults to 10 which should be enough in most cases).
+
+#### Under the hood in uwsgi configuration
+
+When scitq.server is imported, the default behaviour is to start the background() thread which dispatches tasks to workers. Since v1.0rc8, it is possible to define an environment variable, SCITQ_PRODUCTION, which should be set to 1, so that scitq.server does not launch background() thread when imported. This enable uwsgi to run Flask app without launching the background() thread (which is what occurs in scitq-main service), while in the scitq-queue service, scitq.server is imported but only the background() thread is launched, the Flask app is inactive.
+
+With this system, scitq-queue logs are in `/var/log/scitq/scitq-queue.log` (QUEUE_LOG_FILE paramater in /etc/scitq.conf), and scitq-main logs can be reached by `journalctl -u scitq-main` (which is the same as for the worker service on SCITQ workers, `journalctl -u scitq-worker`). 
+
 #### Old style deploy
 
 uwsgi is the new way to deploy scitq starting from v1.0rc5. If for some reason you prefer old style deploy (which use development server included in Flask), you're in the right place. This system is more simple (a unique service that does everything) and it does not depend upon uwsgi. However it is not recommanded by Flask in production, it behaves poorly under heavy load, is more fragile (some exception may crash all services) and offers less flexibility than the split service uwsgi deploy.
@@ -154,6 +163,7 @@ curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/templa
 ```
 
 You should edit it to change the `Environment=` lines and modify them (notably SCITQ_SERVER which must be changed). Look into [Parameters](parameters.md#scitq-server-parameters), but remember that the parameters must be put into `/etc/systemd/system/scitq.service` in `[Service]` section 
+
 
 
 ## Ansible

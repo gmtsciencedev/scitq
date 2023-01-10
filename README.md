@@ -186,10 +186,10 @@ with a clever management of output flow. Asyncio was the solution here (process.
 with stdout.readline() is not performant enough if you have heavy output).
 - A nice UI (like Celery Flower) : now this nice UI must update its display very
 often you do not want to reload the page to refresh (Flower is smart enough for 
-that): I did write a very small game in Python with Flask and I had had a go with
-SocketIO with quite a success, so I tried here and it fits the case. I compared
-with basic jQuery and it performed better so scitq uses SocketIO (and a nice
-Flask package: Flask-SocketIO)
+that): initially we had chosen socket.io for the UI however when we decided to deploy
+scitq in a serious way (with a wsgi server and not Flask development server), we were
+not able not configure socket.io in a multi-worker uwsgi setup, so we went back to 
+jQuery which is sufficient in our case.
 
 For now, UI and server live in the same Flask application which makes deploy
 very easy.
