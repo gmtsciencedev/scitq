@@ -202,21 +202,27 @@ function get_jobs() {
     });
 }
 
-var my_collapsed_elements = [];
+var uncollapsed_elements = [];
 
 function my_collapse() {
 $('.truncated').hide() // Hide the text initially
 .after('<a title="expand text" href="#">[...]</a>') // Create toggle button
 .next().on('click', function () { // Attach behavior
+    // manage memory
+    var element_id=$(this).parent().children(0).attr("id");
+    $(this).text() == '[...]' 
+      ? uncollapsed_elements.push(element_id)
+      : uncollapsed_elements = uncollapsed_elements.filter(item => item !== element_id);
+
+    // prepare the button
     $(this).text() == '[^]' // Swap the html
       ? $(this).text('[...]').attr("title", "expand text")
       : $(this).text('[^]').attr("title", "collapse text");
     $(this).prev().toggle(); // Hide/show the text
-    $(this).text() == '[...]' 
-      ? my_collapsed_elements.pop($(this).parent().children(0).attr("id"))
-      : my_collapsed_elements.push($(this).parent().children(0).attr("id"));
+
 });
-my_collapsed_elements.forEach(
+// use memory to reset states
+uncollapsed_elements.forEach(
  function(element_id) {
     $('#'+element_id).show();
     $('#'+element_id).next().text("[^]");
