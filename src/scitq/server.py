@@ -958,7 +958,8 @@ class BatchList(Resource):
                 batches_attributes[batch]={'batch':batch}    
             batches_attributes[batch][status]=count
         for batch,workers in db.session.execute(worker_query):
-            batches_attributes[batch]['workers']=workers
+            if batch in batches_attributes:
+                batches_attributes[batch]['workers']=workers
         return [batches_attributes[batch] for batch in batches]
 @ns.route("/<name>/stop")
 @ns.param("name", "The batch name")
