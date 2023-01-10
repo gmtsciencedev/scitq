@@ -207,7 +207,7 @@ var uncollapsed_elements = [];
 function my_collapse() {
 $('.truncated').hide() // Hide the text initially
 .after('<a title="expand text" href="#">[...]</a>') // Create toggle button
-.next().on('click', function () { // Attach behavior
+.next().on('click', function (event) { // Attach behavior
     // manage memory
     var element_id=$(this).parent().children(0).attr("id");
     $(this).text() == '[...]' 
@@ -215,6 +215,7 @@ $('.truncated').hide() // Hide the text initially
       : uncollapsed_elements = uncollapsed_elements.filter(item => item !== element_id);
 
     // prepare the button
+    event.preventDefault();
     $(this).text() == '[^]' // Swap the html
       ? $(this).text('[...]').attr("title", "expand text")
       : $(this).text('[^]').attr("title", "collapse text");
@@ -227,6 +228,7 @@ uncollapsed_elements.forEach(
     $('#'+element_id).show();
     $('#'+element_id).next().text("[^]");
  }
+
 );
 }
 
