@@ -108,6 +108,14 @@ if SQLALCHEMY_POOL_SIZE is not None:
 else:
     db = SQLAlchemy(app)
 
+try:
+    import uwsgi
+
+    def postfork():
+        db.engine.dispose()
+    uwsgi.post_fork_hook = postfork
+except ImportError:
+    pass
 
  #######  ######   ######  
  #     #  #     #  #     # 

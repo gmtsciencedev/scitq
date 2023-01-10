@@ -92,57 +92,39 @@ class LazyObject:
         return str(self._o)
 
 
-def query_thread(semaphore, send_queue, put_timeout):
+def query_thread(send_queue, put_timeout):
         """A Query-thread which treats all the queries with a while loop until the object is there, then it put the result in the returning queue
         """
         time_point = None
         while True :
-            while not semaphore.acquire(blocking=False):
-                try:
-                    self,type,query,return_queue = send_queue.get(timeout=QUERY_THREAD_TIMEOUT)
-                    time_point = None
-                    break
-                except queue.Empty:
-                    if time_point is None:
-                        time_point=time.time()
-                    elif time.time() - time_point > QUERY_THREAD_IDLE_TIMEOUT:
-                        return None
-                    continue
-            else: 
-                #This block is executed when the semaphore is acquired (meaning the Server instance was closed)
-                break
+            try:
+                self,type,query,return_queue = send_queue.get(timeout=QUERY_THREAD_TIMEOUT)
+                time_point = None
+            except queue.Empty:
+                if time_point is None:
+                    time_point=time.time()
+                elif time.time() - time_point > QUERY_THREAD_IDLE_TIMEOUT:
+                    return None
+                sleep(put_timeout)
+                continue
             url,data=query
+            
             task_done=False
-            if type == 'put':
-                while not task_done:
-                    try:
-                        sleep(put_timeout) 
+            while not task_done:
+                try:
+                    if type=='put':
                         result = self._wrap(requests.put(
                                 self.url+url, json=data, timeout=put_timeout))
-                        task_done = True
-                    except (ConnectionError,Timeout) as e:
-                        log.warning(f'Exception when trying to put: {e}')
-                return_queue.put(result)
-            elif type == 'post':
-                while not task_done:
-                    try:
-                        sleep(put_timeout)
+                    elif type=='post':
                         result = self._wrap(requests.post(
                                 self.url+url, json=data, timeout=put_timeout))
-                        task_done = True
-                    except (ConnectionError,Timeout) as e:
-                        log.warning(f'Exception when trying to post: {e}') 
-                return_queue.put(result)
-            elif type == 'delete':
-                while not task_done:
-                    try:
-                        sleep(put_timeout)
+                    elif type=='delete':
                         result = self._wrap(requests.delete(
                                 self.url+url, timeout=put_timeout))
-                        task_done = True
-                    except (ConnectionError,Timeout) as e:
-                        log.warning(f'Exception when trying to post: {e}') 
-                return_queue.put(result) 
+                    task_done = True
+                except (ConnectionError,Timeout) as e:
+                    log.exception(f'Exception when trying to {type}: {e}')
+            return_queue.put(result)
 
 class RestartingThread:
     """This Thread class is a thin wrapper above a threading.Thread that can be 
@@ -201,11 +183,9 @@ class Server:
             raise Exception(f'style can only be dict or object not f{style}')
         self.asynchronous = asynchronous
         if self.asynchronous:
-            self.query_thread_semaphore = threading.Semaphore()
-            self.query_thread_semaphore.acquire(blocking=False)
             self.send_queue= queue.Queue()
             self.query_thread=RestartingThread(target=query_thread,
-                args=(self.query_thread_semaphore,self.send_queue,put_timeout))
+                args=(self.send_queue,put_timeout))
         self.get_timeout = get_timeout
         self.put_timeout = put_timeout
 
