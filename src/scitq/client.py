@@ -104,7 +104,9 @@ class Executor:
                 container, container_options, execution_started, execution_queue,
                 cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore,
                 worker_id, status):
+        log.warning(f'Starting executor for {execution_id}')
         self.s = Server(server, style='object')
+        self.s.execution_update(execution_id, status='accepted')
         self.worker_id = worker_id
         self.execution_id = execution_id
         self.task_id = task_id
@@ -228,7 +230,15 @@ class Executor:
             except Exception as e:
                 error.append(f'During stdout collection this error occured: {traceback.format_exc()}\n' )
                 break
-        self.s.execution_output_write(execution_id, ''.join(output))
+        
+        retry = 2
+        while retry > 0:
+            try:
+                self.s.execution_output_write(execution_id, ''.join(output))
+                break
+            except:
+                log.exception(f'Could not write output for {execution_id}:{output}')
+                retry -= 1                
 
         now = time()
         while True:
@@ -243,7 +253,15 @@ class Executor:
             except Exception as e:
                 error.append(f'During stderr collection this error occured: {traceback.format_exc()}\n' )
                 break
-        self.s.execution_error_write(execution_id,''.join(error))
+        
+        retry = 2
+        while retry > 0:
+            try:
+                self.s.execution_error_write(execution_id,''.join(error))
+                break
+            except:
+                log.exception(f'Could not write error for {execution_id}:{error}')
+                retry -= 1
 
         qsize = self.s.queue_size()
         if qsize > QUEUE_SIZE_THRESHOLD:
@@ -530,8 +548,6 @@ class Client:
                                     'worker_id': self.w.worker_id,
                                     'status': self.executions_status[execution.execution_id]
                                 })
-                            # force synchronous call to make it blocking
-                            self.s.execution_update(execution.execution_id, status='accepted', asynchronous=False)
                             p.start()
                             self.executions[execution.execution_id]=(p,execution_queue)
                             self.has_worked = True
@@ -564,16 +580,27 @@ class Client:
                     if self.concurrency-len(running_executions)!=self.run_slots.value:
                         log.warning(f'Race condition detected on process number')
                         # ok time to look what is really going on
+                        
                         running = waiting = 0
                         for execution in self.s.worker_executions(self.w.worker_id):
+                            if execution.status in ['failed','succeeded','pending']:
+                                continue
+                            if execution.execution_id not in self.executions_status:
+                                log.error('Execution {execution.execution_id} seems to have gone away...')
+                                self.s.execution_update(execution.execution_id, status='failed')
+                                continue
+
+                            status = self.executions_status[execution.execution_id].value
                             if execution.status=='running':
-                                if execution.execution_id not in running_executions:
-                                    log.warning(f'Execution {execution.execution_id} is supposed to be running and is not.')
-                                running += 1
+                                if status != STATUS_RUNNING:
+                                    log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
+                                else:
+                                    running += 1
                             elif execution.status=='accepted':
-                                if execution.execution_id in running_executions:
-                                    log.warning(f'Execution {execution.execution_id} is not supposed to be running but is running.')
-                                waiting += 1
+                                if status not in [STATUS_WAITING, STATUS_LAUNCHING]:
+                                    log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
+                                else:
+                                    waiting += 1
                         log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
                         log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
                         log.warning(f'Overall we should have at max {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')

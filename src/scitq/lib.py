@@ -490,7 +490,7 @@ class Server:
         while not all_task_done:
             all_task_done = True
             old_tasks = tasks
-            tasks = {'assigned':0,'failed':0, 'running':0, 'accepted':0, 'pending':0,'succeeded':0}
+            tasks = {'assigned':0,'failed':0, 'running':0, 'accepted':0, 'pending':0,'succeeded':0, 'paused':0}
             for task in self.tasks():
                 if type(task)==dict:
                     task = Namespace(**task)

@@ -2,8 +2,12 @@
   file:
     path: "/etc/exports.d/{{ nodename }}.exports"
     state: absent
+  async: 60
+  poll: 10
   when: nfs_server is defined and nfs_server==ansible_host
 - name: Exportfs (reload NFS exports)
   shell:
     cmd: "exportfs -a"
+  async: 60
+  poll: 10
   when: nfs_server is defined and nfs_server==ansible_host

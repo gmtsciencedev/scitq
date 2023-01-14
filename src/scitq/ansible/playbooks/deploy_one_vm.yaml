@@ -71,10 +71,10 @@
           - name: Gather facts
             setup:
           - name: Copy scitq source
-            copy:
-              remote_src: no
+            ansible.posix.synchronize:
               src: "{{ scitq_src }}/"
               dest: /opt/scitq
+              use_ssh_args: true
             become: true
             when: scitq_src is defined
           - include_tasks: add_docker.yaml

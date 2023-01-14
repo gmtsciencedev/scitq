@@ -86,7 +86,7 @@ def untar(filepath):
     (so it behaves like gunzip, and not like tar usually)"""
     path, basename = os.path.split(filepath)
     if basename.endswith('gz'):
-        subprocess.run(['tar','xzf',basename], cwd=path, check=True)
+        subprocess.run(f'pigz -dc "{basename}"|tar x', cwd=path, shell=True, check=True)
     else:
         subprocess.run(['tar','xf',basename], cwd=path, check=True)
     os.remove(filepath)

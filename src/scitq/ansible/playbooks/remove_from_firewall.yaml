@@ -8,6 +8,8 @@
     comment: "scitq : {{ nodename }}"
     state: absent
   become: true
+  async: 60
+  poll: 10
   when: hostvars[nodename].ipv4 is defined
 - name: Update the firewall with node IPv6
   ansible.builtin.iptables:
@@ -20,4 +22,6 @@
     ip_version: ipv6
     state: absent
   become: true
+  async: 60
+  poll: 10
   when: hostvars[nodename].ipv6 is defined

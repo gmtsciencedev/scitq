@@ -189,23 +189,7 @@ class Worker(db.Model):
         self.batch = batch
         self.idle_callback = idle_callback
     
-    def destroy(self):
-        """Destroy self (stop in provider renting)"""
-        log.warning(f'Worker {self.name} is to be destroyed.')
 
-        for i in range(WORKER_DESTROY_RETRY):
-            try:
-                run([self.idle_callback.format(**(self.__dict__))],shell=True,check=True)
-            except Exception as e:
-                log.exception(e)
-
-            worker_check = json.loads(scitq_inventory(host=self.hostname))
-
-            if not worker_check:
-                log.warning(f'Worker {self.name} was destroyed.')
-                break
-            else:
-                log.exception(f'Worker {self.name} was not properly destroyed (f{worker_check}), retrying.')
 class Execution(db.Model):
     __tablename__ = "execution"
     execution_id = db.Column(db.Integer, primary_key=True)
@@ -635,11 +619,10 @@ class WorkerCallback(Resource):
                                     Task.batch==worker.batch)).count()>0:
                 log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
                 return {'result':'still some work to do, lazy one!'}
-            log.warning(f'Worker {worker.name} called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
+            log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
             #worker.destroy()
             create_worker_destroy_job(worker, db.session, commit=False)
-
-            db.session.delete(worker)
+            #db.session.delete(worker)
             db.session.commit()
             return {'result':'ok'}
         else:
@@ -1580,7 +1563,7 @@ def background():
                                 encoding = 'utf-8'
                             )
                         job.status='running'
-                        worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process,job.job_id)
+                        worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process, job.job_id)
                         log.warning(f'Worker {job.target} destruction process has been launched')
                 
                 if job.action == 'worker_create':
@@ -1642,14 +1625,20 @@ def background():
                         job.status = 'succeeded'
 
                         if action=='destroy':
-                            log.warning(f'Deleting worker ')
                             #session.execute(Worker.__table__.delete().where(
                             #    Worker.__table__.c.worker_id==worker.worker_id))
-                            worker_dao.delete(worker.worker_id, is_destroyed=True)
+                            log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
+                            real_worker = session.query(Worker).get(worker.worker_id)
+                            if real_worker is not None:
+                                session.delete(real_worker)
+                            else:
+                                log.error(f'Could not find a worker with worker_id {worker.worker_id}')
+                            #worker_dao.delete(worker.worker_id, is_destroyed=True)
                     else:
                         stderr = worker_process.stderr.read()
                         log.warning(f'Process {action} failed for worker {worker.name}: {stderr}')
                         job.log = worker_process.stdout.read() + stderr
+                        log.warning(f'Job output is {job.log}')
                         if job.retry > 0:
                             job.retry -= 1
                             job.status = 'pending'
@@ -1695,8 +1684,7 @@ if not os.environ.get('SCITQ_PRODUCTION'):
 
 
 def main():
-    #app.run(debug=False)
-    socketio.run(app)
+    app.run(debug=True)
 
 if __name__ == "__main__":
     #raise RuntimeError('Do not launch directly, launch with "FLASK=scitq.server flask run"')

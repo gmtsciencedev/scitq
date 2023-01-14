@@ -1,5 +1,6 @@
 - name: Destroy a compute instance
   hosts: localhost
+  any_errors_fatal: true
   vars:
         proxy_env:
                 OS_REGION_NAME: "{{ hostvars[nodename].region }}"
@@ -11,14 +12,17 @@
                     state: absent
 - name: Prepare managing servers
   hosts: managers
+  any_errors_fatal: true
   tasks:
           - include_tasks: remove_from_firewall.yaml      
 - name: Prepare storage servers
   hosts: managers
+  any_errors_fatal: true
   tasks:
           - include_tasks: remove_from_nfs_exports.yaml
 - name: Cleaning Ansible
   hosts: localhost
+  any_errors_fatal: true
   tasks:
           - include_tasks: remove_from_etchosts.yaml
           - name: Remove from inventory

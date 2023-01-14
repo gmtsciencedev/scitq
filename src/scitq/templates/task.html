@@ -12,11 +12,28 @@
     // All the class come from the Bootstrap v5 documentation and icon also come from bootstrap
     MAX_CARACTERE_DIPLAYED_IN_CONTENT=1000;
     MAX_DISPLAYED_ROW = 500;
-    //const delay = ms => new Promise(res => setTimeout(res, ms));
-    function sleep (time) {
-        return new Promise((resolve) => setTimeout(resolve, time));
-      }
-    pause = false;
+      
+    var intervalID = null;
+    var current_parameters = {};
+
+    function pause() { 
+        if (intervalID) {
+            clearInterval(intervalID);
+            intervalID = null;
+            return true;
+        } {return false;} ;
+    }
+      
+    function unpause(parameters) {
+        if (intervalID) {
+            clearInterval(intervalID);
+        };
+        if (parameters !== undefined) {
+          current_parameters = parameters;
+        };
+        intervalID = setInterval(get_tasks, 5000, current_parameters);
+    }
+      
     
     //var socket = io();
     //getting param for the filter
@@ -70,10 +87,10 @@ function get_tasks(parameters) {
     
     //some action such as modifying a action needs time to be done so the update of the page can be set on true 
     parameters.object='tasks';
-    $.getJSON('/ui/get/', parameters, async function(data) {
-        while(pause){
-            await sleep(5000);
-        };    
+    $.getJSON('/ui/get/', parameters, function(data) {
+        //while(pause){
+        //    await sleep(5000);
+        //};    
         //create a table in a similar way of ui
         tasks= data.tasks;
         console.log('Received tasks', tasks);
@@ -141,9 +158,9 @@ function get_tasks(parameters) {
         for(element of document.getElementsByName('scroll')){
             element.scrollTop=999999;
         }
-        await sleep(5000);
+        //await sleep(5000);
         console.log('detailed_tasks: '+detailed_tasks);
-        get_tasks({order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
+        unpause({order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
         //    socket.emit('get', {object: 'task', order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
         //    });
         //);
@@ -296,10 +313,10 @@ function displayModal(i,type) {
     console.log(document.getElementById('task-modal-'+tasks[i][6]));
     document.getElementById('task-modal-'+tasks[i][6]).innerHTML='<div class="modal-dialog modal-dialog-centered"><form class="modal-content"><div class="container"><h3>'+type+'</h3>'
                                                     +'<p>Are you sure you want to '+type+' task_'+tasks[i][0]+''+(type==='delete'?' ':' execution_'+tasks[i][6])+' ?</p>'
-                                                    +'<div class="clearfix"><button type="button" class="btn btn-danger" onclick="document.getElementById(\'task-modal-'+tasks[i][6]+'\').style.display=\''+'none'+'\'; pause = false" >Cancel</button>'
-                                                    +'<button type="button" class="btn btn-primary" onclick="action_task(\''+tasks[i][0]+'\',\''+type+'\');document.getElementById(\'task-modal-'+tasks[i][6]+'\').style.display=\''+'none'+'\'; pause = false">Confirm</button></div></div></form>';
+                                                    +'<div class="clearfix"><button type="button" class="btn btn-danger" onclick="document.getElementById(\'task-modal-'+tasks[i][6]+'\').style.display=\''+'none'+'\'; unpause()" >Cancel</button>'
+                                                    +'<button type="button" class="btn btn-primary" onclick="action_task(\''+tasks[i][0]+'\',\''+type+'\');document.getElementById(\'task-modal-'+tasks[i][6]+'\').style.display=\''+'none'+'\'; unpause()">Confirm</button></div></div></form>';
     document.getElementById('task-modal-'+tasks[i][6]).style.display = "block";
-    pause=true;
+    pause();
 }
 
 function download(id_task,i) {
@@ -398,13 +415,12 @@ function action_task(t_id,type_action,command){
 //Open a textarea to modify a command.
 function modify_command(id_execution,i){
     content = document.getElementById("command-content-"+id_execution);
-    if(pause==false){
+    if(pause()){
     content.innerHTML='<form><textarea id="textarea-'+id_execution+'"class="form-control" rows="4">'+tasks[i][9]+'</textarea>';
     content.innerHTML+='<button type="button" onclick="modify_command('+id_execution+','+i+')" class="btn btn-danger" style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" >Cancel</button><button type="button" class="btn btn-primary" style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" onclick="submit_command('+id_execution+','+i+');modify_command('+id_execution+','+i+')">Submit</button></form>';
-    pause=true;
     }
     else{
-    pause=false;
+    unpause();
     content.innerHTML='<div class="d-flex"><div class="p-2 w-100">'+tasks[i][9]+'</div><div class="p-2 flex-shrink-1"><button type="button" tiltle="modify" onclick="modify_command('+tasks[i][6]+','+i+')" class="btn btn-dark " style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;">modify</button></div>';
     }
 }
@@ -415,15 +431,11 @@ function submit_command(id_execution,i){
 }
 
 function pause_page(){
-    switch(pause){
-        case true:
-            pause=false;
-            document.getElementById('pause').innerHTML='Pause';
-            break;
-        case false:
-            pause=true;
-            document.getElementById('pause').innerHTML='Resume';
-            break;
+    if (pause()) {
+        document.getElementById('pause').innerHTML='Pause';
+    } {
+        unpause();
+        document.getElementById('pause').innerHTML='Resume';
     }
 }
 

@@ -13,9 +13,9 @@
 <script type="text/javascript" charset="utf-8">
 // All the class come from the Bootstrap v5 documentation and icon also come from bootstrap
 //const delay = ms => new Promise(res => setTimeout(res, ms));
-function sleep (time) {
-    return new Promise((resolve) => setTimeout(resolve, time));
-    }
+//function sleep (time) {
+//    return new Promise((resolve) => setTimeout(resolve, time));
+//    }
 function worker_concurrency_change(worker_id, change) {
     //socket.emit('concurrency_change', {object: 'worker', id: worker_id, change:change})
     $.ajax({url: '/ui/concurrency_change', data: {object: 'worker', id: worker_id, change:change} });
@@ -37,17 +37,34 @@ socket.on('connect', function() {
     console.log('connecting');
     socket.emit('get', {object: 'workers'});
 }); */
-pause=false;
+//pause=false;
 //socket.on('workers', async function(data) {
+
+var intervalID = null;
+function pause() { 
+    if (intervalID) {
+        clearInterval(intervalID);
+        intervalID = null;
+    }
+}
+
+function unpause() {
+    if (intervalID) {
+        clearInterval(intervalID);
+    }
+    intervalID = setInterval(get_workers, 5000);
+}
+
+
 function get_workers() {
     console.log('Fetching workers...')
     $.getJSON('/ui/get/', {
                 object: 'workers'
-            }, async function(data) {
+            }, function(data) {
         //some action such as modify an action needs time to be done so the update of the page can be set on true 
-        while(pause){
-            await sleep(5000);
-        }
+        //while(pause){
+        //    await sleep(5000);
+        //}
         workers = data.workers;
         totals = data.totals;
         console.log('Received workers ',workers);
@@ -79,7 +96,7 @@ function get_workers() {
                 }    
 
             worker_table += '<tr class="" ><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch="">'+workers[i].name
-                    +'</a></td><td class="" id="batch-name-'+workers[i].worker_id+'" style="padding:0"><a target="_blank" href="/ui/task/?sortby=&worker=&batch='+(workers[i].batch==null?'':workers[i].batch).replace(' ','+')+'" type="button" class="btn btn-outline-dark border-0">'+(workers[i].batch==null?'':workers[i].batch)+'</a><button type="button" onclick="ChangeBatch(\''+workers[i].worker_id+'\','+i+'); pause=true" class="btn btn-sm" style="margin-top:0.5em;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>'
+                    +'</a></td><td class="" id="batch-name-'+workers[i].worker_id+'" style="padding:0"><a target="_blank" href="/ui/task/?sortby=&worker=&batch='+(workers[i].batch==null?'':workers[i].batch).replace(' ','+')+'" type="button" class="btn btn-outline-dark border-0">'+(workers[i].batch==null?'':workers[i].batch)+'</a><button type="button" onclick="ChangeBatch(\''+workers[i].worker_id+'\','+i+'); pause()" class="btn btn-sm" style="margin-top:0.5em;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>'
                     +'</td><td class="text-center text-'+worker_status+'" title ="'+workers[i].status+'"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg>'
                     +'</td><td>'+workers[i].concurrency
                         +'<div class ="btn-group"><button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change('
@@ -108,8 +125,7 @@ function get_workers() {
         worker_table += '</tbody>\n</table>\n';
         document.getElementById("workers").innerHTML = total_div +'<br/>' + worker_table;
         get_jobs();
-        await sleep(5000);
-        get_workers();
+        unpause();
     });
 };
 //socket.on('worker_created', function(data) {
@@ -138,21 +154,23 @@ function ChangeBatch(id_worker,i){
             $.ajax({url: '/ui/change_batch', 
                 data: {batch_name : document.getElementById('batch-name-input-'+id_worker).value,worker_id:id_worker} });
             document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">Loading..</a>';
-            pause=false;
+            //pause=false;
+            unpause();
         }
     })
 }
 function HideChangeBatch(id_worker,i){
-    document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">'+(workers[i][2]==null?'':workers[i][2])+'</a><button type="button" onclick="ChangeBatch(\''+workers[i][0]+'\','+i+'); pause=true" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>';
-    pause=false;
+    document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">'+(workers[i][2]==null?'':workers[i][2])+'</a><button type="button" onclick="ChangeBatch(\''+workers[i][0]+'\','+i+'); pause()" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>';
+    //pause=false;
+    unpause();
 }
 
 //socket.on('jobs', function(data) {
 function get_jobs() {
-    $.getJSON('/ui/jobs', {}, async function(data) {
-        while(pause){
-            await sleep(5000);
-        }    
+    $.getJSON('/ui/jobs', {}, function(data) {
+        //while(pause){
+        //    await sleep(5000);
+        //}    
         console.log('jobs received', data);
         var action_pretify = {
             worker_create: "Create worker",
