@@ -108,7 +108,13 @@ if SQLALCHEMY_POOL_SIZE is not None:
 else:
     db = SQLAlchemy(app)
 
+# with uwsgi, the master worker is forking to create the workers which receive a 
+# non-working connection (because it comes from another process), it must be discarded
+# so that workers re-open the connection properly
+# idea from https://stackoverflow.com/questions/39562838/how-to-configure-pyramid-uwsgi-sqlalchemy
 try:
+    # import uwsgi is only working in uwsgi context. It is normal that is fails
+    # to import in VisualStudioCode or manually
     import uwsgi
 
     def postfork():
