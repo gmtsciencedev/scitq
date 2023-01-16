@@ -374,6 +374,7 @@ class Server:
         """
         if output is None:
             return None
+        output = output.replace('\00', '')
         return self.put(f'/executions/{id}/output', data=_clean(
             {'text':output}
         ), asynchronous=asynchronous)
@@ -383,6 +384,7 @@ class Server:
         """
         if error is None:
             return None
+        error = error.replace('\00', '')
         return self.put(f'/executions/{id}/error', data=_clean(
             {'text':error}
         ), asynchronous=asynchronous)

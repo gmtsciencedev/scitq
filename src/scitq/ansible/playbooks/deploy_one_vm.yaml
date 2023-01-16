@@ -70,13 +70,6 @@
               timeout: 300
           - name: Gather facts
             setup:
-          - name: Copy scitq source
-            ansible.posix.synchronize:
-              src: "{{ scitq_src }}/"
-              dest: /opt/scitq
-              use_ssh_args: true
-            become: true
-            when: scitq_src is defined
           - include_tasks: add_docker.yaml
           - include_tasks: add_nfs.yaml
           - include_tasks: add_scratch.yaml

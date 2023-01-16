@@ -14,6 +14,13 @@
     warn: no
   become: true
   when: scitq_src is not defined
+- name: Copy scitq source
+  ansible.posix.synchronize:
+    src: "{{ scitq_src }}/"
+    dest: /opt/scitq
+    use_ssh_args: true
+  become: true
+  when: scitq_src is defined
 - name: Install scitq from source
   ansible.builtin.shell:
     chdir: /opt/scitq/

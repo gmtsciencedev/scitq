@@ -1,0 +1,25 @@
+- name: Update workers
+  hosts: localhost
+  tasks:
+          - name: Clean source 1
+            ansible.builtin.file:
+                    path: "{{ scitq_src }}/src/build"
+                    state: absent
+            when: scitq_src is defined
+          - name: Clean source 2
+            ansible.builtin.file:
+                    path: "{{ scitq_src }}src/dist"
+                    state: absent
+            when: scitq_src is defined                    
+- name: Upgrade nodes
+  hosts: workers
+  gather_facts: false
+  tasks:
+          - name: Wait for ssh
+            wait_for_connection:
+              timeout: 300
+          - name: Gather facts
+            setup:
+          - include_tasks: add_scitq.yaml
+
+        
