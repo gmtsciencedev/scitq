@@ -13,6 +13,7 @@ import threading
 import subprocess
 from .util import PropagatingThread, xboto3
 import concurrent.futures
+import argparse
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -413,3 +414,39 @@ def check_uri(uri):
     else:
         raise FetchError(f"Malformed URI : {uri}")
     return True
+
+def get_file_uri(uri):
+    """A small utility to check if this is a file URI (starts with file://... or is a path)
+    returns a path or None (if not a file URI)"""
+    if uri.startswith('file://'):
+        return uri[8:]
+    elif ':' not in uri:
+        return uri
+    else:
+        return None
+
+if __name__=='__main__':
+    parser = argparse.ArgumentParser(
+                    prog = 'scitq.fetch module utility mode',
+                    description = '''Enable direct download or upload without python code.
+Takes one or two URI (generalised URL, including file://... and s3://... or ftp://...) 
+one of them must be a file URI (starts with file://... or be a simple path)
+if the file URI comes first, a put (upload) is performed, else a get (download) is performed
+if only one URI is given, the second default to '.', the local path''')
+    parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
+    parser.add_argument('destination_uri', type=str, nargs='?',
+                        help='the destination uri (same as above) (default to ., means download locally)', default='.')
+    args = parser.parse_args()
+
+    candidate_source = get_file_uri(args.source_uri)
+    if candidate_source is not None:
+        check_uri(args.destination_uri)
+        put(candidate_source, args.destination_uri)
+    else:
+        candidate_destination = get_file_uri(args.destination_uri)
+        if candidate_destination is not None:
+            check_uri(args.source_uri)
+            get(args.source_uri, candidate_destination)
+        else:
+            raise RuntimeError('Both source_uri and destination_uri seem non file URI: operation unsupported')
+    
