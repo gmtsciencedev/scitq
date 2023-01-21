@@ -115,8 +115,8 @@ class xboto3:
     def client(self, service_name, **kwargs):
         # Load in the service config, on top of other defaults            
         # and let boto3 do the rest                                       
-        return boto3.Session(**self.__get_config__(service_name), **kwargs).client(
-            service_name=service_name
+        return boto3.Session().client(
+            service_name=service_name, **self.__get_config__(service_name), **kwargs
         )
     
 
