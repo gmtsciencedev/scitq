@@ -201,3 +201,74 @@ With scitq, where you must protect from the initial shell and a python process, 
 ```bash
 scitq-launch echo "\"\\\"l'avion\\\"\""
 ```
+# Upgrading workers using Ansible
+
+In case you need to upgrade workers during a batch: (note that it will kill current running tasks)
+```bash
+cd $(scitq-manage ansible path)
+ansible-playbook update_workers.yaml
+```
+
+# Using SQL directly
+
+## In case things turn bad
+As a reminder, you must be very cautious when interacting directly with the database, at least during a work session. If something bad happens, the simplest thing to do is to stop the server (both services scitq-main and scitq-queue), drop the database and recreate it blank, it will be repopulated when the server starts (either service). All existing workers will redeclare themselves. All tasks will be lost, and also worker automated destruction will be brocken (you will have to delete them using the provider GUI in that case). You can also more specifically drop some tables, SQLalchemy will not modify existing tables but will recreate them if they are missing.
+
+An easy protection to any error is to always protect modifications using transactions, which will give you the possibility to rollback and cancel a brocken change. Be aware that transactions will create locks so do not let them opened too long.
+
+For what is next, SQL commands are reputed occuring in an SQL session which is opened with `sudo psql scitq` in standard setup with PostgreSQL (this only works locally on the SCITQ server unless you changed some parameters).
+
+## Modifying commands
+The first use case of direct interaction is to correct a list of command with a single instructions. While this could be done with clever use of `scitq-manage`, the efficiency is hugely improved in a direct SQL modification.
+
+First have a look at your commands:
+```sql
+SELECT command FROM task WHERE batch='mybatch' LIMIT 10;
+```
+
+Then experience your change, let's say the current command is:
+```bash
+sh -c 'echo hello world!
+```
+
+Let's add the missing quote (as single quote are string boundaries in SQL, it must be doubled to appear in string) with a call to SQL REPLACE function:
+```sql
+SELECT REPLACE(command, 'world!', 'world!''') FROM task WHERE batch='mybatch' LIMIT 10;
+```
+
+It looks good? Ok, let's modify it:
+```sql
+BEGIN;
+UPDATE task SET command=REPLACE(command, 'world!', 'world!''') WHERE batch='mybatch';
+COMMIT;
+```
+
+You may also use the REGEXP_REPLACE SQL function, consider this real life example which will replace your command `<command>` by adding `sh -c '` before and closing the quote next, so that it become `sh -c '<commmand>'` (it will turn your command into a shell command):
+
+```sql
+BEGIN;
+UPDATE task SET command=REGEXP_REPLACE(command,'(.*)','sh -c ''\1''') WHERE batch='mybatch';
+COMMIT;
+```
+
+## Modifying the status of some failed tasks
+
+This happen also sometime. Generally, you can restart tasks with the restart button in the GUI or using the API (with scitq.lib.Server.join call, and its retry argument), but if you have lots of them or if their status is 'succeeded' because the script or program in your command did not report correctly the error, then you may consider using the database directly - maybe in combination with a grouped command modification like the one above.
+
+Let us say, you have a unique batch in the database, the batch is not yet finished but you have noticed that a subpart of the batch gives an apparent success that turns out to be a failure. A specific keyword can be seen in the error flow of those tasks, let us say the `error` keyword, that is not present is the real successes. 
+
+So you can select the `task_id` of those tasks like that:
+```sql
+SELECT COUNT(task_id) FROM execution WHERE status='succeeded' AND error LIKE '%error%';
+```
+
+Ok, so to relaunch those tasks, we have to set the execution as failed and set the failed tasks to pending - so that they are re-queued, and we must do the changes the other way around as we filter the execution by their `succeeded` status. We will introduce the `last_execution` view which conveniently restricts the `execution` table to the last execution (more accurately, the latest, but last is simpler and more intuitive for non-English speakers in that context - feel free to call it latest if you mind):
+
+```sql
+BEGIN;
+CREATE OR REPLACE VIEW last_execution AS (SELECT * FROM execution e1 WHERE e1.modification_date=(SELECT MAX(e2.modification_date) FROM execution e2 WHERE e2.task_id=e1.task_id)); 
+UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM last_execution WHERE status='succeeded' AND error LIKE '%error%');
+UPDATE execution SET status='failed' WHERE execution_id IN (SELECT execution_id FROM last_execution WHERE status='succeeded' AND error LIKE '%error%');
+COMMIT;
+```
+

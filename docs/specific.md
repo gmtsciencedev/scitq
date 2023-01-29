@@ -115,7 +115,7 @@ You will be asked for your login and password, and this will generate an encrypt
 
 Now you can replicate this file to any server you wish to open the gates of your registry, and that's it.
 
-To have the configuration deployed automatically with Ansible, in your provider file, like usual, the `/etc/ansible/inventory` file matching your provider, let's say for instance `/etc/ansible/inventory/ovh` and configure docker variables in `[ovh:vars]` section:
+To have the configuration deployed automatically with Ansible, in your provider file, like usual, the `/etc/ansible/inventory` file matching your provider, let's say for instance `/etc/ansible/inventory/02-scitq` and configure docker variables in `[ovh:vars]` section:
 
 ```ini
 [ovh:vars]

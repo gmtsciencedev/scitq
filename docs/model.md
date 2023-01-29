@@ -16,9 +16,14 @@ The schema include also two other tables:
 - signal: a simple object which is only used to send signal to tasks (like the pause, the stop or the kill signal),
 - execution: this is an important object: task can be executed several times and each execution may succeed or fail and have different outputs. Also an execution occurs on a specific worker.
 
+Since v1.0rc10, a new table, job, has been added to follow internal tasks (like worker creation and destruction):
+
+![schema_job](img/job.1degree.png)
+
 Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
 
-While you can connect directly to the database, there is no way we can prevent something wrong to happen if you do that, do it only if you are adapt of the YOLO principle...
+A direct interaction with the database must be used with caution since of course you could do anything. However there are specific cases (notably massive update of commands) where it may be extremely efficient. These are discussed in [Using sql directly](troubleshoot.md#using-sql-directly) chapter of troubleshoot.
+
 
 ## API
 
