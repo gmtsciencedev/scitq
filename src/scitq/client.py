@@ -359,19 +359,27 @@ class Executor:
         
         self.run_slots_semaphore.acquire()
         self.status = STATUS_WAITING
-        while self.s.task_get(self.task_id).status == 'paused' or self.run_slots.value<=0:
-            if self.run_slots.value<=0:
-                log.warning(f'Task {self.task_id} has been prefetched and is waiting')
-            else:
-                log.warning(f'Task {self.task_id} is paused, waiting...')
+        try:
+            while self.s.task_get(self.task_id).status == 'paused' or self.run_slots.value<=0:
+                if self.run_slots.value<=0:
+                    log.warning(f'Task {self.task_id} has been prefetched and is waiting')
+                else:
+                    log.warning(f'Task {self.task_id} is paused, waiting...')
+                self.run_slots_semaphore.release()
+                sleep(POLLING_TIME)
+                self.run_slots_semaphore.acquire()
+        except HTTPException:
+            # the task was deleted so we bail out
+            log.error(f'Task {self.task_id} was deleted.')
+            self.clean()
             self.run_slots_semaphore.release()
-            sleep(POLLING_TIME)
-            self.run_slots_semaphore.acquire()
+            return None
         # check a last time that this task is for us
         if self.s.execution_get(self.execution_id).status == 'failed':
             # the task is no longer for us so we bail out
             log.error(f'Execution {self.execution_id} was cancelled.')
             self.clean()
+            self.run_slots_semaphore.release()
             return None
         
         log.warning(f'Launching job {self.execution_id}: {self.command}')
