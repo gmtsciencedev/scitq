@@ -232,9 +232,8 @@ def fastq_sra_get(run_accession, destination):
         check=True)
     current_fastq = glob.glob(os.path.join(destination, '*.fastq'))
     fastqs = [fastq for fastq in current_fastq if fastq not in previous_fastq]
-    subprocess.run(f'docker run --rm -v {destination}:{destination} ghcr.io/kasperskytte/docker-pigz:master -- '+
-        ' '.join(fastqs),
-        shell=True,
+    log.info(f'Pigziping fastqs ({fastqs})')
+    subprocess.run(['pigz','-f']+fastqs,
         check=True)
 
 def _my_fastq_download(method, url, md5, destination):

@@ -328,8 +328,11 @@ class Executor:
                     rel_path = os.path.relpath(root, self.output_dir)
                     for local_data in files:
                         data = os.path.join(root, local_data)
-                        jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
-                        output_files.append(local_data)
+                        if not os.path.islink(data):
+                            jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
+                            output_files.append(local_data)
+                        else:
+                            log.warning(f'{local_data} is ignored as it is a symbolic link.')
                 for job in  concurrent.futures.as_completed(jobs):
                     obj = jobs[job]
                     log.warning(f'Done for {obj}: {job.result()}')
