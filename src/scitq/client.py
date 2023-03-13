@@ -13,7 +13,7 @@ import psutil
 import platform
 import queue
 import tempfile
-from .fetch import get,put,pathjoin
+from .fetch import get,put,pathjoin, info
 import traceback
 import shutil
 import subprocess
@@ -31,6 +31,8 @@ BASE_WORKDIR = os.environ.get("BASE_WORKDIR",
     "/tmp" if platform.system() in ['Windows','Darwin'] else "/scratch")
 BASE_RESOURCE_DIR = os.path.join(BASE_WORKDIR,'resource')
 MAXIMUM_PARALLEL_UPLOAD = 5
+RETRY_UPLOAD = 2
+RETRY_DOWNLOAD = 2
 
 if not os.path.exists(BASE_RESOURCE_DIR):
     os.mkdir(BASE_RESOURCE_DIR)
@@ -54,8 +56,8 @@ STATUS_TXT = ['LAUNCHING', 'DOWNLOADING', 'WAITING', 'RUNNING', 'UPLOADING',
 
 
 def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_options,
-        container, command):
-    docker_cmd = ['docker','run', '--rm', '-d']
+        container, command, mode='-d'):
+    docker_cmd = ['docker','run', '--rm', mode]
     if os.path.exists('/data'):
         docker_cmd.extend(['-v', '/data:/data'])
     docker_cmd.extend([
@@ -271,51 +273,69 @@ class Executor:
 
         return self.process.returncode
 
-    def download(self):
+    def download(self, input=None, resource=None):
         """Do the downloading part, before launching, getting all input URIs into input_dir"""
         log.warning('Downloading input data...')
         self.status = STATUS_DOWNLOADING
-        if self.input:
-            for data in self.input.split():
-                get(data, self.input_dir)
-        if self.resource:
+        if input is None:
+            input = self.input.split() if self.input else []
+        if resource is None:
+            resource = self.resource.split() if self.resource else []
+        for data in input:
+            get(data, self.input_dir)
+        if resource:
             log.warning('Acquiring resources')
             log.warning(f'Resourcedb:  {self.resources_db}')
-            for data in self.resource.split():
-                if data not in self.resources_db or self.resources_db[data]=='failed':
-                    self.resources_db[data]='lock'
+            for data in resource:
+                data_info = info(data)
+                if data not in self.resources_db or self.resources_db[data].status=='failed' or (
+                            self.resources_db[data].status=='loaded' and 
+                            ( data_info.modification_date > self.resources_db[data].date or
+                             data_info.size != self.resources_db[data].size )
+                        ):
+                    self.resources_db[data]=argparse.Namespace(status='lock')
                     try:
                         log.warning(f'Downloading resource {data}...')
                         get(data, self.resource_dir)
-                        self.resources_db[data]='loaded'
+                        self.resources_db[data]=argparse.Namespace(status='loaded',
+                                        date=data_info.modification_date,
+                                        size=data_info.size)
                         log.warning(f'... resource {data} downloaded')
                     except:
-                        self.resources_db[data]='failed'
+                        self.resources_db[data]=argparse.Namespace(status='failed')
                         log.warning(f'... resource {data} failed!')
                         raise
                 else:
                     log.warning(f'Resource {data} is already there')
             while True:
-                for data in self.resource.split():
-                    if self.resources_db[data]=='lock':
+                for data in resource:
+                    if self.resources_db[data].status=='lock':
                         log.warning(f'Waiting for resource {data}...')
                         sleep(POLLING_TIME)
                         break
                 else:
                     log.warning(f'All resource seems there')
                     break
-            for data in self.resource.split():
-                if self.resources_db[data]=='failed':
-                    self.resources_db[data]='lock'
-                    try:
-                        log.warning(f'Trying again to download resource {data}...')
-                        get(data, self.resource_dir)
-                        self.resources_db[data]='loaded'
-                        log.warning(f'... resource {data} finally downloaded')
-                    except:
-                        self.resources_db[data]='failed'
-                        log.warning(f'... resource {data} failed again!')
-                        raise
+            for data in resource:
+                if self.resources_db[data].status=='failed':
+                    self.resources_db[data]=argparse.Namespace(status='lock')
+                    retry = RETRY_DOWNLOAD
+                    while retry > 0:
+                        try:
+                            log.warning(f'Trying again to download resource {data}...')
+                            get(data, self.resource_dir)
+                            data_info = info(data)
+                            self.resources_db[data]=argparse.Namespace(status='loaded',
+                                        date=data_info.modification_date,
+                                        size=data_info.size)
+                            log.warning(f'... resource {data} finally downloaded')
+                            break
+                        except:
+                            self.resources_db[data]=argparse.Namespace(status='failed')
+                            log.warning(f'... resource {data} failed again!')
+                            retry -= 1
+                            if retry<=0:
+                                raise
 
     def upload(self):
         """Do the uploading part at the end, getting all output into output URI"""
@@ -323,21 +343,30 @@ class Executor:
         if self.output:
             output_files = []
             jobs = {}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=MAXIMUM_PARALLEL_UPLOAD) as executor:
-                for root, _, files in os.walk(self.output_dir):
-                    rel_path = os.path.relpath(root, self.output_dir)
-                    for local_data in files:
-                        data = os.path.join(root, local_data)
-                        if not os.path.islink(data):
-                            jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
-                            output_files.append(local_data)
-                        else:
-                            log.warning(f'{local_data} is ignored as it is a symbolic link.')
-                for job in  concurrent.futures.as_completed(jobs):
-                    obj = jobs[job]
-                    log.warning(f'Done for {obj}: {job.result()}')
-            if output_files:
-                return ' '.join(output_files)
+            retry = RETRY_UPLOAD
+            while retry>0:
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=MAXIMUM_PARALLEL_UPLOAD) as executor:
+                        for root, _, files in os.walk(self.output_dir):
+                            rel_path = os.path.relpath(root, self.output_dir)
+                            for local_data in files:
+                                data = os.path.join(root, local_data)
+                                if not os.path.islink(data):
+                                    jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
+                                    output_files.append(local_data)
+                                else:
+                                    log.warning(f'{local_data} is ignored as it is a symbolic link.')
+                        for job in  concurrent.futures.as_completed(jobs):
+                            obj = jobs[job]
+                            log.warning(f'Done for {obj}: {job.result()}')
+                    if output_files:
+                        return ' '.join(output_files)
+                    else:
+                        return None
+                except Exception as e:
+                    log.error(f'Upload load failed for task {self.task_id}')
+                    log.exception(e)
+                    retry -= 1
     
     def clean(self):
         """Clean working directory (triggered if all went well)"""
@@ -363,7 +392,18 @@ class Executor:
         self.run_slots_semaphore.acquire()
         self.status = STATUS_WAITING
         try:
-            while self.s.task_get(self.task_id).status == 'paused' or self.run_slots.value<=0:
+            while True:
+                task = self.s.task_get(self.task_id)
+
+                # let check our command
+                self.command = task.command
+                self.output = task.output
+                self.container = task.container
+
+                
+                if task.status != 'paused' and self.run_slots.value>0:
+                    break
+
                 if self.run_slots.value<=0:
                     log.warning(f'Task {self.task_id} has been prefetched and is waiting')
                 else:
@@ -377,14 +417,43 @@ class Executor:
             self.clean()
             self.run_slots_semaphore.release()
             return None
-        # check a last time that this task is for us
-        if self.s.execution_get(self.execution_id).status == 'failed':
-            # the task is no longer for us so we bail out
-            log.error(f'Execution {self.execution_id} was cancelled.')
+        
+        try:
+            # check a last time that this task is for us
+            if self.s.execution_get(self.execution_id).status == 'failed':
+                # the task is no longer for us so we bail out
+                log.error(f'Execution {self.execution_id} was cancelled.')
+                self.clean()
+                self.run_slots_semaphore.release()
+                return None
+        except HTTPException:
+            log.error(f'Execution {self.execution_id} was deleted.')
             self.clean()
             self.run_slots_semaphore.release()
             return None
         
+        new_resource = new_input = []
+        if task.input != self.input:
+            log.warning(f'Input has changed while waiting for task {self.task_id}, adjusting.')
+            if task.input:
+                new_input = task.input.split()
+            if self.input:
+                old_input = self.input.split()
+            else:
+                old_input = []
+            for item in old_input:
+                if item in new_input:
+                    new_input.remove(item)
+                else:
+                    os.remove(os.path.join(self.input_dir, item))
+            self.input = task.input
+        
+        self.resource = task.resource                    
+
+        # we systematically check now for resource update 
+        self.download(input=new_input)
+
+
         log.warning(f'Launching job {self.execution_id}: {self.command}')
         await self.execute(execution_id=self.execution_id)
         self.run_slots_semaphore.release()

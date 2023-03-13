@@ -9,17 +9,29 @@ import os
 import requests
 import glob
 import hashlib
-import threading
 import subprocess
 from .util import PropagatingThread, xboto3
 import concurrent.futures
 import argparse
+import datetime
+import pytz
+import io
 
 # how many time do we retry
 RETRY_TIME = 3
 RETRY_SLEEP_TIME = 10
 PUBLIC_RETRY_TIME = 20
 MAX_PARALLEL_S3 = 5
+
+# position in FTP dir command
+# typical output is: '-rw-rw-r--    1 ftp      ftp       1088322 Jul 15  2019 MGYG-HGUT-00001.faa' 
+FTP_DIR_SIZE_POSITION = 4
+FTP_DIR_MONTH_POSITION = 5
+FTP_DIR_DAY_POSITION = 6
+FTP_DIR_YEAR_POSITION = 7
+
+
+
 
 class FetchError(Exception):
     pass
@@ -144,6 +156,21 @@ def s3_put(source, destination):
     xboto3().client('s3').upload_file(source,uri_match['bucket'],
         uri_match['path'])
 
+def s3_info(uri):
+    """S3 downloader: download source expressed as s3://bucket/path_to_file 
+    to destination - a local file path"""
+    log.warning(f'S3 getting info for {uri}')
+    uri_match = S3_REGEXP.match(uri).groupdict()
+    try:
+        bucket=get_s3().Bucket(uri_match['bucket'])
+        object = next(iter(bucket.objects.filter(Prefix=uri_match['path'])))
+        return argparse.Namespace(size=object.size, 
+                                  creation_date=object.last_modified,
+                                  modification_date=object.last_modified)
+    except StopIteration:
+        raise FetchError(f'{uri} was not found')
+
+
 # FTP
 
 FTP_REGEXP=re.compile(r'^ftp://(?P<host>[^/]*)/(?P<path>.*)$')
@@ -171,6 +198,32 @@ def ftp_put(source, destination):
         with FTP(uri_match['host']) as ftp:
             ftp.login()
             ftp.storbinary(f"STOR {uri_match['path']}", local_file.read)
+
+def ftp_info(uri):
+    """FTP info: get some information on a FTP object"""
+    log.info(f'FTP get info for {uri}')
+    uri_match = FTP_REGEXP.match(uri).groupdict()
+    with FTP(uri_match['host']) as ftp:
+        ftp.login()
+
+        with io.StringIO() as output:
+            ftp.dir(uri_match['path'],output.write)
+            output.seek(0)
+            answer = output.read()
+        
+        if answer:
+            obj = answer.split()
+            obj_date = datetime.datetime.strptime(
+                ' '.join( (obj[FTP_DIR_MONTH_POSITION],
+                           obj[FTP_DIR_DAY_POSITION],
+                           obj[FTP_DIR_YEAR_POSITION])
+                    ),
+                '%b %d %Y').replace(tzinfo=pytz.utc)
+            return argparse.Namespace(size=obj[FTP_DIR_SIZE_POSITION],
+                                    creation_date=obj_date, 
+                                    modification_date=obj_date)
+        else:
+            raise FetchError(f'{uri} was not found')
 
 @cached_property
 def docker_available():
@@ -342,6 +395,20 @@ def file_put(source, destination):
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {destination}")
 
+def file_info(uri):
+    """Same as above except that source is this time a plain local path
+    and destination is in the form file://... As above just some plain
+    syntaxic sugar above shutil.copyfile """
+    log.info(f'FILE getting info for {uri}')
+    uri_match = FILE_REGEXP.match(uri).groupdict()
+    if uri_match:
+        complete_path = uri_match['path']
+        stat = os.stat(complete_path)
+        return argparse.Namespace(size=stat.st_size, 
+                                  creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
+                                  modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc))
+    else:
+        raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
 # generic wrapper
 
@@ -423,6 +490,26 @@ def get_file_uri(uri):
         return uri
     else:
         return None
+
+def info(uri):
+    """Return an info object from a URI, which should contains at least creation_date, modification_date and size
+    WARNING: with s3 or ftp URI, creation_date and modification_date are the same."""
+    m = GENERIC_REGEXP.match(uri)
+    if m:
+        m = m.groupdict()
+        source = f"{m['proto']}://{m['resource']}"
+        if m['proto']=='s3':
+            return s3_info(source)
+        elif m['proto']=='ftp':
+            return ftp_info(source)
+        elif m['proto']=='file':
+            return file_info(source) 
+        #elif m['proto']=='fasp':
+        #    fasp_get(source, destination)
+        #elif m['proto']=='run+fastq':
+        #    fastq_run_get(source, destination)       
+        else:
+            raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(

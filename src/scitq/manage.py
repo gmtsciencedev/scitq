@@ -8,6 +8,8 @@ import os
 from .util import package_path, package_version
 from .ansible.scitq.sqlite_inventory import inventory, decorate_parser
 import shutil
+import random
+from .debug import Debugger
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -140,6 +142,15 @@ def main():
     ansible_inventory_parser=subsubparser.add_parser('inventory',help='Execute the internal inventory command')
     decorate_parser(ansible_inventory_parser)
 
+    debug_parser = subparser.add_parser('debug', help='The following options help debuging a new task')
+    subsubparser=debug_parser.add_subparsers(dest='action')
+    debug_run_parser=subsubparser.add_parser('run',help='Run a debugging task (pick randomly if -i or -n is not specified)')
+    debug_run_parser.add_argument('-b','--batch',help='Pick task in this batch',type=str, default=None)
+    debug_run_parser.add_argument('-i','--id',help='Use the task with this id',type=int, default=None)
+    debug_run_parser.add_argument('-n','--name', help='Use the task with this id', type=str, default=None)
+    debug_run_parser.add_argument('-r','--retry', help='Do not re-download input and resources, it is just a retry', action='store_true')
+    debug_run_parser.add_argument('--no-resource', help='Do not re-download resources, but re-download inputs', action='store_true')
+    debug_run_parser.add_argument('-c','--conf', help='Use this environment file to set environment (default to /etc/scitq.conf)', type=str, default='/etc/scitq.conf')
 
     args=parser.parse_args()
 
@@ -338,6 +349,35 @@ def main():
             result=inventory(args)
             if result:
                 print(result)
+    
+    elif args.object=='debug':
+
+        if args.action=='run':
+            if args.id is not None:
+                task = s.task_get(id)
+            elif args.name is not None:
+                for task in s.tasks():
+                    if task['name']==args.name:
+                        break
+                else:
+                    raise RuntimeError(f'No such task {args.name}...')       
+            elif args.batch is not None:
+                try:
+                    task = random.choice([task for task in s.tasks() if task['batch']==args.batch and task['status']=='pending'])
+                except IndexError:
+                    raise RuntimeError(f'No pending task in this batch {args.batch}...')
+            else:
+                try:
+                    task = random.choice([task for task in s.tasks() if task['status']=='pending'])
+                except IndexError:
+                    raise RuntimeError(f'No pending task...')
+            get_input = get_resource = True
+            if args.retry:
+                get_input = get_resource = False
+            if args.no_resource:
+                get_resource = False
+            Debugger(task, get_input=get_input, get_resource=get_resource, 
+                     configuration=args.conf).run()
 
 if __name__=="__main__":
     main()
