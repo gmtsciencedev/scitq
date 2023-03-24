@@ -1142,17 +1142,18 @@ def handle_get():
             trunc_error=f'RIGHT(execution.error,{UI_OUTPUT_TRUNC})'
         
 
-        task_list = list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in db.session.execute(
+        #task_list = list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)) for row in db.session.execute(
+        task_list = list([dict(row) for row in db.session.execute(
         f'''SELECT
         task.task_id,
         task.name,
-        worker.name,
+        worker.name as worker_name,
         task.batch,
         execution.creation_date,
         execution.modification_date,
         execution.execution_id,
-        {trunc_output},
-        {trunc_error},
+        {trunc_output} as output,
+        {trunc_error} as error,
         task.command,
         execution.worker_id,
         task.status
@@ -1172,9 +1173,9 @@ def handle_get():
                 SELECT execution_id,output,error FROM execution 
                 WHERE execution_id IN ({','.join([str(eid) for eid in detailed_tasks])})"""):
                 for task in task_list:
-                    if task[6]==detailed_task[0]:
-                        task[7]=detailed_task[1]
-                        task[8]=detailed_task[2]
+                    if task['execution_id']==detailed_task['execution_id']:
+                        task['output']=detailed_task['output']
+                        task['error']=detailed_task['error']
                         break
 
         return jsonify({'tasks':task_list})
@@ -1429,8 +1430,12 @@ def delete_job():
         log.warning(f"Job {json['job_id']} already deleted")
     return '"ok"'
 
+#ns = api.namespace('live', description='Very basic API for the UI')
 
-
+@app.route('/live/ping')
+def live_ping():
+    """Simply return ok"""
+    return '"ok"'
 
  #####     ##     ####   #    #   ####   #####    ####   #    #  #####       #####  #    #  #####   ######    ##    #####  
  #    #   #  #   #    #  #   #   #    #  #    #  #    #  #    #  #    #        #    #    #  #    #  #        #  #   #    # 
