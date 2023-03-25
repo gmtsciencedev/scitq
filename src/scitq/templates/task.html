@@ -72,7 +72,28 @@
 </ul>
 <div class="col-md-12">
     <div class="panel panel-default">
-      <span id="tasks"> Loading please wait... </span>
+        <span id="tasks"> 
+            <table class="table table-responsive table-hover table-striped">
+                <thead id="task_head" class="text-center table-${color_table}">
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Command</th>
+                        <th><div onclick="">Worker</div></th>
+                        <th>Batch</th>
+                        <th>Status</th>
+                        <th>Start</th>
+                        <th>Runtime</th>
+                        <th>Output</th>
+                        <th>Error</th>
+                        <th style="width:15em">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tasks-table-body">
+                    <tr><td>Loading please wait 2...</td></tr>
+                </tbody> 
+            </table>
+        </span>
     </div>
   </div>
   <div class="clearfix"></div>
