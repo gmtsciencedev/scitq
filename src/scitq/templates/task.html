@@ -1,17 +1,18 @@
 <!doctype html>
+<html lang="en-US">
 
 <head>
     <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
     <link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
-<script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
-<script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
-<script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
-<!-- <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script> -->
-<script src="{{ url_for('static', filename='js/jquery-3.6.3.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/scitq-common.js') }}"></script>
-<script src="{{ url_for('static', filename='js/scitq-task.js') }}"></script>
-
+    <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
+    <script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
+    <script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
+    <!-- <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script> -->
+    <script src="{{ url_for('static', filename='js/jquery-3.6.3.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/scitq-common.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/scitq-task.js') }}"></script>
 </head>
+
 <body>
     <title>Tasks view</title>
     <img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left; margin-bottom:2px;"/>
@@ -100,6 +101,8 @@
   <br /><br />
     </div>
 </body>
+
+</html>
 
   
 

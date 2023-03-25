@@ -1184,12 +1184,12 @@ def handle_get():
         log.info('sending batch')
         if IS_SQLITE:
             duration_query='(JULIANDAY(e1.modification_date)-JULIANDAY(e1.creation_date))*24'
-            worker_query='''SELECT batch,GROUP_CONCAT(name,',') FROM worker GROUP BY batch'''
+            worker_query='''SELECT batch,GROUP_CONCAT(name,',') as workers FROM worker GROUP BY batch ORDER BY name'''
         else:
             duration_query='EXTRACT ( EPOCH FROM (e1.modification_date-e1.creation_date)/3600 )'
-            worker_query='''SELECT batch,STRING_AGG(name,',') FROM worker GROUP BY batch'''
+            worker_query='''SELECT batch,STRING_AGG(name,',') as workers FROM (SELECT * FROM worker ORDER BY name) w GROUP BY batch'''
         batch_query=f'''SELECT * FROM (
-    SELECT batch,status,COUNT(task_id),MAX(duration),MIN(duration), AVG(duration) FROM (
+    SELECT batch,status,COUNT(task_id) as count,MAX(duration) as max,MIN(duration) as min, AVG(duration) as avg FROM (
         SELECT {duration_query} as duration, e1.task_id, e1.status,task.batch FROM execution e1 JOIN task ON (
             task.task_id=e1.task_id AND e1.creation_date=(
                 SELECT MAX(creation_date) FROM execution WHERE execution.task_id=task.task_id
@@ -1200,9 +1200,8 @@ def handle_get():
     SELECT batch,status, COUNT(task_id),NULL,NULL,NULL 
     FROM task WHERE task_id NOT IN (SELECT task_id FROM execution) GROUP BY batch,status
 ) AS b ORDER BY batch, status'''
-        return jsonify({'batches':list([list(map(lambda x : str(x) if type(x)==type(datetime.utcnow()) else x ,row)
-                                        ) for row in db.session.execute(batch_query)]),
-                        'workers': list([list(row) for row in db.session.execute(worker_query)])})
+        return jsonify({'batches':list([dict(row) for row in db.session.execute(batch_query)]),
+                        'workers': list([dict(row) for row in db.session.execute(worker_query)])})
 
 #@socketio.on('change_batch')
 @app.route('/ui/change_batch')

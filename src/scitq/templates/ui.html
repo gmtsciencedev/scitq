@@ -1,95 +1,99 @@
 <!doctype html>
+<html lang="en-US">
 
 <head>
     <link href={{ url_for("static", filename="css/ui.css") }} rel="stylesheet">
     <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
 
-<script src="{{ url_for('static', filename='js/jquery-3.6.3.min.js') }}"></script>
-<link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
-<script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
-<script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
-<script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
-<!-- <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script> -->
-<script src="{{ url_for('static', filename='js/scitq-common.js') }}"></script>
-<script src="{{ url_for('static', filename='js/scitq-ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jquery-3.6.3.min.js') }}"></script>
+    <link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
+    <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
+    <script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
+    <script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
+    <!-- <script src={{ url_for("static", filename="js/socket.io.v4.0.1/socket.io.js") }}></script> -->
+    <script src="{{ url_for('static', filename='js/scitq-common.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/scitq-ui.js') }}"></script>
 </head>
 
-<title>scitq UI</title>
-<img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left;margin-top:-0.5em"/><h1 style="float:left; margin-right:1em;">scitq UI</h1>
+<body>
+    <title>scitq UI</title>
+    <img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left;margin-top:-0.5em"/><h1 style="float:left; margin-right:1em;">scitq UI</h1>
 
 
-<span id="workers">
-    <div class="container total-div" style='margin-top:0.5em'>
-        <a target='_blank' id="pending-tasks" href='/ui/task/?sortby=&worker=&batch=&show=pending'>
-            Pending
-        </a>
-        <a href='#'  id="assigned-tasks">
-            Assigned
-        </a>
-        <a target='_blank' id="running-tasks" href='/ui/task/?sortby=&worker=&batch=&show=running'>
-            Running
-        </a>
-        <a target='_blank' id="failed-tasks" href='/ui/task/?sortby=&worker=&batch=&show=failed'>
-            Failed
-        </a>
-        <a target='_blank' id="succeeded-tasks" href='/ui/task/?sortby=&worker=&batch=&show=succeeded'>
-            Succeeded
-        </a>
-    </div>
-    <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>
-    <a type='button' id='downloadall' target='_blank' href='/ui/batch/'  class='btn btn-secondary' style='float:right;margin:0.35em'>Batch view</a>
+    <span id="workers">
+        <div class="container total-div" style='margin-top:0.5em'>
+            <a target='_blank' id="pending-tasks" href='/ui/task/?sortby=&worker=&batch=&show=pending'>
+                Pending
+            </a>
+            <a href='#'  id="assigned-tasks">
+                Assigned
+            </a>
+            <a target='_blank' id="running-tasks" href='/ui/task/?sortby=&worker=&batch=&show=running'>
+                Running
+            </a>
+            <a target='_blank' id="failed-tasks" href='/ui/task/?sortby=&worker=&batch=&show=failed'>
+                Failed
+            </a>
+            <a target='_blank' id="succeeded-tasks" href='/ui/task/?sortby=&worker=&batch=&show=succeeded'>
+                Succeeded
+            </a>
+        </div>
+        <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>
+        <a type='button' id='downloadall' target='_blank' href='/ui/batch/'  class='btn btn-secondary' style='float:right;margin:0.35em'>Batch view</a>
 
-    <table class="table table-responsive text-center table-hover table-striped">
-        <thead class=" table-secondary">
-            <tr>
-                <th>Worker Name</th>
-                <th>Batch</th>
-                <th>Status</th>
-                <th>Concurrency</th>
-                <th>Prefetch</th>
-                <th>Accepted Tasks</th>
-                <th>Running Tasks</th>
-                <th>Successes</th>
-                <th>Failures</th>
-                <th>Total Tasks</th>
-                <th>CPU load / IOwait %</th>
-                <th>Free memory %</th>
-                <th>read/write GB</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody id="worker-table-body">
-            <tr>
-                <td>Loading please wait ... </td>
-            </tr>
-        </tbody>
-    </table>
-</span>
+        <table class="table table-responsive text-center table-hover table-striped">
+            <thead class=" table-secondary">
+                <tr>
+                    <th>Worker Name</th>
+                    <th>Batch</th>
+                    <th>Status</th>
+                    <th>Concurrency</th>
+                    <th>Prefetch</th>
+                    <th>Accepted Tasks</th>
+                    <th>Running Tasks</th>
+                    <th>Successes</th>
+                    <th>Failures</th>
+                    <th>Total Tasks</th>
+                    <th>CPU load / IOwait %</th>
+                    <th>Free memory %</th>
+                    <th>read/write GB</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="worker-table-body">
+                <tr>
+                    <td>Loading please wait ... </td>
+                </tr>
+            </tbody>
+        </table>
+    </span>
 
-<span id="addworker">
-    <form id="addworker_form" action="" style="float:left;">
-        <label for="awf-concurrency" class="awf-label" >concurrency</label>
-        <input type="text" id="awf-concurrency" value=1  class="awf-input"></input>
-        <label for="awf-prefetch" class="awf-label" >prefetch</label>
-        <input type="text" id="awf-prefetch" value=0  class="awf-input"></input>
-        <label for="awf-flavor" class="awf-label">flavor</label>
-        <input type="text" id="awf-flavor" class="awf-input-large"></input>
-        <label for="awf-region" class="awf-label">region</label>
-        <input type="text" id="awf-region" class="awf-input-large"></input>
-        <label for="awf-batch" class="awf-label">batch</label>
-        <input type="text" id="awf-batch" class="awf-input-large"></input>
-        <label for="awf-number" class="awf-label">number</label>
-        <input type="text" id="awf-number" value=1 class="awf-input"></input>
-        <button onClick="add_worker(document.getElementById('awf-concurrency').value,
-            document.getElementById('awf-prefetch').value,
-            document.getElementById('awf-flavor').value,
-            document.getElementById('awf-region').value,
-            document.getElementById('awf-batch').value,
-            document.getElementById('awf-number').value)" 
-            class="awf-button" id="awf-button" type="button">Add</button>
-    </form>
-    <span id="addworker-result" style="float:left; color:red; margin-top: 5px; margin-left:10px"></span>
-    <span id="jobs" style="float:left;clear: both;margin: 1em;font-size:small"></span>
-</span>
+    <span id="addworker">
+        <form id="addworker_form" action="" style="float:left;">
+            <label for="awf-concurrency" class="awf-label" >concurrency</label>
+            <input type="text" id="awf-concurrency" value=1  class="awf-input"></input>
+            <label for="awf-prefetch" class="awf-label" >prefetch</label>
+            <input type="text" id="awf-prefetch" value=0  class="awf-input"></input>
+            <label for="awf-flavor" class="awf-label">flavor</label>
+            <input type="text" id="awf-flavor" class="awf-input-large"></input>
+            <label for="awf-region" class="awf-label">region</label>
+            <input type="text" id="awf-region" class="awf-input-large"></input>
+            <label for="awf-batch" class="awf-label">batch</label>
+            <input type="text" id="awf-batch" class="awf-input-large"></input>
+            <label for="awf-number" class="awf-label">number</label>
+            <input type="text" id="awf-number" value=1 class="awf-input"></input>
+            <button onClick="add_worker(document.getElementById('awf-concurrency').value,
+                document.getElementById('awf-prefetch').value,
+                document.getElementById('awf-flavor').value,
+                document.getElementById('awf-region').value,
+                document.getElementById('awf-batch').value,
+                document.getElementById('awf-number').value)" 
+                class="awf-button" id="awf-button" type="button">Add</button>
+        </form>
+        <span id="addworker-result" style="float:left; color:red; margin-top: 5px; margin-left:10px"></span>
+        <span id="jobs" style="float:left;clear: both;margin: 1em;font-size:small"></span>
+    </span>
+</body>
 
+</html>
 

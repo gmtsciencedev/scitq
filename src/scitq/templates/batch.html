@@ -1,4 +1,5 @@
 <!doctype html>
+<html lang="en-US">
 
 <head>
   <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
@@ -11,10 +12,11 @@
   <script src="{{ url_for('static', filename='js/scitq-common.js') }}"></script>
   <script src="{{ url_for('static', filename='js/scitq-batch.js') }}"></script>
 </head>
+
 <body style="margin-top:-16px;">
-  <title>batches view</title>
-  <img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left; margin-bottom:2px;"/><h1 style="float:left;">batches view</h1>
-  <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>
+    <title>batches view</title>
+    <img src={{ url_for("static", filename="favicon.png") }} width=64px style="float:left; margin-bottom:2px;"/><h1 style="float:left;">batches view</h1>
+    <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>
     <div class="container">
         <div class="">
       
@@ -25,20 +27,39 @@
     </div>
 
 
-<div class="col-md-12">
-    <div class="panel panel-default">
-      <span id="batches"> Loading please wait... </span>
+    <div class="col-md-12"> 
+      <div class="panel panel-default">
+        <span id="batches"> 
+          <table class="table table-responsive table-hover table-striped text-center ">
+            <thead class="text-center table-secondary">
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Workers</th>
+                <th>Progress</th>
+                <th>pending</th>
+                <th>running</th>
+                <th>successes</th>
+                <th>failed</th>
+                <th>total</th>
+                <th>Average duration [min - max] </th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="batch-table-body">
+              <tr>
+                <td>Loading please wait...</td>
+              </tr>
+            </tbody>
+          </table>
+        </span>
+      </div>
     </div>
-  </div>
 
-  <div class="clearfix"></div>
-  <br /><br />
-    </div>
-  
+    <div class="clearfix"></div>
+    <br /><br />
 </body>
 
-  
-
-  
+</html>
 
 
