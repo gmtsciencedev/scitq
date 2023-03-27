@@ -29,8 +29,8 @@ function get_workers() {
         console.log('Received totals ',totals);
 
         document.getElementById("pending-tasks").innerHTML = `Pending: ${totals.pending}`;
-        document.getElementById("assigned-tasks").innerHTML = `Pending: ${totals.assigned}`;
-        document.getElementById("running-tasks").innerHTML = `Pending: ${totals.running}`;
+        document.getElementById("assigned-tasks").innerHTML = `Assigned: ${totals.assigned}`;
+        document.getElementById("running-tasks").innerHTML = `Running: ${totals.running}`;
         document.getElementById("failed-tasks").innerHTML = `Failed: ${totals.failed}`;
         document.getElementById("succeeded-tasks").innerHTML = `Succeeded: ${totals.succeeded}`;
 

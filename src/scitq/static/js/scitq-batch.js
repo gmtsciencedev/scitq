@@ -97,13 +97,13 @@ function batch_line(current_batch, workers_by_batch,
                 </button>
                 <button type="button" 
                         title="break" 
-                        onclick="displayModal(${displayed_batch}','break')" 
+                        onclick="displayModal('${displayed_batch}','break')" 
                         class="btn btn-outline-dark">
                     ${svg_break}
                 </button>
                 <button type="button"
                         title="clear" 
-                        onclick="displayModal(${displayed_batch}','clear')"
+                        onclick="displayModal('${displayed_batch}','clear')"
                         class="btn btn-outline-dark">
                     ${svg_delete}
                 </button>

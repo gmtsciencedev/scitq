@@ -31,7 +31,7 @@ BASE_WORKDIR = os.environ.get("BASE_WORKDIR",
     "/tmp" if platform.system() in ['Windows','Darwin'] else "/scratch")
 BASE_RESOURCE_DIR = os.path.join(BASE_WORKDIR,'resource')
 MAXIMUM_PARALLEL_UPLOAD = 5
-RETRY_UPLOAD = 2
+RETRY_UPLOAD = 5
 RETRY_DOWNLOAD = 2
 
 if not os.path.exists(BASE_RESOURCE_DIR):
@@ -135,6 +135,7 @@ class Executor:
         self.container_id=None
         self.dynamic_read_timeout = READ_TIMEOUT
         self.__status__=status
+        self.maximum_parallel_upload = MAXIMUM_PARALLEL_UPLOAD
         asyncio.run(self.run())
 
 
@@ -342,31 +343,55 @@ class Executor:
         log.warning('Uploading output results...')
         if self.output:
             output_files = []
-            jobs = {}
             retry = RETRY_UPLOAD
             while retry>0:
                 try:
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=MAXIMUM_PARALLEL_UPLOAD) as executor:
+                    jobs = {}
+                    transfer_failed = False
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=self.maximum_parallel_upload) as executor:
                         for root, _, files in os.walk(self.output_dir):
                             rel_path = os.path.relpath(root, self.output_dir)
                             for local_data in files:
                                 data = os.path.join(root, local_data)
-                                if not os.path.islink(data):
+                                if not os.path.islink(data) and data not in output_files:
                                     jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
-                                    output_files.append(local_data)
                                 else:
-                                    log.warning(f'{local_data} is ignored as it is a symbolic link.')
-                        for job in  concurrent.futures.as_completed(jobs):
+                                    if data in output_files:
+                                        log.warning(f'Passing {data} as it is already transfered')
+                                    else:
+                                        log.warning(f'{local_data} is ignored as it is a symbolic link.')
+                        for job in concurrent.futures.as_completed(jobs):
                             obj = jobs[job]
-                            log.warning(f'Done for {obj}: {job.result()}')
+                            if job.exception() is not None:
+                                transfer_failed = True
+                                log.warning(f'Transfer failed for {obj}: {job.exception()}')
+                                log.exception(job.exception())
+                            else:
+                                log.warning(f'Transfer done for {obj}: {job.result()}')
+                                output_files.append(local_data)
+                    if transfer_failed:
+                        log.error(f'Upload partially failed for task {self.task_id}')
+                        if self.maximum_parallel_upload>1:
+                            self.maximum_parallel_upload -= 1
+                            log.warning(f'Reducing parallel upload to {self.maximum_parallel_upload}')
+                        retry -= 1
+                        if retry<=0:
+                            raise
+                        else:
+                            continue
                     if output_files:
                         return ' '.join(output_files)
                     else:
                         return None
                 except Exception as e:
-                    log.error(f'Upload load failed for task {self.task_id}')
+                    log.error(f'Upload failed for task {self.task_id}')
+                    if self.maximum_parallel_upload>1:
+                        self.maximum_parallel_upload -= 1
+                    log.warning(f'Reducing parallel upload to {self.maximum_parallel_upload}')
                     log.exception(e)
                     retry -= 1
+                    if retry<=0:
+                        raise
     
     def clean(self):
         """Clean working directory (triggered if all went well)"""

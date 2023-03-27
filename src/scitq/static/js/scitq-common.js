@@ -11,7 +11,7 @@ function loop_if_online(func, wait) {
     var interv = function(w){
         return function(){
             setTimeout(interv, w);
-            if (!pause_loop) {
+            if (!pause_loop && !document.hidden) {
                 check_online(func);
             }
             };

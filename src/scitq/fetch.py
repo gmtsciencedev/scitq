@@ -20,6 +20,7 @@ import io
 # how many time do we retry
 RETRY_TIME = 3
 RETRY_SLEEP_TIME = 10
+MAX_SLEEP_TIME = 900
 PUBLIC_RETRY_TIME = 20
 MAX_PARALLEL_S3 = 5
 
@@ -70,9 +71,13 @@ def retry_if_it_fails(n):
                     if iteration<__retry_number__:
                         log.warning(f'Waiting some time ({sleep_time}s)...')
                         sleep(sleep_time)
-                        sleep_time *= 2
+                        if sleep_time < MAX_SLEEP_TIME/2:
+                            sleep_time *= 2
+                        else:
+                            sleep_time = MAX_SLEEP_TIME
                         log.warning('Retrying...')
                     else:
+                        log.error('Too many failures, giving up')
                         raise
             return retval
         return wrapper
@@ -181,7 +186,12 @@ def ftp_get(source, destination):
     to destination - a local file path"""
     log.info(f'FTP downloading {source} to {destination}')
     destination=complete_if_ends_with_slash(source, destination)
-    uri_match = FTP_REGEXP.match(source).groupdict()
+    uri_match = FTP_REGEXP.match(source)
+    if not uri_match:
+        message=f'Source does not seem a proper FTP URL: {source}'
+        log.error(message)
+        raise FetchError(message)
+    uri_match = uri_match.groupdict()
     with open(destination, 'wb') as local_file:
         with FTP(uri_match['host']) as ftp:
             ftp.login()
