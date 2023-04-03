@@ -219,7 +219,7 @@ class Execution(db.Model):
     output = db.Column(db.Text)
     error = db.Column(db.Text)
     return_code = db.Column(db.Integer)
-    pid = db.Column(db.Integer)
+    pid = db.Column(db.String)
     output_files = db.Column(db.String, nullable=True)
     
 
@@ -235,8 +235,10 @@ class Execution(db.Model):
 
 class Signal(db.Model):
     __tablename__ = "signal"
-    execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), primary_key=True)
-    worker_id = db.Column(db.Integer, db.ForeignKey("worker.worker_id"), primary_key=True)
+    #execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), primary_key=True, nullable=True)
+    signal_id = db.Column(db.Integer, primary_key=True)
+    execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), nullable=True)
+    worker_id = db.Column(db.Integer, db.ForeignKey("worker.worker_id"))
     signal = db.Column(db.Integer, nullable=False)    
 
     def __init__(self, execution_id, worker_id, signal):
@@ -715,7 +717,7 @@ class ExecutionDAO(BaseDAO):
                             else:
                                 api.abort(500, f"An execution cannot change status from pending to {value}")
                         elif execution.status=='accepted':
-                            if value in ['running','failed','succeeded']:
+                            if value in ['running','failed','succeeded','pending']:
                                 task.status = value
                                 task.modification_date = datetime.utcnow()
                             else:
@@ -752,7 +754,7 @@ execution = api.model('Execution', {
     'status': fields.String(readonly=True,
         description=f'The execution status: {", ".join(ExecutionDAO.authorized_status)}'), 
     'return_code': fields.Integer(required=False, description='The return code of the execution (when finished)'),
-    'pid': fields.Integer(required=False, description='The process id (pid) of the execution'),
+    'pid': fields.String(required=False, description='The process id (pid) of the execution'),
     'creation_date': fields.DateTime(readonly=True,
         description="timestamp of execution creation (on worker)"),
     'modification_date': fields.DateTime(readonly=True,

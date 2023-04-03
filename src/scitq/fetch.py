@@ -117,6 +117,10 @@ def get_s3():
     """Replace boto3.resource('s3') using hack suggested in https://github.com/aws/aws-cli/issues/1270"""
     return xboto3().resource('s3')
 
+def _bucket_get(bucket, key, destination):
+    """A small helper just to ease boto3 client in thread/process context to download a file"""
+    return get_s3().Bucket(bucket).download_file(key, destination)
+
 @retry_if_it_fails(RETRY_TIME)
 def s3_get(source, destination):
     """S3 downloader: download source expressed as s3://bucket/path_to_file 
@@ -124,31 +128,60 @@ def s3_get(source, destination):
     log.warning(f'S3 downloading {source} to {destination}')
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(source).groupdict()
-    try:
-        if uri_match['path'].endswith('/'):
+    if uri_match['path'].endswith('/'):
+        retry = RETRY_TIME
+        try:
             bucket=get_s3().Bucket(uri_match['bucket'])
-            jobs = {}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_S3) as executor:
-                for obj in bucket.objects.filter(Prefix=uri_match['path']):
-                    destination_name = os.path.relpath(obj.key, uri_match['path'])
-                    destination_name = os.path.join(destination, destination_name)
-                    destination_path,_ = os.path.split(destination_name)
-                    log.warning(f'S3 downloading {obj.key} to {destination_name}')
-                    if not os.path.exists(destination_path):
-                        os.makedirs(destination_path)
-                    if not os.path.exists(destination_name):
-                        jobs[executor.submit(bucket.download_file, obj.key, destination_name)]=obj.key
-                for job in  concurrent.futures.as_completed(jobs):
-                    obj = jobs[job]
-                    log.warning(f'Done for {obj}: {job.result()}')
-        else:
+            objects = list(bucket.objects.filter(Prefix=uri_match['path']))
+            while retry>0:
+                failed_objects = []
+                failed = False
+                try:
+                    jobs = {}
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_S3) as executor:
+                        for obj in objects:
+                            destination_name = os.path.relpath(obj.key, uri_match['path'])
+                            destination_name = os.path.join(destination, destination_name)
+                            destination_path,_ = os.path.split(destination_name)
+                            log.warning(f'S3 downloading {obj.key} to {destination_name}')
+                            if not os.path.exists(destination_path):
+                                os.makedirs(destination_path)
+                            if not os.path.exists(destination_name):
+                                jobs[executor.submit(_bucket_get, uri_match['bucket'], obj.key, destination_name)]=obj
+                        for job in  concurrent.futures.as_completed(jobs):
+                            obj = jobs[job]
+                            if job.exception() is None:
+                                log.warning(f'Done for {obj.key}: {job.result()}')
+                            else:
+                                log.error(f'Could not download {obj.key}')
+                                log.exception(job.exception())
+                                failed = True
+                                failed_objects.append(obj)
+                    if failed:
+                        objects = failed_objects
+                        retry -= 1
+                        continue
+                    else:
+                        break
+                except:
+                    pass
+        except botocore.exceptions.ClientError as error:
+            if 'Not Found' in error.response.get('Error',{}).get('Message',None):
+                raise FetchError(f'{source} was not found') from error
+            else:
+                raise
+        
+        if failed:
+            raise FetchError(f"These objects could not be downloaded: {','.join([obj.key for obj in failed_objects])}")
+    else:
+        try:
             xboto3().client('s3').download_file(uri_match['bucket'],
                 uri_match['path'],destination)
-    except botocore.exceptions.ClientError as error:
-        if 'Not Found' in error.response.get('Error',{}).get('Message',None):
-            raise FetchError(f'{source} was not found')
-        else:
-            raise
+        except botocore.exceptions.ClientError as error:
+            if 'Not Found' in error.response.get('Error',{}).get('Message',None):
+                raise FetchError(f'{source} was not found') from error
+            else:
+                raise
 
 
 @retry_if_it_fails(RETRY_TIME)
@@ -298,6 +331,8 @@ def fastq_sra_get(run_accession, destination):
     log.info(f'Pigziping fastqs ({fastqs})')
     subprocess.run(['pigz','-f']+fastqs,
         check=True)
+    if os.path.isdir(os.path.join(destination, run_accession)):
+        shutil.rmtree(os.path.join(destination, run_accession))
 
 def _my_fastq_download(method, url, md5, destination):
     """A small adhoc function to download and check a fastq through a ftp_url plus a md5"""
@@ -531,7 +566,7 @@ if the file URI comes first, a put (upload) is performed, else a get (download) 
 if only one URI is given, the second default to '.', the local path''')
     parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
     parser.add_argument('destination_uri', type=str, nargs='?',
-                        help='the destination uri (same as above) (default to ., means download locally)', default='.')
+                        help='the destination uri (same as above) (default to ., means download locally)', default=os.getcwd())
     args = parser.parse_args()
 
     candidate_source = get_file_uri(args.source_uri)

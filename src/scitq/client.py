@@ -18,8 +18,12 @@ import traceback
 import shutil
 import subprocess
 from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
+from .constants import SIGNAL_CLEAN, SIGNAL_RESTART
 import shlex
 import concurrent.futures
+import json
+import datetime
+import sys
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -28,8 +32,12 @@ QUEUE_SIZE_THRESHOLD = 2
 IDLE_TIMEOUT = 600
 DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
-    "/tmp" if platform.system() in ['Windows','Darwin'] else "/scratch")
+    "/tmp/scitq" if platform.system() in ['Windows','Darwin'] else "/scratch")
+if not os.path.exists(BASE_WORKDIR):
+    os.makedirs(BASE_WORKDIR)
 BASE_RESOURCE_DIR = os.path.join(BASE_WORKDIR,'resource')
+RESOURCE_FILES_SUBDIR = 'files'
+RESOURCE_FILE = os.path.join(BASE_RESOURCE_DIR, 'resource.json')
 MAXIMUM_PARALLEL_UPLOAD = 5
 RETRY_UPLOAD = 5
 RETRY_DOWNLOAD = 2
@@ -72,6 +80,21 @@ def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_opt
     log.warning(f'Final docker command: {" ".join(docker_cmd)}')
     return docker_cmd
 
+def docker_inspect(container_id):
+    alive_container=None
+    try:
+        alive_container=subprocess.run(['docker','inspect','--format', "'{{json .}}'",container_id],
+            capture_output=True, check=True
+            ).stdout.decode('utf-8').strip()
+        return json.loads(alive_container[1:-1]) 
+    except subprocess.CalledProcessError:
+        log.warning('No docker by that ID')
+        return None
+    except Exception:
+        log.exception(f'Docker ps gave an non exploitable output: {alive_container}')
+        return None
+
+
 def create_dir(base_dir, sub_dir):
     """A small helper function to create a subdirectory and return its name.
     Add a final slash (or backslash with windows) to makes things clear it is a directory"""
@@ -96,6 +119,32 @@ def no_slash(path):
     """Do the reverse of final_slash, remove the final slash if it had one"""
     return path[:-1] if path.endswith('/') else path
 
+
+def resource_to_json(resource_db, resource_file=RESOURCE_FILE):
+    """Dump resource to a json file"""
+    with open(resource_file,'w',encoding='utf-8') as rf:
+        resource_image = {}
+        for data,data_info in resource_db.items():
+            new_data_info = {}
+            for k,v in data_info.items():
+                if k=='date':
+                    new_data_info[k]=v.isoformat()
+                else:
+                    new_data_info[k]=v 
+            resource_image[data]=new_data_info            
+        json.dump(resource_image, rf)
+
+def json_to_resource(resource_db,resource_file=RESOURCE_FILE):
+    """Load resource from a json file"""
+    if os.path.exists(resource_file):
+        try:
+            with open(resource_file,'r',encoding='utf-8') as rf:
+                for data,data_info in json.load(rf).items():
+                    resource_db[data]=dict( [(k,datetime.datetime.fromisoformat(v)) if k=='date' else (k,v) 
+                                             for k,v in data_info.items()] )
+        except Exception as e:
+            log.exception(f'Could not import resource from {resource_file}')
+            
 class Executor:
     """Executor represent the process in which the task is launched, it is also
     designed to monitor the task and grab its output to push it regularly to the
@@ -105,10 +154,11 @@ class Executor:
     def __init__(self, server, execution_id, task_id, command, input, output, 
                 container, container_options, execution_started, execution_queue,
                 cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore,
-                worker_id, status):
+                worker_id, status, working_dirs,
+                recover=False, input_dir=None, output_dir=None, 
+                temp_dir=None, workdir=None, container_id=None):
         log.warning(f'Starting executor for {execution_id}')
         self.s = Server(server, style='object')
-        self.s.execution_update(execution_id, status='accepted')
         self.worker_id = worker_id
         self.execution_id = execution_id
         self.task_id = task_id
@@ -122,22 +172,60 @@ class Executor:
         self.execution_started = execution_started
         self.execution_queue = execution_queue
         self.resource_dir = final_slash(resource_dir)
-        self.workdir = tempfile.mkdtemp(dir=BASE_WORKDIR)
-        log.warning(f'Workdir is {self.workdir} with base {BASE_WORKDIR}')
-        self.input_dir = create_dir(self.workdir, DEFAULT_INPUT_DIR)
-        self.output_dir = create_dir(self.workdir, DEFAULT_OUTPUT_DIR)
-        self.temp_dir = create_dir(self.workdir, DEFAULT_TEMP_DIR)   
+        self.recover = recover
         self.cpu=cpu 
         self.resource=resource
         self.resources_db=resources_db
         self.run_slots=run_slots
         self.run_slots_semaphore=run_slots_semaphore
-        self.container_id=None
         self.dynamic_read_timeout = READ_TIMEOUT
         self.__status__=status
         self.maximum_parallel_upload = MAXIMUM_PARALLEL_UPLOAD
+        self.recover=recover
+        self.working_dirs=working_dirs
+        if not recover:
+            self.workdir = tempfile.mkdtemp(dir=BASE_WORKDIR)
+            self.s.execution_update(execution_id, status='accepted')
+            log.warning(f'Workdir is {self.workdir} with base {BASE_WORKDIR}')
+            self.input_dir = create_dir(self.workdir, DEFAULT_INPUT_DIR)
+            self.output_dir = create_dir(self.workdir, DEFAULT_OUTPUT_DIR)
+            self.temp_dir = create_dir(self.workdir, DEFAULT_TEMP_DIR)  
+            self.container_id=None 
+        else:
+            self.workdir = workdir
+            self.input_dir = input_dir
+            self.output_dir = output_dir
+            self.temp_dir = temp_dir
+            self.container_id = container_id
+        self.working_dirs[execution_id]=self.workdir
         asyncio.run(self.run())
 
+
+    @classmethod
+    def from_docker_container(cls, server, execution_id, task_id, input, output, command,
+                container, container_options, execution_started, execution_queue,
+                cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore, 
+                worker_id, status, working_dirs,
+                docker_container ):
+        for mount in docker_container['Mounts']:
+            if mount['Destination']=='/input':
+                input_dir = final_slash(mount['Source'])
+            elif mount['Destination']=='/output':
+                output_dir = final_slash(mount['Source'])
+            elif mount['Destination']=='/tmp':
+                temp_dir = final_slash(mount['Source'])
+        workdir='/'.join(input_dir.split('/')[:-2])
+        log.warning(f'Workdir was recovered to {workdir}')        
+        container_id=docker_container['Id']
+        
+        return cls(server=server, execution_id=execution_id, task_id=task_id,
+            input=input, output=output, command=command, container=container, 
+            container_options=container_options, execution_started=execution_started, 
+            execution_queue=execution_queue, cpu=cpu, resource_dir=resource_dir, 
+            resource=resource, resources_db=resources_db, run_slots=run_slots, 
+            run_slots_semaphore=run_slots_semaphore, worker_id=worker_id,
+            status=status, working_dirs=working_dirs, recover=True, input_dir=input_dir, output_dir=output_dir,
+            temp_dir=temp_dir, workdir=workdir, container_id=container_id)
 
     @property
     def status(self):
@@ -149,12 +237,13 @@ class Executor:
     def status(self, status_value):
         """A wrapper around status multiprocessing.Value, set status.value as STATUS_"""
         self.__status__.value = status_value
-
+        
     # via: https://stackoverflow.com/questions/10756383/timeout-on-subprocess-readline-in-python/34114767?noredirect=1#comment55978734_10756738
     async def execute(self, execution_id):
         # Start child process
         # NOTE: universal_newlines parameter is not supported
         log.warning(f'Run slots: {self.run_slots.value}')
+        self.run_slots_semaphore.acquire()
         while self.run_slots.value<=0:
             log.warning(f'Overalocation, worker is out of run slot, have to wait...')
             self.run_slots_semaphore.release()
@@ -175,37 +264,44 @@ class Executor:
                         limit=OUTPUT_LIMIT)
                 self.run_slots.value -= 1
                 self.status = STATUS_RUNNING
+                self.run_slots_semaphore.release()
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running')
             except Exception as e:
                 self.status = STATUS_FAILED
+                self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed')
         else:
             # this is the safe way to keep docker process attached while still getting its container id
             try:
-                self.container_id = subprocess.run(docker_command(command=self.command, 
-                        container=self.container,
-                        input_dir=self.input_dir,
-                        output_dir=self.output_dir,
-                        temp_dir=self.temp_dir,
-                        resource_dir=self.resource_dir,
-                        cpu=self.cpu,
-                        extra_options=self.container_options),
-                    shell=False,
-                    capture_output=True, check=True).stdout.decode('utf-8').strip()
+                if not self.recover:
+                    self.container_id = subprocess.run(docker_command(command=self.command, 
+                            container=self.container,
+                            input_dir=self.input_dir,
+                            output_dir=self.output_dir,
+                            temp_dir=self.temp_dir,
+                            resource_dir=self.resource_dir,
+                            cpu=self.cpu,
+                            extra_options=self.container_options),
+                        shell=False,
+                        capture_output=True, check=True).stdout.decode('utf-8').strip()
                 self.process = await asyncio.create_subprocess_exec(
                         'docker','attach',self.container_id,
                         stdout=PIPE, stderr=PIPE, limit=OUTPUT_LIMIT)
                 self.status = STATUS_RUNNING
                 self.run_slots.value -= 1
-                self.s.execution_update(execution_id, pid=self.process.pid, status='running')
+                self.run_slots_semaphore.release()
+                if not self.recover:
+                    self.s.execution_update(execution_id, pid=self.container_id, status='running')
             except subprocess.CalledProcessError as e:
                 self.status = STATUS_FAILED
+                self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,e.stderr.decode('utf-8'))
                 self.s.execution_update(execution_id, status='failed')
             except Exception as e:
                 self.status = STATUS_FAILED
+                self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed')
@@ -282,27 +378,56 @@ class Executor:
             input = self.input.split() if self.input else []
         if resource is None:
             resource = self.resource.split() if self.resource else []
-        for data in input:
-            get(data, self.input_dir)
+        current_input = list(input)
+        retry=RETRY_DOWNLOAD
+        while current_input and retry>0:
+            failed_input = []
+            for data in current_input:
+                try:
+                    get(data, self.input_dir)
+                except Exception as e:
+                    log.exception(e)
+                    failed_input.append(data)
+            if failed_input:
+                current_input=failed_input
+                retry -= 1
+                if retry>0:
+                    continue
+                else:
+                    raise RuntimeError('Cannot download these data {failed_input}')
+            else:
+                break
         if resource:
             log.warning('Acquiring resources')
             log.warning(f'Resourcedb:  {self.resources_db}')
             for data in resource:
                 data_info = info(data)
-                if data not in self.resources_db or self.resources_db[data].status=='failed' or (
-                            self.resources_db[data].status=='loaded' and 
-                            ( data_info.modification_date > self.resources_db[data].date or
-                             data_info.size != self.resources_db[data].size )
+                if data not in self.resources_db or self.resources_db[data]['status']=='failed' or (
+                            self.resources_db[data]['status']=='loaded' and 
+                            ( data_info.modification_date > self.resources_db[data]['date'] or
+                             data_info.size != self.resources_db[data]['size'] )
                         ):
                     self.resources_db[data]=argparse.Namespace(status='lock')
-                    try:
-                        log.warning(f'Downloading resource {data}...')
-                        get(data, self.resource_dir)
-                        self.resources_db[data]=argparse.Namespace(status='loaded',
-                                        date=data_info.modification_date,
-                                        size=data_info.size)
-                        log.warning(f'... resource {data} downloaded')
-                    except:
+                    retry=RETRY_DOWNLOAD
+                    while retry>0:
+                        data_failure = False
+                        try:
+                            log.warning(f'Downloading resource {data}...')
+                            get(data, self.resource_dir)
+                            log.warning(repr(data_info.modification_date))
+                            self.resources_db[data]={'status':'loaded',
+                                            'date':data_info.modification_date,
+                                            'size':data_info.size}
+                            resource_to_json(self.resources_db)
+                            log.warning(f'... resource {data} downloaded')
+                            break
+                        except Exception as e:
+                            data_failure = True
+                            log.exception(f'Somthing failed with resource {data}')
+                            retry-=1
+                            if retry>0:
+                                log.warning('Retrying')
+                    if data_failure:
                         self.resources_db[data]=argparse.Namespace(status='failed')
                         log.warning(f'... resource {data} failed!')
                         raise
@@ -310,7 +435,7 @@ class Executor:
                     log.warning(f'Resource {data} is already there')
             while True:
                 for data in resource:
-                    if self.resources_db[data].status=='lock':
+                    if self.resources_db[data]['status']=='lock':
                         log.warning(f'Waiting for resource {data}...')
                         sleep(POLLING_TIME)
                         break
@@ -318,21 +443,21 @@ class Executor:
                     log.warning(f'All resource seems there')
                     break
             for data in resource:
-                if self.resources_db[data].status=='failed':
-                    self.resources_db[data]=argparse.Namespace(status='lock')
+                if self.resources_db[data]['status']=='failed':
+                    self.resources_db[data]={'status':'lock'}
                     retry = RETRY_DOWNLOAD
                     while retry > 0:
                         try:
                             log.warning(f'Trying again to download resource {data}...')
                             get(data, self.resource_dir)
                             data_info = info(data)
-                            self.resources_db[data]=argparse.Namespace(status='loaded',
-                                        date=data_info.modification_date,
-                                        size=data_info.size)
+                            self.resources_db[data]={'status':'loaded',
+                                        'date':data_info.modification_date,
+                                        'size':data_info.size}
                             log.warning(f'... resource {data} finally downloaded')
                             break
                         except:
-                            self.resources_db[data]=argparse.Namespace(status='failed')
+                            self.resources_db[data]={'status':'failed'}
                             log.warning(f'... resource {data} failed again!')
                             retry -= 1
                             if retry<=0:
@@ -396,92 +521,105 @@ class Executor:
     def clean(self):
         """Clean working directory (triggered if all went well)"""
         shutil.rmtree(self.workdir)
+        del(self.working_dirs[self.execution_id])
 
     async def run(self):
         """Launching part of Executor
         """
         log.warning(f'Running job {self.execution_id}: {self.command}')
         self.execution_started.release()
-        try:
-            self.download()
-        except Exception as e:
-            self.s.execution_error_write(self.execution_id,
-                traceback.format_exc())
-            returncode=-1001
-            self.status = STATUS_FAILED
-            self.s.execution_update(self.execution_id, 
-                status='failed', 
-                return_code=returncode, output='')
-            return None
-        
-        self.run_slots_semaphore.acquire()
-        self.status = STATUS_WAITING
-        try:
-            while True:
-                task = self.s.task_get(self.task_id)
-
-                # let check our command
-                self.command = task.command
-                self.output = task.output
-                self.container = task.container
-
-                
-                if task.status != 'paused' and self.run_slots.value>0:
-                    break
-
-                if self.run_slots.value<=0:
-                    log.warning(f'Task {self.task_id} has been prefetched and is waiting')
-                else:
-                    log.warning(f'Task {self.task_id} is paused, waiting...')
-                self.run_slots_semaphore.release()
-                sleep(POLLING_TIME)
-                self.run_slots_semaphore.acquire()
-        except HTTPException:
-            # the task was deleted so we bail out
-            log.error(f'Task {self.task_id} was deleted.')
-            self.clean()
-            self.run_slots_semaphore.release()
-            return None
-        
-        try:
-            # check a last time that this task is for us
-            if self.s.execution_get(self.execution_id).status == 'failed':
-                # the task is no longer for us so we bail out
-                log.error(f'Execution {self.execution_id} was cancelled.')
-                self.clean()
-                self.run_slots_semaphore.release()
+        if not self.recover:
+            # initialisation is only done if task is not recovered
+            try:
+                self.download()
+            except Exception as e:
+                log.exception(e)
+                self.s.execution_error_write(self.execution_id,
+                    traceback.format_exc())
+                returncode=-1001
+                self.status = STATUS_FAILED
+                self.s.execution_update(self.execution_id, 
+                    status='failed', 
+                    return_code=returncode, output='')
                 return None
-        except HTTPException:
-            log.error(f'Execution {self.execution_id} was deleted.')
-            self.clean()
+        
+            self.run_slots_semaphore.acquire()
+            self.status = STATUS_WAITING
             self.run_slots_semaphore.release()
-            return None
+            
+            try:
+                while True:
+                    task = self.s.task_get(self.task_id)
+
+                    # let check our command
+                    self.command = task.command
+                    self.output = task.output
+                    self.container = task.container
+
+                    
+                    if task.status != 'paused' and self.run_slots.value>0:
+                        break
+
+                    if self.run_slots.value<=0:
+                        log.warning(f'Task {self.task_id} has been prefetched and is waiting')
+                    else:
+                        log.warning(f'Task {self.task_id} is paused, waiting...')
+                    #self.run_slots_semaphore.release()
+                    sleep(POLLING_TIME)
+                    #self.run_slots_semaphore.acquire()
+            except HTTPException:
+                # the task was deleted so we bail out
+                log.error(f'Task {self.task_id} was deleted.')
+                self.clean()
+                #self.run_slots_semaphore.release()
+                return None
         
-        new_resource = new_input = []
-        if task.input != self.input:
-            log.warning(f'Input has changed while waiting for task {self.task_id}, adjusting.')
-            if task.input:
-                new_input = task.input.split()
-            if self.input:
-                old_input = self.input.split()
-            else:
-                old_input = []
-            for item in old_input:
-                if item in new_input:
-                    new_input.remove(item)
+            try:
+                # check a last time that this task is for us
+                if self.s.execution_get(self.execution_id).status == 'failed':
+                    # the task is no longer for us so we bail out
+                    log.error(f'Execution {self.execution_id} was cancelled.')
+                    self.clean()
+                    #self.run_slots_semaphore.release()
+                    return None
+            except HTTPException:
+                log.error(f'Execution {self.execution_id} was deleted.')
+                self.clean()
+                #self.run_slots_semaphore.release()
+                return None
+        
+            new_input = []
+            if task.input != self.input:
+                log.warning(f'Input has changed while waiting for task {self.task_id}, adjusting.')
+                if task.input:
+                    new_input = task.input.split()
+                if self.input:
+                    old_input = self.input.split()
                 else:
-                    os.remove(os.path.join(self.input_dir, item))
-            self.input = task.input
-        
-        self.resource = task.resource                    
+                    old_input = []
+                for item in old_input:
+                    if item in new_input:
+                        new_input.remove(item)
+                    else:
+                        if '/' in item_file:
+                            item_file = item.split('/')[-1]
+                        else:
+                            item_file = item
+                        if os.path.exists(os.path.join(self.input_dir, item_file)):
+                            os.remove(os.path.join(self.input_dir, item_file))
+                self.input = task.input
+            
+            self.resource = task.resource                    
 
-        # we systematically check now for resource update 
-        self.download(input=new_input)
+            # we systematically check now for resource update 
+            self.download(input=new_input)
 
-
-        log.warning(f'Launching job {self.execution_id}: {self.command}')
+        if self.recover:
+            log.warning(f'Recovering job {self.execution_id}: {self.command}')
+        else:
+            log.warning(f'Launching job {self.execution_id}: {self.command}')
         await self.execute(execution_id=self.execution_id)
-        self.run_slots_semaphore.release()
+        #self.run_slots_semaphore.release()
 
         if not self.process is None:
             log.warning('Launched')
@@ -493,9 +631,9 @@ class Executor:
                     log.warning('... done')
                     await self.get_output(self.execution_id)
 
-                    self.run_slots_semaphore.acquire()
                     log.warning(f'Task {self.execution_id} '+'succeeded' if returncode==0 else 'failed')
-                    self.status = STATUS_UPLOADING
+                    self.run_slots_semaphore.acquire()
+                    self.__status__.value = STATUS_UPLOADING
                     self.run_slots.value += 1
                     self.run_slots_semaphore.release()
 
@@ -562,9 +700,13 @@ class Client:
         self.declare()
         self.has_worked = False
         self.idle_time = None
-        self.resource_dir = tempfile.mkdtemp(dir=BASE_RESOURCE_DIR)
         self.manager = multiprocessing.Manager()
         self.resources_db = self.manager.dict()
+        self.working_dirs = self.manager.dict()
+        json_to_resource(self.resources_db)
+        self.resource_dir = os.path.join(BASE_RESOURCE_DIR, RESOURCE_FILES_SUBDIR)
+        if not os.path.exists(self.resource_dir):
+            os.makedirs(self.resource_dir)
         self.run_slots = multiprocessing.Value('i', concurrency)
         self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
         self.executions_status = {}
@@ -585,6 +727,18 @@ class Client:
                 hostname=self.hostname,
                 batch=self.batch)
 
+    def clean_all(self):
+        for dir in os.listdir(BASE_WORKDIR):
+            full_dir = os.path.join(BASE_WORKDIR, dir)
+            if full_dir==BASE_RESOURCE_DIR:
+                continue
+            for working_dir in self.working_dirs.values():
+                if full_dir==working_dir:
+                    break
+            else:
+                if os.path.isdir(full_dir):
+                    log.warning(f'Removing dir {full_dir}')
+                    shutil.rmtree(full_dir)
 
     def run(self, status=DEFAULT_WORKER_STATUS):
         self.w = self.s.worker_update(self.w.worker_id, status=status)
@@ -651,7 +805,8 @@ class Client:
                                     'run_slots': self.run_slots,
                                     'run_slots_semaphore': self.run_slots_semaphore,
                                     'worker_id': self.w.worker_id,
-                                    'status': self.executions_status[execution.execution_id]
+                                    'status': self.executions_status[execution.execution_id],
+                                    'working_dirs': self.working_dirs
                                 })
                             p.start()
                             self.executions[execution.execution_id]=(p,execution_queue)
@@ -671,6 +826,23 @@ class Client:
                     if signal.execution_id in self.executions:
                         log.warning(f'Sending signal {signal.signal} to execution {signal.execution_id}')
                         self.executions[signal.execution_id][1].put(signal.signal)
+                    elif signal.execution_id is None:
+                        if signal.signal == SIGNAL_CLEAN:
+                            log.warning('Received cleaning signal, cleaning.')
+                            self.clean_all()
+                        elif signal.signal == SIGNAL_RESTART:
+                            log.warning('Received reloading signal, quitting to reload.')
+                            self.run_slots_semaphore.acquire()
+                            while True:
+                                for execution, status in self.executions_status.items():
+                                    if status.value == 'UPLOADING':
+                                        self.run_slots_semaphore.release()
+                                        log.warning('This is not a good time to die, somebody is uploading...')
+                                        sleep(POLLING_TIME)
+                                        break
+                                else:
+                                    break
+                            os.execv(sys.executable, [sys.executable,'-m', 'scitq.client']+sys.argv[1:])
                     else:
                         log.warning(f'Execution {signal.execution_id} is not running in this worker')
                 for execution_id in list(self.executions.keys()):
@@ -678,40 +850,91 @@ class Client:
                         del(self.executions[execution_id])
                         del(self.executions_status[execution_id])
                 if self.run_slots_semaphore.acquire():
-                    running_executions = [ execution_id 
-                            for execution_id, execution_status in self.executions_status.items()
-                            if execution_status.value==STATUS_RUNNING ]
+                    #running_executions = [ execution_id 
+                    #        for execution_id, execution_status in self.executions_status.items()
+                    #        if execution_status.value==STATUS_RUNNING ]
                     log.warning(f'Status are { {execution_id:STATUS_TXT[execution_status.value] for execution_id, execution_status in self.executions_status.items()} }')
-                    if self.concurrency-len(running_executions)!=self.run_slots.value:
-                        log.warning(f'Race condition detected on process number')
+                    #if self.concurrency-len(running_executions)!=self.run_slots.value:
+                        #log.warning(f'Race condition detected on process number')
                         # ok time to look what is really going on
                         
-                        running = waiting = 0
-                        for execution in self.s.worker_executions(self.w.worker_id):
-                            if execution.status in ['failed','succeeded','pending']:
-                                continue
-                            if execution.execution_id not in self.executions_status:
-                                log.error('Execution {execution.execution_id} seems to have gone away...')
-                                self.s.execution_update(execution.execution_id, status='failed')
-                                continue
+                    running = waiting = 0
+                    for execution in self.s.worker_executions(self.w.worker_id):
+                        if execution.status in ['failed','succeeded','pending']:
+                            continue
+                        if execution.execution_id not in self.executions_status:
+                            if execution.status=='accepted':
+                                log.error(f'Execution {execution.execution_id} was being downloaded but is gone so I will get it again')
+                                self.s.execution_update(execution.execution_id, status='pending')
+                            elif execution.status=='running':
+                                task = self.s.task_get(execution.task_id)
+                                if task.container:
+                                    container=docker_inspect(execution.pid)
+                                    if container is not None:
+                                        log.warning(f'Execution {execution.execution_id} is still alive')
+                                        execution_started = multiprocessing.Semaphore(0)
+                                        execution_queue = multiprocessing.Queue()
+                                        self.executions_status[execution.execution_id]=self.manager.Value(
+                                                                'I', 
+                                                                value=STATUS_LAUNCHING)
+                                        p=multiprocessing.Process(target=Executor.from_docker_container,
+                                            kwargs={
+                                                'server': self.server,
+                                                'execution_id': execution.execution_id,
+                                                'task_id': task.task_id,
+                                                'command': task.command,
+                                                'input': task.input,
+                                                'output': task.output,
+                                                'execution_started': execution_started,
+                                                'execution_queue': execution_queue,
+                                                'container': task.container,
+                                                'container_options': task.container_options,
+                                                'cpu': psutil.cpu_count()//self.w.concurrency,
+                                                'resource_dir': self.resource_dir,
+                                                'resource': task.resource,
+                                                'resources_db': self.resources_db,
+                                                'run_slots': self.run_slots,
+                                                'run_slots_semaphore': self.run_slots_semaphore,
+                                                'worker_id': self.w.worker_id,
+                                                'status': self.executions_status[execution.execution_id],
+                                                'working_dirs': self.working_dirs,
+                                                'docker_container': container
+                                            })
+                                        p.start()
+                                        self.executions[execution.execution_id]=(p,execution_queue)
+                                        self.has_worked = True
+                                        self.idle_time = None
+                                        log.info('Waiting for execution to recover')
+                                        execution_started.acquire()
+                                        log.info('Execution recovered')
+                                    else:
+                                        log.error(f'Execution {execution.execution_id} seems to have gone away...')
+                                        self.s.execution_update(execution.execution_id, status='failed')
+                                else:
+                                    log.error(f'Execution {execution.execution_id} seems to have gone away...')
+                                    self.s.execution_update(execution.execution_id, status='failed')
+                            continue
 
-                            status = self.executions_status[execution.execution_id].value
-                            if execution.status=='running':
-                                if status != STATUS_RUNNING:
-                                    log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
-                                else:
-                                    running += 1
-                            elif execution.status=='accepted':
-                                if status not in [STATUS_WAITING, STATUS_LAUNCHING]:
-                                    log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
-                                else:
-                                    waiting += 1
+                        status = self.executions_status[execution.execution_id].value
+                        if execution.status=='running':
+                            if status != STATUS_RUNNING:
+                                log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
+                            else:
+                                running += 1
+                        elif execution.status=='accepted':
+                            if status not in [STATUS_WAITING, STATUS_LAUNCHING]:
+                                log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
+                            else:
+                                waiting += 1
+                    if running>self.concurrency:
                         log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
+                    if waiting>self.prefetch:
                         log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
+                    if len(self.executions)>self.concurrency+self.prefetch:
                         log.warning(f'Overall we should have at max {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')
-                        if self.run_slots.value != self.concurrency - running:
-                            log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
-                            self.run_slots.value = self.concurrency - running
+                    if self.run_slots.value != self.concurrency - running:
+                        log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
+                        self.run_slots.value = self.concurrency - running
                     self.run_slots_semaphore.release()
                 else:
                     log.warning('Cannot estimate process number, giving up.')
