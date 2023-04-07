@@ -57,6 +57,9 @@ function get_tasks(parameters) {
     //some action such as modifying a action needs time to be done so the update of the page can be set on true 
     if (parameters===undefined) {
         parameters = {'object':'tasks'};
+        if (detailed_tasks!==undefined) {
+            parameters.detailed_tasks=detailed_tasks;
+        }
     }
     else {
         parameters.object='tasks';

@@ -337,9 +337,9 @@ def fastq_sra_get(run_accession, destination):
 def _my_fastq_download(method, url, md5, destination):
     """A small adhoc function to download and check a fastq through a ftp_url plus a md5"""
     filename = url.split('/')[-1]
-    if method=='fastq_ftp':
+    if method in ['fastq_ftp','submitted_ftp']:
         ftp_get('ftp://'+url, destination, __retry_number__=1)
-    elif method=='fastq_aspera':
+    elif method in ['fastq_aspera','submitted_aspera']:
         fasp_get(f'fasp://era-fasp@{url}', destination, __retry_number__=1)
     else:
         raise FetchError(f'No such method: {method}')
@@ -410,6 +410,61 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
         return fastq_sra_get(uri_match['run_accession'], destination)
 
 
+SUBMITTED_RUN_REGEXP=re.compile(r'^run\+submitted://(?P<run_accession>[^/]*)/?$')
+
+@retry_if_it_fails(PUBLIC_RETRY_TIME)
+def submitted_run_get(source, destination):
+    """Fetch some fastq associated to a run accession"""
+    log.info(f'Run accession: uploading {source} to {destination}')
+    if not destination.endswith('/'):
+            destination+='/'
+    uri_match = SUBMITTED_RUN_REGEXP.match(source).groupdict()
+    query_try = RETRY_TIME+1
+    while query_try>0:
+        try:
+            run_query = requests.get(f"https://www.ebi.ac.uk/ena/portal/api/filereport?\
+accession={uri_match['run_accession']}&result=read_run&fields=submitted_md5,submitted_aspera,\
+submitted_ftp&format=json&download=true&limit=0", timeout=30)
+        except requests.Timeout:
+            query_try -= 1
+            continue
+        break
+    else:
+        raise FetchError('EBI does not answer our query')
+    if run_query.status_code==204:
+        raise FetchError('This does not seem to be available on EBI')
+    run = run_query.json()[0]
+
+
+
+    if 'submitted_ftp' or 'submitted_aspera' in run:
+        ftp_md5s = run['submitted_md5'].split(';')
+
+        for method in ['submitted_ftp', 'submitted_aspera']:
+            if method in run:
+                if method in ['submitted_aspera'] and not docker_available:
+                    continue
+                urls =  run[method].split(';')
+
+                # preparing to download and check all fastqs
+                download_threads = []
+                for url,md5 in zip(urls, ftp_md5s):
+                    download_thread=PropagatingThread(target=_my_fastq_download,
+                                        args=(method, url, md5, destination))
+                    download_thread.start()
+                    download_threads.append(download_thread)
+
+                # waiting for all FTP to complete
+                try:
+                    for download_thread in download_threads:
+                        download_thread.join()
+                    return None
+                except:
+                    log.exception(f'EBI failed with method {method}')
+                    continue
+        raise FetchError(f'Could not fetch {source}')
+    else:
+        raise FetchError(f'Could not fetch {source}')
 
 
 # plain file
@@ -479,6 +534,8 @@ def get(uri, destination):
             fasp_get(source, destination)
         elif m['proto']=='run+fastq':
             fastq_run_get(source, destination)       
+        elif m['proto']=='run+submitted':
+            submitted_run_get(source, destination)       
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
         complete_destination = complete_if_ends_with_slash(source, destination)
@@ -520,7 +577,7 @@ def check_uri(uri):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
-        if m['proto'] not in ['ftp','file','s3','run+fastq']:
+        if m['proto'] not in ['ftp','file','s3','run+fastq','run+submitted']:
             raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchError(f"Malformed URI : {uri}")

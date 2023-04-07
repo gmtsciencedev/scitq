@@ -243,7 +243,7 @@ class Executor:
         # Start child process
         # NOTE: universal_newlines parameter is not supported
         log.warning(f'Run slots: {self.run_slots.value}')
-        self.run_slots_semaphore.acquire()
+        #self.run_slots_semaphore.acquire()
         while self.run_slots.value<=0:
             log.warning(f'Overalocation, worker is out of run slot, have to wait...')
             self.run_slots_semaphore.release()
@@ -407,7 +407,7 @@ class Executor:
                             ( data_info.modification_date > self.resources_db[data]['date'] or
                              data_info.size != self.resources_db[data]['size'] )
                         ):
-                    self.resources_db[data]=argparse.Namespace(status='lock')
+                    self.resources_db[data]={'status':'lock'}
                     retry=RETRY_DOWNLOAD
                     while retry>0:
                         data_failure = False
@@ -428,7 +428,7 @@ class Executor:
                             if retry>0:
                                 log.warning('Retrying')
                     if data_failure:
-                        self.resources_db[data]=argparse.Namespace(status='failed')
+                        self.resources_db[data]={'status':'failed'}
                         log.warning(f'... resource {data} failed!')
                         raise
                 else:
@@ -545,7 +545,7 @@ class Executor:
         
             self.run_slots_semaphore.acquire()
             self.status = STATUS_WAITING
-            self.run_slots_semaphore.release()
+            #self.run_slots_semaphore.release()
             
             try:
                 while True:
@@ -564,14 +564,14 @@ class Executor:
                         log.warning(f'Task {self.task_id} has been prefetched and is waiting')
                     else:
                         log.warning(f'Task {self.task_id} is paused, waiting...')
-                    #self.run_slots_semaphore.release()
+                    self.run_slots_semaphore.release()
                     sleep(POLLING_TIME)
-                    #self.run_slots_semaphore.acquire()
+                    self.run_slots_semaphore.acquire()
             except HTTPException:
                 # the task was deleted so we bail out
                 log.error(f'Task {self.task_id} was deleted.')
                 self.clean()
-                #self.run_slots_semaphore.release()
+                self.run_slots_semaphore.release()
                 return None
         
             try:
@@ -580,12 +580,12 @@ class Executor:
                     # the task is no longer for us so we bail out
                     log.error(f'Execution {self.execution_id} was cancelled.')
                     self.clean()
-                    #self.run_slots_semaphore.release()
+                    self.run_slots_semaphore.release()
                     return None
             except HTTPException:
                 log.error(f'Execution {self.execution_id} was deleted.')
                 self.clean()
-                #self.run_slots_semaphore.release()
+                self.run_slots_semaphore.release()
                 return None
         
             new_input = []
