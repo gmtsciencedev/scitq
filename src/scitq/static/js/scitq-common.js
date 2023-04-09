@@ -1,18 +1,34 @@
-function check_online(func) {
-    $.getJSON('/live/ping', function() {
-        console.log('online');
-        func();
-    });
+var function_is_running=false;
+var running_time = 0;
+async function check_online(func) {
+    if (!pause_loop && !function_is_running && !document.hidden) {
+        $.getJSON('/live/ping', async function() {
+            const begin_date = Date.now();
+            console.log('fetching...');
+            function_is_running = true;
+            await func();
+            running_time = Date.now() - begin_date;
+            console.log(`done in ${running_time}ms`);
+            function_is_running = false;
+        });
+    }
 }
 
 var pause_loop = false;
-function loop_if_online(func, wait) {
-    func();
-    var interv = function(w){
-        return function(){
+async function loop_if_online(func, wait) {
+    await func();
+    check_online(func, wait);
+    var interv = await async function(w){
+        return async function(){
+            if (running_time>w) {
+                w=Math.min(running_time,10*w);
+            } else if (w>wait) {
+                w=Math.max(wait, w-1000);
+            }
+            console.log(`waiting ${w}ms`)
             setTimeout(interv, w);
             if (!pause_loop && !document.hidden) {
-                check_online(func);
+                await check_online(func);
             }
             };
     }(wait);

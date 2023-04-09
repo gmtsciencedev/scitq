@@ -51,7 +51,7 @@ color_table = status2class(filter.get('show'));
 //    socket.emit('get', {object: 'task', order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
 //    });
 
-function get_tasks(parameters) {
+async function get_tasks(parameters) {
     //socket.on('task', async function(data){
 
     //some action such as modifying a action needs time to be done so the update of the page can be set on true 
@@ -64,7 +64,7 @@ function get_tasks(parameters) {
     else {
         parameters.object='tasks';
     }
-    $.getJSON('/ui/get/', parameters, function(data) {
+    await $.getJSON('/ui/get/', parameters, function(data) {
     
         tasks= data.tasks;
         console.log('Received tasks', tasks);

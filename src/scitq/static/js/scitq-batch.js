@@ -114,8 +114,8 @@ function batch_line(current_batch, workers_by_batch,
     </tr>`;
 }
     
-function get_batch() {
-    $.getJSON('/ui/get/', {
+async function get_batch() {
+    await $.getJSON('/ui/get/', {
     object: 'batch'
     }, function(data) {
     //  socket.on('batch', async function(data){

@@ -17,11 +17,11 @@ function add_worker(concurrency, prefetch, flavor, region, batch, number) {
 }
 
 
-function get_workers() {
-    console.log('Fetching workers...')
-    $.getJSON('/ui/get/', {
+async function get_workers() {
+    console.log('Fetching workers...');
+    await $.getJSON('/ui/get/', {
                 object: 'workers'
-            }, function(data) {
+            }, async function(data) {
 
         workers = data.workers;
         totals = data.totals;
@@ -85,7 +85,7 @@ function get_workers() {
 
 
         document.getElementById("worker-table-body").innerHTML = worker_table;
-        get_jobs();
+        await get_jobs();
     });
 };
 
@@ -123,8 +123,8 @@ function HideChangeBatch(id_worker,i){
 }
 
 //socket.on('jobs', function(data) {
-function get_jobs() {
-    $.getJSON('/ui/jobs', {}, function(data) {
+async function get_jobs() {
+    await $.getJSON('/ui/jobs', {}, function(data) {
         //while(pause){
         //    await sleep(5000);
         //}    
