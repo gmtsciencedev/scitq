@@ -15,9 +15,9 @@ from logging.config import dictConfig
 import os
 from subprocess import run, Popen, PIPE
 import signal
-import json
+import json as json_module
 from sqlalchemy.dialects import sqlite
-from .util import PropagatingThread, package_path, package_version, check_dir, to_dict
+from .util import PropagatingThread, package_path, package_version, check_dir, to_dict, tryupdate
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 from .ansible.scitq.sqlite_inventory import scitq_inventory
 
@@ -507,7 +507,7 @@ worker = api.model('Worker', {
          description=f'The worker status: {", ".join(WorkerDAO.authorized_status)}'), 
     'load': fields.String(readonly=True, description='The worker load (in %)'),
     'memory':fields.Float(readonly=True, description='Memory not use (in %)'),
-    'read_bytes':fields.Float(readonly=True,description='read bytes'),
+    'read_bytes':fields.String(readonly=True,description='read bytes'),
     'written_bytes':fields.Float(readonly=True,description='written bytes'),
     'creation_date': fields.DateTime(readonly=True, 
         description='timestamp of worker creation'),
@@ -589,7 +589,7 @@ class WorkerObject(Resource):
 ping_parser = api.parser()
 ping_parser.add_argument('load', type=str, help='Worker load', location='json')
 ping_parser.add_argument('memory', type=float, help='Worker load', location='json')
-ping_parser.add_argument('read_bytes', type=float, help='Worker load', location='json')
+ping_parser.add_argument('read_bytes', type=str, help='Worker load', location='json')
 ping_parser.add_argument('written_bytes', type=float, help='Worker load', location='json')
 
 @ns.route("/<id>/ping")
@@ -1081,7 +1081,7 @@ def handle_get():
     if json['object']=='workers':
         log.info('sending workers')
         return jsonify({
-            'workers':list([dict(row) for row in db.session.execute(
+            'workers':list([tryupdate(dict(row),'stats',json_module.loads,row.stats) for row in db.session.execute(
                 '''SELECT 
                     worker_id,
                     name, 
@@ -1100,8 +1100,7 @@ def handle_get():
                     (SELECT count(execution_id) FROM execution WHERE execution.worker_id=worker.worker_id) as total,
                     load,
                     memory,
-                    read_bytes,
-                    written_bytes 
+                    read_bytes as stats
                 FROM worker
                 ORDER BY worker.batch,worker.name''')]),
             'totals': next(iter([dict(row) for row in db.session.execute(

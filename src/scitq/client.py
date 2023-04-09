@@ -41,6 +41,7 @@ RESOURCE_FILE = os.path.join(BASE_RESOURCE_DIR, 'resource.json')
 MAXIMUM_PARALLEL_UPLOAD = 5
 RETRY_UPLOAD = 5
 RETRY_DOWNLOAD = 2
+DEFAULT_AUTOCLEAN = 95
 
 if not os.path.exists(BASE_RESOURCE_DIR):
     os.mkdir(BASE_RESOURCE_DIR)
@@ -145,6 +146,22 @@ def json_to_resource(resource_db,resource_file=RESOURCE_FILE):
         except Exception as e:
             log.exception(f'Could not import resource from {resource_file}')
             
+def bytes2gb(x):
+    """Concert bytes to Gb"""
+    return str(round(x/1024**3,2)) if type(x) in [int,float] else x
+
+def bytes2mb(x):
+    """Concert bytes to Mb"""
+    return str(round(x/1024**2,2)) if type(x) in [int,float] else x
+
+def speed(before, after, duration):
+    """Compute read/write speed computation over a certain duration in seconds"""
+    return ((after[i]-before[i])/duration for i in [0,1]) 
+
+def relative(q, ref):
+    """Return a list relative to a list of reference value (zeros)"""
+    return [(qx-refx) for qx,refx in zip(q,ref)]
+
 class Executor:
     """Executor represent the process in which the task is launched, it is also
     designed to monitor the task and grab its output to push it regularly to the
@@ -528,6 +545,7 @@ class Executor:
         """
         log.warning(f'Running job {self.execution_id}: {self.command}')
         self.execution_started.release()
+        
         if not self.recover:
             # initialisation is only done if task is not recovered
             try:
@@ -613,11 +631,11 @@ class Executor:
 
             # we systematically check now for resource update 
             self.download(input=new_input)
-
-        if self.recover:
-            log.warning(f'Recovering job {self.execution_id}: {self.command}')
-        else:
             log.warning(f'Launching job {self.execution_id}: {self.command}')
+        else:
+            self.run_slots_semaphore.acquire()
+            log.warning(f'Recovering job {self.execution_id}: {self.command}')
+            
         await self.execute(execution_id=self.execution_id)
         #self.run_slots_semaphore.release()
 
@@ -684,7 +702,7 @@ class Executor:
                         pass
 
 class Client:
-    def __init__(self, server, concurrency, name, batch):
+    def __init__(self, server, concurrency, name, batch, autoclean):
         self.s = Server(server, style='object')
         self.server = server
         self.concurrency = concurrency
@@ -710,6 +728,8 @@ class Client:
         self.run_slots = multiprocessing.Value('i', concurrency)
         self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
         self.executions_status = {}
+        self.ref_disk = self.ref_network = None
+        self.autoclean = autoclean
 
 
     def declare(self):
@@ -728,6 +748,7 @@ class Client:
                 batch=self.batch)
 
     def clean_all(self):
+        """Clean all unused directory"""
         for dir in os.listdir(BASE_WORKDIR):
             full_dir = os.path.join(BASE_WORKDIR, dir)
             if full_dir==BASE_RESOURCE_DIR:
@@ -740,30 +761,111 @@ class Client:
                     log.warning(f'Removing dir {full_dir}')
                     shutil.rmtree(full_dir)
 
+    def clean_oldest(self):
+        """Clean the oldest unused directory"""
+        dirs = [(os.stat(dir).st_mtime,dir) for dir in 
+            [os.path.join(BASE_WORKDIR, dir) for dir in os.listdir(BASE_WORKDIR)]
+        ]
+        dirs.sort(reverse=True)
+        log.warning(f'Dirs are {dirs}')
+        for _,full_dir in dirs:
+            if full_dir==BASE_RESOURCE_DIR:
+                continue
+            for working_dir in self.working_dirs.values():
+                if full_dir==working_dir:
+                    break
+            else:
+                if os.path.isdir(full_dir):
+                    log.warning(f'Removing dir {full_dir}')
+                    shutil.rmtree(full_dir)
+                    break
+
     def run(self, status=DEFAULT_WORKER_STATUS):
         self.w = self.s.worker_update(self.w.worker_id, status=status)
         cpu_list=[]
+        previous_disk = previous_network = None
+        previous_time = None
         while True:
             try:
                 try:
-                    memory=round(100-psutil.virtual_memory()[2],1)
-                    ##memory=round(VM[4]*100/VM[0],2) 
-                    disk=psutil.disk_io_counters(perdisk=False, nowrap=True)
-                    read_bytes,written_bytes = round(disk[2]/(1024**3),2),round(disk[3]/(1024**3),2)
+                    current_time = time()
+                    memory=psutil.virtual_memory().percent
+                    partitions=[part for part in psutil.disk_partitions() 
+                                if not part.mountpoint.startswith('/snap/') and
+                                  not part.mountpoint.startswith('/boot') and
+                                  not part.mountpoint.startswith('/System')]
+                    
+                    disk_usage=[(part.mountpoint,psutil.disk_usage(part.mountpoint).percent) 
+                                for part in partitions]
+                    scratch_usage = None
+                    for disk,usage in disk_usage:
+                        if disk=='/' and scratch_usage is None:
+                            scratch_usage = usage
+                        elif BASE_WORKDIR.startswith(disk):
+                            scratch_usage = usage
+                    
+                    if scratch_usage and scratch_usage >= self.autoclean:
+                        log.warning(f'Workdir is full ({scratch_usage}>{self.autoclean}), autocleaning')
+                        self.clean_oldest()
+
+
+                    network = (lambda x: (x.bytes_sent,x.bytes_recv))(
+                                    psutil.net_io_counters())
+                    if self.ref_network is None:
+                        self.ref_network = network
+                    disk = (lambda x: (x.read_bytes,x.write_bytes)) (
+                        psutil.disk_io_counters(perdisk=False, nowrap=True))
+                    if self.ref_disk is None:
+                        self.ref_disk = disk
+                    load = psutil.getloadavg()
+
+                    if previous_time is not None:
+                        duration = current_time - previous_time
+                        disk_speed = speed(previous_disk, disk, duration)
+                        network_speed = speed(previous_network, network, duration)
+                    else:
+                        disk_speed = ('-','-')
+                        network_speed = ('-', '-')
+
+                    worker_stats = { 
+                        'load':' '.join(map(lambda x: str(round(x,1)),load)),
+                        'disk': {
+                            'speed': '/'.join(map(bytes2mb, disk_speed))
+                                        + ' Mb/s',
+                            'usage': tuple(map(lambda x: f'{x[0]}:{x[1]:.0f}',disk_usage)),
+                            'counter': '/'.join(map(bytes2gb, 
+                                        relative(disk,self.ref_disk)))
+                                    + ' Gb'
+                        },
+                        'network': {
+                            'speed': '/'.join(map(bytes2mb,network_speed))
+                                    + ' Mb/s',
+                            'counter': '/'.join(map(bytes2gb,
+                                                relative(network,
+                                                            self.ref_network)))
+                                    + ' Gb'
+                        } 
+                    }
+
                     #CPU1,CPU5,CPU15 = [round((x / psutil.cpu_count()) *100,2) for x in psutil.getloadavg()]
                     cpus = psutil.cpu_times_percent()
                     cpu_list.append(cpus.user)
-                    if len(cpu_list)== CPU_MAX_VALUE:
-                        del(cpu_list[0])
+                    while len(cpu_list)>= CPU_MAX_VALUE:
+                        cpu_list.pop(0)
                     cpu_string = f'{cpus.user}'+ ('↑' if cpus.user >= sum(cpu_list)/len(cpu_list) else '↓')
                     if  platform.system() =='Linux':
                         cpu_string += f' / {cpus.iowait}'
                     log.warning(f'CPU is {cpu_string}')
-                    self.w=self.s.worker_ping(self.w.worker_id, cpu_string, memory, read_bytes, written_bytes )
+                    self.w=self.s.worker_ping(self.w.worker_id, cpu_string, memory, 
+                                              json.dumps(worker_stats))
+                    previous_time = current_time
+                    previous_disk = disk
+                    previous_network = network
                     ##self.w=self.s.worker_ping(self.w.worker_id, load = ' '.join(map(
                         #lambda x: str(int(x*100)),psutil.getloadavg())))
                     ##
                 except HTTPException as e:
+                    log.exception(e)
                     if e.status_code==404:
                         self.declare()
                         continue
@@ -849,6 +951,7 @@ class Client:
                     if not self.executions[execution_id][0].is_alive():
                         del(self.executions[execution_id])
                         del(self.executions_status[execution_id])
+                        del(self.working_dirs[execution_id])
                 if self.run_slots_semaphore.acquire():
                     #running_executions = [ execution_id 
                     #        for execution_id, execution_status in self.executions_status.items()
@@ -957,13 +1060,16 @@ def main():
             help=f"Give a name to the worker, default to hostname, default to {DEFAULT_WORKER_STATUS}")
     parser.add_argument('-b','--batch', type=str, default=None,
             help=f"Assign the worker to a default batch (default to None, the default batch)")
+    parser.add_argument('-a','--autoclean', type=int, default=DEFAULT_AUTOCLEAN,
+            help=f"Clean failures when disk is full up to this % (default to {DEFAULT_AUTOCLEAN})")
     args = parser.parse_args()
     
     Client(
         server=args.server, 
         concurrency=args.concurrency, 
         name=args.name,
-        batch=args.batch
+        batch=args.batch,
+        autoclean=args.autoclean
     ).run(status=args.status)
     
 

@@ -129,3 +129,13 @@ def check_dir(path):
 def to_dict(obj):
     """Return a dict from an object filtering on "normal" attributes"""
     return {k:v if type(v) in [str,int,float] else '' if v is None else str(v) for k,v in obj.__dict__.items() if not k.startswith('_')}
+
+def tryupdate(mydict, key, f, *args, alternative=None, **kwargs):
+    """Try to compute a certain value with a certain function and update a dict with it"""
+    try:
+        value=f(*args, **kwargs)
+        mydict[key]=value
+    except:
+        if alternative is not None:
+            mydict[key]=alternative
+    return mydict

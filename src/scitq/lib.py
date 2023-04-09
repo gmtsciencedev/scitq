@@ -319,11 +319,11 @@ class Server:
         return the worker"""
         return self.get(f'/workers/{id}')
 
-    def worker_ping(self, id, load, memory, read_bytes, written_bytes, asynchronous=False):
+    def worker_ping(self, id, load, memory, stats, asynchronous=False):
         """Update a specific worker ping time (heartbit)
         return a updated worker object with attribute or key (depending on style)"""
         return self.put(f'/workers/{id}/ping', data={'load':load,'memory':memory,
-            'read_bytes':read_bytes,'written_bytes':written_bytes}, asynchronous=asynchronous)
+            'read_bytes':stats}, asynchronous=asynchronous)
 
     def worker_callback(self, id, message, asynchronous=False):
         """Send a callback message (mainly idle) to trigger action on worker from the server
