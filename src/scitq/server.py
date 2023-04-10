@@ -115,7 +115,7 @@ else:
 try:
     # import uwsgi is only working in uwsgi context. It is normal that is fails
     # to import in VisualStudioCode or manually
-    import uwsgi
+    import uwsgi # pyright: ignore[reportMissingImports]
 
     def postfork():
         db.engine.dispose()
