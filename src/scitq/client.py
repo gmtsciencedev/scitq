@@ -200,7 +200,7 @@ class Executor:
         self.maximum_parallel_upload = MAXIMUM_PARALLEL_UPLOAD
         self.recover=recover
         self.working_dirs=working_dirs
-        if not recover:
+        if not self.recover:
             self.workdir = tempfile.mkdtemp(dir=BASE_WORKDIR)
             self.s.execution_update(execution_id, status='accepted')
             log.warning(f'Workdir is {self.workdir} with base {BASE_WORKDIR}')
@@ -261,7 +261,7 @@ class Executor:
         # NOTE: universal_newlines parameter is not supported
         log.warning(f'Run slots: {self.run_slots.value}')
         #self.run_slots_semaphore.acquire()
-        while self.run_slots.value<=0:
+        while self.run_slots.value<=0 and not self.recover:
             log.warning(f'Overalocation, worker is out of run slot, have to wait...')
             self.run_slots_semaphore.release()
             sleep(POLLING_TIME)
@@ -1022,11 +1022,11 @@ class Client:
                         status = self.executions_status[execution.execution_id].value
                         if status == STATUS_RUNNING:
                             running += 1
-                        elif status in [STATUS_WAITING, STATUS_LAUNCHING]:
+                        elif status in [STATUS_WAITING, STATUS_LAUNCHING,STATUS_DOWNLOADING]:
                             waiting += 1
-                        if execution.status=='running' and status not in  [STATUS_RUNNING, STATUS_UPLOADING]:
+                        if execution.status=='running' and status not in  [STATUS_RUNNING, STATUS_UPLOADING, STATUS_LAUNCHING]:
                             log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
-                        elif execution.status=='accepted' and status not in [STATUS_WAITING, STATUS_LAUNCHING]:
+                        elif execution.status=='accepted' and status not in [STATUS_WAITING, STATUS_LAUNCHING, STATUS_DOWNLOADING]:
                             log.warning(f'Execution {execution.execution_id} is supposed to be accepted and is not ({STATUS_TXT[status]}).')
                     if running>self.concurrency:
                         log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
