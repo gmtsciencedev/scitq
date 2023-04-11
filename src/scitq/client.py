@@ -951,7 +951,8 @@ class Client:
                     if not self.executions[execution_id][0].is_alive():
                         del(self.executions[execution_id])
                         del(self.executions_status[execution_id])
-                        del(self.working_dirs[execution_id])
+                        if execution_id in self.working_dirs:
+                            del(self.working_dirs[execution_id])
                 if self.run_slots_semaphore.acquire():
                     #running_executions = [ execution_id 
                     #        for execution_id, execution_status in self.executions_status.items()
@@ -1019,16 +1020,14 @@ class Client:
                             continue
 
                         status = self.executions_status[execution.execution_id].value
-                        if execution.status=='running':
-                            if status != STATUS_RUNNING:
-                                log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
-                            else:
-                                running += 1
-                        elif execution.status=='accepted':
-                            if status not in [STATUS_WAITING, STATUS_LAUNCHING]:
-                                log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
-                            else:
-                                waiting += 1
+                        if status == STATUS_RUNNING:
+                            running += 1
+                        elif status in [STATUS_WAITING, STATUS_LAUNCHING]:
+                            waiting += 1
+                        if execution.status=='running' and status not in  [STATUS_RUNNING, STATUS_UPLOADING]:
+                            log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
+                        elif execution.status=='accepted' and status not in [STATUS_WAITING, STATUS_LAUNCHING]:
+                            log.warning(f'Execution {execution.execution_id} is supposed to be accepted and is not ({STATUS_TXT[status]}).')
                     if running>self.concurrency:
                         log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
                     if waiting>self.prefetch:
