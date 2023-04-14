@@ -18,7 +18,7 @@ import traceback
 import shutil
 import subprocess
 from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
-from .constants import SIGNAL_CLEAN, SIGNAL_RESTART
+from .constants import SIGNAL_CLEAN, SIGNAL_RESTART, SIGNAL_RESET_RESOURCES
 import shlex
 import concurrent.futures
 import json
@@ -727,6 +727,7 @@ class Client:
             os.makedirs(self.resource_dir)
         self.run_slots = multiprocessing.Value('i', concurrency)
         self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
+        self.has_run_slots_semaphore=False
         self.executions_status = {}
         self.ref_disk = self.ref_network = None
         self.autoclean = autoclean
@@ -871,8 +872,10 @@ class Client:
                         continue
                 if self.w.concurrency != self.concurrency:
                     self.run_slots_semaphore.acquire()
+                    self.has_run_slots_semaphore=True
                     self.run_slots.value += self.w.concurrency-self.concurrency
                     self.run_slots_semaphore.release()
+                    self.has_run_slots_semaphore=False
                     log.warning(f'Concurrency changed from {self.concurrency} to {self.w.concurrency}, adjusting run slots: {self.run_slots.value}')
                     self.concurrency = self.w.concurrency
                 if self.prefetch != self.w.prefetch:
@@ -935,16 +938,22 @@ class Client:
                         elif signal.signal == SIGNAL_RESTART:
                             log.warning('Received reloading signal, quitting to reload.')
                             self.run_slots_semaphore.acquire()
+                            self.has_run_slots_semaphore=True
                             while True:
                                 for execution, status in self.executions_status.items():
                                     if status.value == 'UPLOADING':
                                         self.run_slots_semaphore.release()
+                                        self.has_run_slots_semaphore=False
                                         log.warning('This is not a good time to die, somebody is uploading...')
                                         sleep(POLLING_TIME)
                                         break
                                 else:
                                     break
                             os.execv(sys.executable, [sys.executable,'-m', 'scitq.client']+sys.argv[1:])
+                        elif signal.signal == SIGNAL_RESET_RESOURCES:
+                            log.warning('Received reset resource signal, forgetting resources')
+                            for resource in self.resources_db.keys():
+                                del(self.resources_db[resource])
                     else:
                         log.warning(f'Execution {signal.execution_id} is not running in this worker')
                 for execution_id in list(self.executions.keys()):
@@ -954,6 +963,7 @@ class Client:
                         if execution_id in self.working_dirs:
                             del(self.working_dirs[execution_id])
                 if self.run_slots_semaphore.acquire():
+                    self.has_run_slots_semaphore=True
                     #running_executions = [ execution_id 
                     #        for execution_id, execution_status in self.executions_status.items()
                     #        if execution_status.value==STATUS_RUNNING ]
@@ -1038,10 +1048,15 @@ class Client:
                         log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
                         self.run_slots.value = self.concurrency - running
                     self.run_slots_semaphore.release()
+                    self.has_run_slots_semaphore=False
                 else:
                     log.warning('Cannot estimate process number, giving up.')
             except Exception as e:
                 log.exception('An exception occured during worker main loop')
+                if self.has_run_slots_semaphore:
+                    log.warning('Releasing run slots semaphore')
+                    self.run_slots_semaphore.release()
+                    self.has_run_slots_semaphore=False
             sleep(POLLING_TIME)
             
                 

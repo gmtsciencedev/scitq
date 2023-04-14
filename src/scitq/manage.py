@@ -354,7 +354,7 @@ def main():
 
         if args.action=='run':
             if args.id is not None:
-                task = s.task_get(id)
+                task = s.task_get(args.id)
             elif args.name is not None:
                 for task in s.tasks():
                     if task['name']==args.name:

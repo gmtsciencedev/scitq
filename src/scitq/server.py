@@ -742,9 +742,21 @@ class ExecutionDAO(BaseDAO):
             db.session.commit()
         return execution
 
-    def list(self,*args):
-        return super().list(*args,sorting_column='execution_id')
-
+    def list(self,*args,no_output=False):
+        sorting_column='execution_id'
+        q=Execution.query
+        if no_output:
+            q=q.with_entities(Execution.execution_id, 
+                              Execution.status,
+                              Execution.task_id,
+                              Execution.creation_date,
+                              Execution.modification_date,
+                              Execution.pid,
+                              Execution.output_files)
+        if args:
+            q=q.filter(*args)
+        return list(q.order_by(sorting_column).all())
+ 
 execution_dao = ExecutionDAO()
 
 execution = api.model('Execution', {
@@ -774,7 +786,7 @@ class WorkerExecutionObject(Resource):
     def get(self, id):
         """Fetch a worker executions given the worker identifier"""
         #worker_dao.update_contact(id)
-        return execution_dao.list(Execution.worker_id==id)
+        return execution_dao.list(Execution.worker_id==id, no_output=True)
 
 
 @ns.route("/<id>/executions/<status>")
