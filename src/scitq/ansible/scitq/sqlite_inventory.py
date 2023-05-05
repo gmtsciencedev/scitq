@@ -6,6 +6,8 @@ import argparse
 import sqlite3
 import os
 import json
+from time import sleep
+import shutil
 
 
 # GLOBAL CONSTANTS
@@ -13,7 +15,20 @@ SQLITE_DATABASE = os.environ.get('ANSIBLE_SQLITE','/var/spool/scitq/ansible-scit
 DEFAULT_GROUP = os.environ.get('ANSIBLE_DEFAULT_GROUP','Default')
 
 # INTERNAL CONSTANTS
-VERSION=1
+VERSION=2
+# how many times we should try /etc/hosts
+RETRY_ETCHOSTS=5
+ETCHOSTS_MARKER_LINE="# DO NOT CHANGE THIS LINE OR ANY LINE BELOW - SCITQ MANAGED ZONE"
+
+# via https://stackoverflow.com/questions/568271/how-to-check-if-there-exists-a-process-with-a-given-pid-in-python
+def check_pid(pid):        
+    """ Check For the existence of a unix pid. """
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    else:
+        return True
 
 class Database:
     def __init__(self, database_path):
@@ -28,7 +43,15 @@ class Database:
 
         try:
             version = self.query('SELECT version FROM version')
-            assert version[0][0]==VERSION
+            version = version[0][0]
+            if version==1:
+                self.do("""CREATE TABLE locks (
+    resource VARCHAR(50) NOT NULL,
+    pid INTEGER NOT NULL
+)""")  
+                self.do("UPDATE version SET version=2")
+                version = 2
+            assert version == VERSION
         except sqlite3.OperationalError:
             self.populate()
 
@@ -66,6 +89,10 @@ class Database:
     variable VARCHAR(50) NOT NULL,
     value VARCHAR(100) NOT NULL,
     UNIQUE (host_id, variable)
+)""")
+        self.do("""CREATE TABLE locks (
+    resource VARCHAR(50) NOT NULL,
+    pid INTEGER NOT NULL
 )""")
         self.do("""CREATE TABLE version (
     version INTEGER NOT NULL
@@ -135,6 +162,38 @@ class Database:
         self.do('DELETE FROM hostvars WHERE host_id=?',(host_id,))
         self.do('DELETE FROM hosts WHERE host_id=?',(host_id,))
         self.connection.commit()
+    
+    def get_lock(self, resource, pid=os.getpid()):
+        """Get a lock (answer true) unless there is an another process that holds it (answer false)."""
+        locks=self.query('SELECT pid FROM locks WHERE resource=?',
+                     (resource,))
+        
+        if len(locks)>0:
+            other_pid=locks[0][0]
+            if not check_pid(other_pid):
+                self.do('DELETE FROM locks WHERE pid=?',(other_pid,))
+            else:
+                return False
+        
+        self.do('INSERT INTO locks (resource,pid) VALUES (?,?)',(resource,pid))
+        self.connection.commit()
+        return True
+    
+    def del_lock(self, resource, pid=os.getpid()):
+        """Remove a lock if it exists"""
+        self.do('DELETE FROM locks WHERE pid=? AND resource=?',(pid,resource))
+        self.connection.commit()
+
+    def get_host_ips(self):
+        """Return a dictionnary of hostname:IPv4"""
+        return dict(self.query(
+            """SELECT 
+                    h.host_name,
+                    (SELECT 
+                            value 
+                        FROM hostvars hv 
+                        WHERE hv.host_id=h.host_id AND hv.variable='ipv4') 
+                FROM hosts h"""))
 
 def decorate_parser(parser):
     """Easing integration: all options to parser added here"""
@@ -154,6 +213,52 @@ def decorate_parser(parser):
                 help="Add a host variable value (requires --variable, and thus the host to be known - with --add-host or --for-host), can be used several times")
     parser.add_argument('--del-host', type=str, action='store', default=None,
                 help=f"Delete a host")
+    parser.add_argument('--change-etchosts', action='store_true',
+                help="Modify /etc/hosts so that declared hosts in database are present in /etc/hosts (as ansible is very bad at this task)")
+
+
+def change_etc_hosts(db):
+    retry = RETRY_ETCHOSTS
+    while retry>0:
+        lock=db.get_lock('/etc/hosts')
+        if lock:
+            break
+        sleep(1)
+        retry -= 1
+    else:
+        return False
+    
+    host_ips = db.get_host_ips()
+    new_hosts = list(host_ips.keys())
+
+    shutil.copy('/etc/hosts','/etc/hosts.back')
+    with open('/etc/hosts','r', encoding='utf-8') as f:
+        etchost  = f.read().strip().split('\n')
+    found_marker = False
+    new_etchost = []
+    for line in etchost:
+        if not found_marker:
+            new_etchost.append(line)
+            if ETCHOSTS_MARKER_LINE in line:
+                found_marker=True
+                continue
+            else:
+                continue
+        _,host=line.split()
+        if host in new_hosts:
+            new_hosts.remove(host)
+            new_etchost.append(f"{host_ips[host]}\t{host}")
+    if not found_marker:
+        new_etchost.append(ETCHOSTS_MARKER_LINE)
+    for host in new_hosts:
+        new_etchost.append(f"{host_ips[host]}\t{host}")
+    with open('/etc/hosts','w', encoding='utf-8') as f:
+        f.write('\n'.join(new_etchost))
+
+    db.del_lock('/etc/hosts')
+
+            
+
 
 def inventory(args):
     """Main fonction"""
@@ -191,13 +296,16 @@ def inventory(args):
     if args.del_host is not None:
         db.del_host(args.del_host)
     
+    if args.change_etchosts:
+        change_etc_hosts(db)
+    
 
 def scitq_inventory(list=False, host=None, add_host=None, in_group=DEFAULT_GROUP, 
-        for_host=None, variable=[], value=[], del_host=None):
+        for_host=None, variable=[], value=[], del_host=None, change_etchosts=False):
     """Same command as inventory but adapted for scitq internal use"""
     return inventory(argparse.Namespace(list=list, host=host, add_host=add_host, 
             in_group=in_group, for_host=for_host, variable=variable, 
-            value=value, del_host=del_host))
+            value=value, del_host=del_host, change_etchosts=change_etchosts))
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='(yaf) Ansible SQLite inventory script')

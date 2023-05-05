@@ -6,6 +6,7 @@ workers
 
 [scitq:vars]
 version="1.0rc11"
+ssh_public_key=/root/.ssh/id_rsa.pub
 
 [managers]
 localhost ansible_connection=local
@@ -19,10 +20,13 @@ swap_proportion = 0.1
 
 [workers:children]
 ovh
+azure
 manual
 
 [workers]
 
 [ovh]
+
+[azure]
 
 [manual]

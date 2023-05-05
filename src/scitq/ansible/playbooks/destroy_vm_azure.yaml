@@ -1,0 +1,5 @@
+- name: Deleting Azure VM and resource group - "scitq-{{ nodename }}"
+  azure_rm_resourcegroup:
+    name: "scitq-{{ nodename }}"
+    state: absent
+    force_delete_nonempty: true

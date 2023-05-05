@@ -1,0 +1,80 @@
+- name: Set resource group name
+  set_fact:
+    resource_group_name: "scitq-{{ nodename }}"
+- name: Create resource group
+  azure_rm_resourcegroup:
+    name: "{{ resource_group_name }}"
+    location: "{{ region }}"
+- name: Create virtual network
+  azure_rm_virtualnetwork:
+    resource_group: "{{ resource_group_name }}"
+    name: myVnet
+    address_prefixes: "10.0.0.0/16"
+- name: Add subnet
+  azure_rm_subnet:
+    resource_group: "{{ resource_group_name }}"
+    name: mySubnet
+    address_prefix: "10.0.1.0/24"
+    virtual_network: myVnet
+- name: Create public IP address
+  azure_rm_publicipaddress:
+    resource_group: "{{ resource_group_name }}"
+    allocation_method: Static
+    name: myPublicIP
+  register: output_ip_address
+- name: Public IP of VM
+  debug:
+    msg: "The public IP is {{ output_ip_address.state.ip_address }}."
+- name: Create Network Security Group that allows SSH
+  azure_rm_securitygroup:
+    resource_group: "{{ resource_group_name }}"
+    name: myNetworkSecurityGroup
+    rules:
+      - name: SSH
+        protocol: Tcp
+        destination_port_range: 22
+        access: Allow
+        priority: 1001
+        direction: Inbound
+- name: Create virtual network interface card
+  azure_rm_networkinterface:
+    resource_group: "{{ resource_group_name }}"
+    name: "{{ nodename }}-NIC"
+    virtual_network: myVnet
+    subnet: mySubnet
+    public_ip_name: myPublicIP
+    security_group: myNetworkSecurityGroup
+- name: Create VM
+  azure_rm_virtualmachine:
+    resource_group: "{{ resource_group_name }}"
+    name: "{{ nodename }}"
+    vm_size: "{{ flavor }}"
+    priority: Spot
+    eviction_policy: Deallocate
+    admin_username: ubuntu
+    ssh_password_enabled: false
+    ssh_public_keys:
+      - path: /home/ubuntu/.ssh/authorized_keys
+        key_data: "{{ lookup('file', ssh_public_key) }}"
+    network_interfaces: "{{ nodename }}-NIC"
+    image:
+      offer: 0001-com-ubuntu-server-focal
+      publisher: Canonical
+      sku: '20_04-lts-gen2'
+      version: latest
+    os_disk_caching: ReadWrite
+    managed_disk_type: Premium_LRS
+
+- name: Add VM to inventory
+  add_host:
+          name: "{{ nodename }}"
+          ansible_host: "{{ output_ip_address.state.ip_address }}"
+          groups: azure
+- name: Complete host related variables
+  ansible.builtin.script:
+      cmd: > 
+        /etc/ansible/inventory/sqlite_inventory.py
+        --for-host "{{ nodename }}"
+        --variable ansible_host --value "{{ output_ip_address.state.ip_address }}"
+        --variable ipv4 --value "{{ output_ip_address.state.ip_address }}" 
+        --change-etchosts

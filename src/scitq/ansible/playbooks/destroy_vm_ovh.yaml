@@ -1,0 +1,5 @@
+- name: Destroy an OVH VM
+  environment: "{{ proxy_env }}"
+  openstack.cloud.server:
+          name: "{{ nodename }}"
+          state: absent

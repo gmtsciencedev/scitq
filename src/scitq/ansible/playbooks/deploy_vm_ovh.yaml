@@ -1,0 +1,26 @@
+- name: Launch a VM
+  environment: "{{ proxy_env }}"
+  openstack.cloud.server:
+          image: Ubuntu 20.04
+          name: "{{ nodename }}"
+          key_name: "{{ keyname }}"
+          availability_zone: nova
+          flavor: "{{ flavor }}"
+          state: present
+          network: "Ext-Net"
+          region_name: "{{ region }}"
+  register: vm
+- name: Add VM to inventory
+  add_host:
+          name: "{{ nodename }}"
+          ansible_host: "{{ vm.server.public_v4 }}"
+          groups: ovh
+- name: Complete host related variables
+  ansible.builtin.script:
+      cmd: > 
+        /etc/ansible/inventory/sqlite_inventory.py
+        --for-host "{{ nodename }}"
+        --variable ansible_host --value "{{ vm.server.public_v4 }}"
+        --variable ipv4 --value "{{ vm.server.public_v4 }}" 
+        --variable ipv6 --value "{{ vm.server.public_v6 }}"
+        --change-etchosts

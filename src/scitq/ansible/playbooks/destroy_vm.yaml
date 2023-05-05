@@ -5,11 +5,10 @@
         proxy_env:
                 OS_REGION_NAME: "{{ hostvars[nodename].region }}"
   tasks:
-          - name: Destroy a VM
-            environment: "{{ proxy_env }}"
-            openstack.cloud.server:
-                    name: "{{ nodename }}"
-                    state: absent
+          - include_tasks: destroy_vm_ovh.yaml
+            when: hostvars[nodename].provider == "ovh"
+          - include_tasks: destroy_vm_azure.yaml
+            when: hostvars[nodename].provider == "azure"
 - name: Prepare managing servers
   hosts: managers
   any_errors_fatal: true
@@ -27,5 +26,5 @@
           - include_tasks: remove_from_etchosts.yaml
           - name: Remove from inventory
             ansible.builtin.script:
-                cmd: /etc/ansible/inventory/sqlite_inventory.py --del-host "{{ nodename }}"
+                cmd: /etc/ansible/inventory/sqlite_inventory.py --del-host "{{ nodename }}" --change-etchosts
 
