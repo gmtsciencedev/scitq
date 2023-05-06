@@ -25,7 +25,11 @@ from .ansible.scitq.sqlite_inventory import scitq_inventory
 MAIN_THREAD_SLEEP = 5
 WORKER_OFFLINE_DELAY = 15
 SCITQ_SERVER = os.environ.get('SCITQ_SERVER',None)
-WORKER_CREATE = f'cd {package_path("ansible","playbooks")} && ansible-playbook deploy_one_vm.yaml --extra-vars "nodename={{hostname}} concurrency={{concurrency}} status=running flavor={{flavor}} region={{region}}"'
+
+WORKER_CREATE = f'cd {package_path("ansible","playbooks")} && ansible-playbook deploy_one_vm.yaml --extra-vars \
+"nodename={{hostname}} concurrency={{concurrency}} status=running flavor={{flavor}} \
+region={{region}} provider={{provider}}"'
+
 if SCITQ_SERVER is not None:
     WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'
 WORKER_DELETE = os.environ.get('WORKER_DELETE',
@@ -640,6 +644,7 @@ class WorkerCallback(Resource):
 deploy_parser = api.parser()
 deploy_parser.add_argument('number', type=int, help='How many workers should be deployed', location='json')
 deploy_parser.add_argument('region', type=str, help='Which provider region for worker', location='json')
+deploy_parser.add_argument('provider', type=str, help='Specify the worker provider', location='json')
 deploy_parser.add_argument('flavor', type=str, help='Which provider flavor/model for worker', location='json')
 deploy_parser.add_argument('batch', type=str, help='Batch name (that must be shared by tasks) for worker', location='json')
 deploy_parser.add_argument('concurrency', type=int, help='How many tasks should be run in parallel', location='json')
@@ -662,6 +667,7 @@ class WorkerDeploy(Resource):
                         'prefetch':deploy_args['prefetch'],
                         'flavor':deploy_args['flavor'],
                         'region':deploy_args['region'],
+                        'provider':deploy_args['provider'],
                         'batch':deploy_args['batch']
                     }
                 )
@@ -1273,6 +1279,7 @@ def handle_create_worker():
         return jsonify(error='Flavor must be specified')
         #return None
     region = json['region']
+    provider = json['provider']
     if not region:
         return jsonify(error='Region must be specified')
         #return None
@@ -1288,6 +1295,7 @@ def handle_create_worker():
                     'prefetch':prefetch,
                     'flavor':flavor,
                     'region':region,
+                    'provider': provider,
                     'batch':batch
                 }
             )
@@ -1467,12 +1475,13 @@ def get_nodename(session):
     return f'node{i}'
 
 
-def create_worker_object(concurrency, flavor, region, batch, prefetch, db_session):
+def create_worker_object(concurrency, flavor, region, provider, batch, prefetch, db_session):
     """Create a worker object in db - this must be called linearly not in async way
     """
     hostname = get_nodename(db_session)
     idle_callback = WORKER_IDLE_CALLBACK.format(hostname=hostname)
-    log.info(f'Creating a new worker {hostname}: concurrency:{concurrency}, flavor:{flavor}, region:{region}, prefetch:{prefetch}')
+    log.info(f'Creating a new worker {hostname}: concurrency:{concurrency}, \
+flavor:{flavor}, region:{region}, provider:{provider}, prefetch:{prefetch}')
     w = Worker(name=hostname, hostname=hostname, concurrency=concurrency, status='offline', 
             batch=batch, idle_callback=idle_callback, prefetch=prefetch)
     db_session.add(w)
@@ -1613,14 +1622,16 @@ def background():
                                 hostname=job.target,
                                 concurrency=worker.concurrency,
                                 flavor=worker.flavor,
-                                region=worker.region
+                                region=worker.region,
+                                provider=worker.provider,
                             )+'"')
                         worker_create_process = Popen(
                             WORKER_CREATE.format(
                                 hostname=job.target,
                                 concurrency=worker.concurrency,
                                 flavor=worker.flavor,
-                                region=worker.region
+                                region=worker.region,
+                                provider=worker.provider
                             ),
                             stdout = PIPE,
                             stderr = PIPE,

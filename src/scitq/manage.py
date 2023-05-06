@@ -14,6 +14,7 @@ from .debug import Debugger
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
 DEFAULT_ANSIBLE_INVENTORY = '/etc/ansible/inventory'
+DEFAULT_PROVIDER='ovh'
 
 def converter(x,long): 
     """A small conversion function for items in lists"""
@@ -57,6 +58,8 @@ def main():
     deploy_parser.add_argument('-p','--prefetch',help="Define how many tasks should be prefetched (default to 0)",type=int,default=0)
     deploy_parser.add_argument('-f','--flavor',required=True,help="Define which flavor/model should be ordered (MANDATORY)",type=str)
     deploy_parser.add_argument('-r','--region',required=True,help="Define in which provider region to order (MANDATORY)",type=str)
+    deploy_parser.add_argument('-P','--provider',required=True,help=f"Define from which provider rent the worker (default to {DEFAULT_PROVIDER})",
+                               type=str, default=DEFAULT_PROVIDER)
     deploy_parser.add_argument('-N','--number',help="Define the number of workers you want to create (default to 1)",type=int, default=1)
     deploy_parser.add_argument('-b','--batch',help="Define the batch that should fit the tasks'one (default to None, default batch)",type=str,default=None)
 
@@ -184,7 +187,8 @@ def main():
 
         elif args.action =='deploy' :
             s.worker_deploy(number=args.number,batch=args.batch,region=args.region,
-                flavor=args.flavor,concurrency=args.concurrency, prefetch=args.prefetch)
+                flavor=args.flavor,concurrency=args.concurrency, prefetch=args.prefetch,
+                provider=args.provider)
 
         elif args.action =='delete' :
             if args.id is not None:

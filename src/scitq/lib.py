@@ -441,12 +441,14 @@ class Server:
             'signal': signal
         }, asynchronous=asynchronous)
     
-    def worker_deploy(self, number, batch, region, flavor, concurrency, prefetch=0,
+    def worker_deploy(self, number, batch, region, flavor, concurrency, provider,
+                      prefetch=0,
              asynchronous=True):
         """Deploy (and create) some workers"""
         return self.put('/workers/deploy', data={
             'number':int(number),
             'region':region,
+            'provider':provider,
             'flavor':flavor,
             'batch':batch,
             'concurrency':concurrency,
