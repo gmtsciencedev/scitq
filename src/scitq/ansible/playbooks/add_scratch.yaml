@@ -20,6 +20,26 @@
         - '/dev/nvme2n1'
         - '/dev/nvme3n1'
   when: hostvars[nodename].flavor is defined and hostvars[nodename].flavor == "i1-180"
+- name: Mnt bigger than root
+  shell: echo $([ $(df -k --output=size /mnt|sed '1 d') -gt $(df -k --output=size /|sed '1 d') ] && echo true)
+  register: mnt_big
+  when: hostvars[nodename].provider == 'azure'
+- name: Mount bind /mnt for Azure VMs
+  ansible.posix.mount:
+    path: /scratch
+    src: /mnt
+    opts: bind
+    state: mounted
+    fstype: none
+  become: yes
+  when: hostvars[nodename].provider == 'azure' and mnt_big.stdout
+- name: add to fstab
+  lineinfile:
+    dest: /etc/fstab
+    regexp: "/scratch"
+    line: "/scratch /mnt none bind 0 0"
+  become: yes
+  when: hostvars[nodename].provider == 'azure' and mnt_big.stdout
 - name: Changing perm of /scratch, all+rwx
   file: dest=/scratch mode=a+rwx
   become: yes

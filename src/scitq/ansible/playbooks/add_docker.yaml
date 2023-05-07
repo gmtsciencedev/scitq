@@ -1,6 +1,30 @@
 - name: Wait for automatic system updates
   become: true
   shell: timeout=300; while [ $timeout -gt 0 ] && sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do timeout=$(echo $timeout-1|bc); sleep 1; done;
+- name: Add /var/lib/docker directory
+  file:
+    path: /var/lib/docker
+    state: directory
+  become: yes
+- name: Add /scratch/docker directory
+  file:
+    path: /scratch/docker
+    state: directory
+  become: yes
+- name: Mount bind /var/lib/docker
+  ansible.posix.mount:
+    path: /var/lib/docker
+    src: /scratch/docker
+    opts: bind
+    state: mounted
+    fstype: none
+  become: yes
+- name: add to fstab
+  lineinfile:
+    dest: /etc/fstab
+    regexp: "/var/lib/docker"
+    line: "/var/lib/docker /scrtach/docker none bind 0 0"
+  become: yes
 - name: Add docker packages
   apt:
     name: docker.io

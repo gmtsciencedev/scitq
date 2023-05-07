@@ -50,9 +50,9 @@
               timeout: 300
           - name: Gather facts
             setup:
+          - include_tasks: add_scratch.yaml            
           - include_tasks: add_docker.yaml
           - include_tasks: add_nfs.yaml
-          - include_tasks: add_scratch.yaml
           - include_tasks: add_s3authentication.yaml
           - name: Add swap
             ansible.builtin.include_tasks: add_swap.yaml
