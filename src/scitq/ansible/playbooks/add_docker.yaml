@@ -23,7 +23,7 @@
   lineinfile:
     dest: /etc/fstab
     regexp: "/var/lib/docker"
-    line: "/var/lib/docker /scrtach/docker none bind 0 0"
+    line: "/var/lib/docker /scratch/docker none bind 0 0"
   become: yes
 - name: Add docker packages
   apt:
