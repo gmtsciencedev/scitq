@@ -30,10 +30,13 @@ So if the worker screen is empty, it is time we recruit one. Let us do that: at 
 :   leave that to 0, this is an optimisation setup, we do not need that for now.
 
 `flavor`
-:   this is OpenStack wording (and thus for OVH or other OpenStack providers as well) for the instance model. `s1-2` is the smallest available instance for OVH (1 vcore, 2 GB mem and 5GB hard drive). Obviously not fit for production, that is enough for a test, so type in s1-2. This will cost you 6€ if you leave it like that for one month, and just the prorata temporis if you shut it down after a while (which we will do very shortly anyway).
+:   this is OpenStack wording for the instance model (Azure call that size). `s1-2` is the smallest available instance for OVH (1 vcore, 2 GB mem and 5GB hard drive). Obviously not fit for production, that is enough for a test, so type in s1-2. This will cost you 6€ if you leave it like that for one month, and just the prorata temporis if you shut it down after a while (which we will do very shortly anyway). Azure equivalent is `Standard_DS1v2` (~5$/month in spot - there maybe some extra fees with the os hard drive (30Gb) and network traffic)
 
 `region`
-:   when you set your provider up, you established a list of available regions (and you deployed your SSH key on them), pick one of them. GRA11 is a fine choice here if it is available for you, but really, any will do.
+:   when you set your provider up, you established a list of available regions (and you deployed your SSH key on them), pick one of them. For OVH, `GRA11` is a fine choice here if it is available for you, but really, any will do. For Azure, we suggest `swedencentral` which, as the time of this writing, is the cheapest region in Europe.
+
+`provider`
+:   choose between `ovh` and `azure` here.
 
 `batch`
 :   if you read the [usage batch chapter](usage.md#batch--b), you should be familiar with that. It is simply a character string that should be shared between some tasks and some workers. The workers of a certain batch will only take tasks from this particular batch. If you have already queued some tasks (not too big hopefully, remember we are with a very small instance), you can choose the same batch. Otherwise, take `mybatch`, that will do. Anyway it is extremely easy to move a worker from one batch to another.
@@ -43,7 +46,7 @@ So if the worker screen is empty, it is time we recruit one. Let us do that: at 
 
 now click add.
 
-You should see a line `node1` coming up quickly, but with a grey dot, sign that the worker is not ready yet and then after ~5 minutes (OVH smaller instances are pretty slow to come up), the dot should turn blue and you should see that:
+You should see a line `node1` coming up quickly, but with a grey dot, sign that the worker is not ready yet and then after ~5 minutes, the dot should turn blue and you should see that:
 
 ![ui-recruit2](img/ui-recruit2.png)
 

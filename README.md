@@ -15,7 +15,7 @@ Keywords|task, queue, job, python, distributed, science
 It has a few added capabilities apart from strict task distribution:
 
 - First it has the capacity to manage cloud instance life cycle (as for now 
-OpenStack (OVH), but others to follow shortly) - Note that you can still use 
+OpenStack (OVH), Azure, and others to follow) - Note that you can still use 
 scitq without using that functionality, and you may use it in a mixed environment
 (with one or several static server plus extra temporary servers recruited on the
 cloud). 
@@ -85,7 +85,8 @@ and commitment has helped us in lots of ways to achieve this project.
 
 Many thanks also to the OVH startup team who accepted us in their program and
 have thus helped this project in a major way. Special thanks to Christopher Apédo!
-Thanks also to OVH support team for their help.
+Thanks also to OVH support team for their help. Thanks also to Microsoft who 
+accepted us in their Founder program.
 
 For GMT Science team, Raynald
 

@@ -124,7 +124,7 @@ most variables as they are should be fine, *except SCITQ_SERVER variable*:
 
 * SCITQ_SERVER variable is used by workers deployed by ansible to contact the server, so it must be the public name or IP address of the server or at least some network address or name accessible to workers (like a private LAN on the cloud). The default value 127.0.0.1 must be changed. In doubt put the public IP address of scitq-server dedicated server.
 
-Look into [Parameters](parameters.md#scitq-server-parameters) to have more details about the parameters that can be set in this file. Notably with OVH you will need to place the parameters and secrets that make CLI work (and SCITQ ansible code too).
+Look into [Parameters](parameters.md#scitq-server-parameters) to have more details about the parameters that can be set in this file. Notably you will need to place the cloud provider(s) parameters and secrets that make CLI work (and SCITQ ansible code too).
 
 !!! note 
     if you upgrade from an old style deploy (v1.0rc4 or below - or a newer version in old style deploy), remove scitq.service
@@ -198,6 +198,18 @@ Just type in those two lines to add some required ansible collections and roles 
 ```bash
 ansible-galaxy install rolehippie.mdadm
 ansible-galaxy collection install openstack.cloud
+```
+
+#### Azure ansible collection
+
+For Azure, the azure-cli and azure.azcollection are difficult to install without virtual env (see https://github.com/ansible-collections/azure/issues/477). However this recipe should do it:
+
+```bash
+ansible-galaxy collection install azure.azcollection
+pip3 install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements-azure.txt
+pip3 install azure-mgmt-core==1.3.2
+pip3 install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements-azure.txt
+pip3 install azure-cli==2.0.34
 ```
 
 ### Create ssh key

@@ -52,7 +52,7 @@ This is the PYTHONPATH variable we all know. It should not be present in this fi
 
 ### OVH / OpenStack provider specific variables
 
-These variable are only to be set with ansible.
+These variable are only to be set if you use scitq ansible part (i.e. automatic lifecycle management) and you use OVH or another OpenStack provider.
 
 These are not present in template and should added manually in `/etc/scitq.conf`:
 
@@ -72,6 +72,21 @@ OS_IDENTITY_API_VERSION=3
 These variables are defined in Horizon rc file that is provided by OVH - when you log into Horizon this file can be exported clicking on [this link](https://horizon.cloud.ovh.net/project/api_access/openrc/).
 
 Only the password must be set up manually as it is not included in the file associated to OS_PASSWORD variable.
+
+### Azure provider specific variables
+
+These variable are only to be set if you use scitq ansible part (i.e. automatic lifecycle management) and you use Azure.
+
+These are not present in template and should added manually in `/etc/scitq.conf`:
+
+```ini
+AZURE_SUBSCRIPTION_ID=000000-0000-0000-0000-000000000000
+AZURE_CLIENT_ID=000000-0000-0000-0000-000000000000
+AZURE_SECRET=XXXXXXXXXXXXXXXXX
+AZURE_TENANT=000000-0000-0000-0000-000000000000
+```
+
+The real values are given in [Azure connection procedure](specific.md#azure).
 
 
 ## scitq-worker parameters
@@ -132,6 +147,10 @@ Before diving into the file, you must be aware that several ansible groups exist
 `ovh`
 :   a subgroup of `workers` consisting in OVH public cloud workers.
 
+`azure`
+:   a subgroup of `workers` consisting in Azure cloud workers.
+
+
 ### [scitq:vars]
 
 This is SCITQ top level variables definition section, these variables will apply to all hosts, managers and workers, in SCITQ.
@@ -160,6 +179,13 @@ At GMT, we use the short server name as the name of the key, as we have several 
 
 This variable is not mandatory and should only be set if you deploy scitq by source. The only reason why you would like to do that is if you are testing a new feature (like a bug correction) before submitting. In that case, you should add the source somewhere on your SCITQ server, you should deploy on the server with this modified source going into the directory of the source and typing `python3 -m pip install .` (if you use Ubuntu default python3, any python will do provided it is the one used in your services, see [PATH](#path) and [PYTHONPATH](#pythonpath)), and you should set the complete path on SCITQ server to this variable (so that the `src` directory is in the folder designated by this variable), so that the workers are deployed with the same modified source.
 
+#### SSH key (Azure)
+
+This defaults to `/root/.ssh/id_rsa.pub` and should not be changed. Change it only in `/etc/ansible/inventory/O2-scitq` if you have your root SSH key in a non standard place. This is only used by Azure deploy code (you must change Ansible SSH key setting as well using Ansible standard settings). Note that OVH handle SSH key in a entirely different way and is not affected by this.
+
+```ini
+ssh_public_key=/root/.ssh/id_rsa.pub
+```
 
 ### [managers]
 

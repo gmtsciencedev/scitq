@@ -147,13 +147,64 @@ docker_insecure_registry=myprivateregistry.my.domain:5000
 
 For OVH, you must create a public cloud project with a "manager" Horizon account. This correspond to the section `Project Management` : `Users & Roles` in OVH interface. Note the Horizon username and password in a safe place (like a [keepass](https://keepass.info)).
 
-Clicking on `...` on the right of the new user you can export the Openstack RC file. In that RC file, you fill find all the specific OpenStack environment variables starting with `OS_...` that must be added into the service definition of scitq-server (`/etc/system/systemd/scitq.service`). You must add them under the `[Service]` section of this file with `Environment=OS_...=value` lines as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
+Clicking on `...` on the right of the new user you can export the Openstack RC file. In that RC file, you fill find all the specific OpenStack environment variables starting with `OS_...` that must be added in scitq conf (`/etc/scitq.conf`) as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
 
 Do not forget to apply those changes:
 ```bash
 systemctl daemon-reload
 systemctl restart scitq
 ```
+
+#### Other things
+
+##### Regions
+
+By default, OVH allow only a few regions when you open your project, so we advise to open as many as you can (as this is free), notably GRA7, GRA11, UK1, DE1 (these are the best regions with lots of instances). This is done under `Project Management` : `Quota and Regions`.
+
+Then we recommand to push your quotas, but this may require a cash deposit, just ask OVH support.
+
+##### SSH key
+
+You must deploy the SSH key that was created in [install](install.md#create-ssh-key). For that you will need to use Horizon console, as the SSH key deploy in OVH manager interface won't make the key available in OpenStack API which we use. Just login to your [Horizon console](https://horizon.cloud.ovh.net/) with the User we created before. 
+
+!!! note
+
+
+    When using OVH Horizon, when you connect you default to a specific region (shown in the top gray line of the console, on the right of your public cloud project id). This is remembered from one login to another but may not be the right one. If you get the wrong one like an non-opened region, you will have inactive interfaces for the `Compute` sections, don't forget to change, just click on the region name and you will be able to choose the right region.
+
+
+Now go to the `Compute` : `Key pairs` section on [Horizon](https://horizon.cloud.ovh.net/project/key_pairs), and choose `Import Public Key` and copy paste the content of scitq server `/root/.ssh/id_rsa.pub` file in SSH key, give it a name, the keyname that should be set in Ansible `/etc/ansible/inventory/common` file, as noted [here](install.md#adapt-etcansibleinventorycommon). If you change this parameter it will be automatically applied at next Ansible usage.
+
+This must be done for all the opened regions, so once you've imported the key for one region, change the region as explained in the note above and import the key to this new region, keeping the same key name. Do that iteratively for all the regions - there are not so many of them.
+
+### Azure
+
+#### Enabling the connection
+
+For Azure, a technical account must be created (do not use your main login), a.k.a. a "service principal" in Azure wording. You will need to install the Azure cli to execute what follows (see [Azure ansible collection install](install.md#azure-ansible-collection)).
+
+```bash
+az login
+let "randomIdentifier=$RANDOM*$RANDOM"  
+servicePrincipalName="scitq-$randomIdentifier"
+subscriptionID=$(az account show --query id -o tsv)
+roleName="Contributor"
+# Verify the ID of the active subscription
+echo "Using subscription ID $subscriptionID"
+echo "Creating SP for RBAC with name $servicePrincipalName, with role $roleName and in scopes /subscriptions/$subscriptionID"
+az ad sp create-for-rbac --name $servicePrincipalName --role "$roleName" --scopes /subscriptions/$subscriptionID
+```
+
+Carefully copy the account details that appear in a safe place like a Keepass. 
+
+You will also need the tenant ID that can be displayed with:
+```bash
+az account show
+az logout
+```
+
+You will need to add the details in `/etc/scitq.conf` as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
+
 
 #### Other things
 
