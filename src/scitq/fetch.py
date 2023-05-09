@@ -16,6 +16,8 @@ import argparse
 import datetime
 import pytz
 import io
+from azure.storage.blob import BlobServiceClient
+import azure.core.exceptions
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -31,7 +33,10 @@ FTP_DIR_MONTH_POSITION = 5
 FTP_DIR_DAY_POSITION = 6
 FTP_DIR_YEAR_POSITION = 7
 
-
+# name of Azure variables
+AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
+AZURE_KEY='SCITQ_AZURE_KEY'
+MAX_PARALLEL_AZURE = 5
 
 
 class FetchError(Exception):
@@ -195,8 +200,7 @@ def s3_put(source, destination):
         uri_match['path'])
 
 def s3_info(uri):
-    """S3 downloader: download source expressed as s3://bucket/path_to_file 
-    to destination - a local file path"""
+    """S3 info fetcher: get some info on a blob specified with s3://bucket/path_to_file"""
     log.warning(f'S3 getting info for {uri}')
     uri_match = S3_REGEXP.match(uri).groupdict()
     try:
@@ -208,6 +212,110 @@ def s3_info(uri):
     except StopIteration:
         raise FetchError(f'{uri} was not found')
 
+
+# Azure
+
+AZURE_REGEXP=re.compile(r'^azure://(?P<container>[^/]*)/(?P<path>.*)$')
+
+
+def _container_get(container, blob_name, file_name):
+    """A small wrapper to ease azure client in thread/process context to download a file
+    container can be either a string or an Azure container client."""
+    if type(container)==str:
+        container = AzureClient().client.get_container_client(container)
+    with open(file=file_name, mode="wb") as download_file:
+        download_file.write(container.download_blob(blob_name).readall())
+
+class AzureClient:
+    """A small wrapper above Azure blob client to integrate with scitq"""
+    def __init__(self):
+        """This deals with initialization"""
+        account_name=os.environ.get(AZURE_ACCOUNT)
+        account_key=os.environ.get(AZURE_KEY)
+        connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
+        self.client = BlobServiceClient.from_connection_string(connection_string)
+
+    @retry_if_it_fails(RETRY_TIME)
+    def get(self, source, destination):
+        log.warning(f'Azure downloading {source} to {destination}')
+        destination=complete_if_ends_with_slash(source, destination)
+        uri_match = AZURE_REGEXP.match(source).groupdict()
+        if uri_match['path'].endswith('/'):
+            retry = RETRY_TIME
+            try:
+                container=self.client.get_container_client(uri_match['container'])
+                objects = list(container.list_blobs(name_starts_with=uri_match['path']))
+                while retry>0:
+                    failed_objects = []
+                    failed = False
+                    try:
+                        jobs = {}
+                        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_AZURE) as executor:
+                            for obj in objects:
+                                destination_name = os.path.relpath(obj.name, uri_match['path'])
+                                destination_name = os.path.join(destination, destination_name)
+                                destination_path,_ = os.path.split(destination_name)
+                                log.warning(f'Azure downloading {obj.name} to {destination_name}')
+                                if not os.path.exists(destination_path):
+                                    os.makedirs(destination_path)
+                                if not os.path.exists(destination_name):
+                                    jobs[executor.submit(_container_get, 
+                                            container.container_name, 
+                                            obj.name, 
+                                            destination_name)]=obj
+                            for job in  concurrent.futures.as_completed(jobs):
+                                obj = jobs[job]
+                                if job.exception() is None:
+                                    log.warning(f'Done for {obj.key}: {job.result()}')
+                                else:
+                                    log.error(f'Could not download {obj.key}')
+                                    log.exception(job.exception())
+                                    failed = True
+                                    failed_objects.append(obj)
+                        if failed:
+                            objects = failed_objects
+                            retry -= 1
+                            continue
+                        else:
+                            break
+                    except:
+                        pass
+            except azure.core.exceptions.ResourceNotFoundError as error:
+                raise FetchError(f'{source} was not found') from error
+            
+            if failed:
+                raise FetchError(f"These objects could not be downloaded: {','.join([obj.key for obj in failed_objects])}")
+        else:
+            try:
+                container=self.client.get_container_client(uri_match['container'])
+                _container_get(container, uri_match['path'],destination)
+            except azure.core.exceptions.ResourceNotFoundError as error:
+                raise FetchError(f'{source} was not found') from error
+
+    @retry_if_it_fails(RETRY_TIME)
+    def put(self, source, destination):
+        """Azure uploader: download a local file path in source to a destination
+        expressed as an Azure URI azure://container/path_to_file"""
+        log.info(f'Azure uploading {source} to {destination}')
+        destination=complete_if_ends_with_slash(source, destination)
+        uri_match = AZURE_REGEXP.match(destination).groupdict()
+        blob_client = self.client.get_blob_client(container=uri_match['container'],
+                                                blob=uri_match['path'])
+        with open(file=source, mode="rb") as data:
+            blob_client.upload_blob(data)
+
+    def info(self,uri):
+        """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
+        log.warning(f'Azure getting info for {uri}')
+        uri_match = AZURE_REGEXP.match(uri).groupdict()
+        try:
+            container=self.client.get_container_client(uri_match['container'])
+            object = next(iter(container.list_blobs(name_starts_with=uri_match['path'])))
+            return argparse.Namespace(size=object.size, 
+                                    creation_date=object.creation_time,
+                                    modification_date=object.last_modified)
+        except StopIteration:
+            raise FetchError(f'{uri} was not found')
 
 # FTP
 
@@ -526,6 +634,8 @@ def get(uri, destination):
         source = f"{m['proto']}://{m['resource']}"
         if m['proto']=='s3':
             s3_get(source, destination)
+        elif m['proto']=='azure':
+            AzureClient().get(source, destination) 
         elif m['proto']=='ftp':
             ftp_get(source, destination)
         elif m['proto']=='file':
@@ -535,7 +645,7 @@ def get(uri, destination):
         elif m['proto']=='run+fastq':
             fastq_run_get(source, destination)       
         elif m['proto']=='run+submitted':
-            submitted_run_get(source, destination)       
+            submitted_run_get(source, destination)
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
         complete_destination = complete_if_ends_with_slash(source, destination)
@@ -563,6 +673,8 @@ def put(source, uri):
         destination = complete_if_ends_with_slash(source, destination)
         if m['proto']=='s3':
             s3_put(source, destination)
+        elif m['proto']=='azure':
+            AzureClient().put(source, destination) 
         elif m['proto']=='ftp':
             ftp_put(source, destination)
         elif m['proto']=='file':
@@ -577,7 +689,7 @@ def check_uri(uri):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
-        if m['proto'] not in ['ftp','file','s3','run+fastq','run+submitted']:
+        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted']:
             raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchError(f"Malformed URI : {uri}")
@@ -602,6 +714,8 @@ def info(uri):
         source = f"{m['proto']}://{m['resource']}"
         if m['proto']=='s3':
             return s3_info(source)
+        elif m['proto']=='azure':
+            return AzureClient().info(source) 
         elif m['proto']=='ftp':
             return ftp_info(source)
         elif m['proto']=='file':
