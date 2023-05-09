@@ -109,3 +109,4 @@ zipp==3.8.0
     # via
     #   importlib-metadata
     #   importlib-resources
+azure-storage-blob==12.9.0

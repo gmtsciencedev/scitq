@@ -42,6 +42,27 @@
     dest: "/etc/systemd/system/scitq-worker.service"
     src: add_scitq.j2
   become: true
+- name: Add scitq-worker configuration file
+  file:
+    path: /etc/scitq-worker.conf
+    state: touch
+  become: true
+- name: Add azure account
+  lineinfile:
+    dest: "/etc/scitq-worker.conf"
+    regexp: "SCITQ_AZURE_ACCOUNT"
+    line: "SCITQ_AZURE_ACCOUNT={{ worker_azure_account }}"
+    state: present
+  become: true
+  when: worker_azure_account is defined
+- name: Add azure key
+  lineinfile:
+    dest: "/etc/scitq-worker.conf"
+    regexp: "SCITQ_AZURE_KEY"
+    line: "SCITQ_AZURE_KEY={{ worker_azure_key }}"
+    state: present
+  become: true
+  when: worker_azure_key is defined
 - name: Add scitq-worker service
   systemd:
     name: scitq-worker
