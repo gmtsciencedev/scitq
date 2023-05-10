@@ -265,6 +265,7 @@ Last, this `[scitq:vars]` section is also where NFS parameters can be set if you
 Next it is likely you will need a `[workers:vars]` section:
 
 - If you are using s3, see [using S3](specific.md#aws-or-others-s3) for details, you can either set up the `s3_...` variables for all workers under a `[workers:vars]` section or be more specific and set it up only for a certain provider, like under `[ovh:vars]` section. 
+- If you are using Azure storage, see [using Azure Storage](specific.md#azure-storage) for details, the same, you should put the required variable definition in either section.
 - Same for the `docker_...` variables if you use a private registry, see [docker private registry](specific.md#docker-private-image-registry-management).
  
 So that a final `/etc/ansible/inventory/02-scitq` could look like this:

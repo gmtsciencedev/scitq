@@ -88,6 +88,39 @@ You can also put these variables under more specific provider configuration (for
 
 You must also setup S3 access on your permanent workers for root user.
 
+
+### Azure storage
+
+The situation with Azure is more simple, only Azure is selling some Azure storage. Note that this is different from [Azure for instances](#azure) below. You may use Azure storage with any provider or use other types of storage with Azure instances. Technically, there is another difference: for instance, the setting is done at the server level (`/etc/scitq.conf`), while for storage, this is done at worker level, that is either in scitq server `/etc/ansible/inventory/02-scitq` for automatically deployed workers, or on worker `/etc/scitq-worker.conf` for manually deployed workers.
+
+#### With ansible (automatically deployed workers)
+Just open the scitq ansible configuration file (`/etc/ansible/inventory/02-scitq` by default) and configure s3 variables in `[workers:vars]` section:
+
+```ini
+[workers:vars]
+[...]
+worker_azure_account=<storageaccount_name>
+worker_azure_key=<storageaccount_key>
+```
+
+NB the content of those keys appears in the Storage Account page in https://portal.azure.com, in the "Access Keys" section, you can make the connection string appears, copy it and extract the corresponding values:
+
+`DefaultEndpointsProtocol=https;AccountName=<storageaccount_name>;AccountKey=<storageaccount_key>;EndpointSuffix=core.windows.net`
+
+
+#### In manually deployed workers
+Edit or create the `/etc/scitq-worker.conf` and add the keys that way:
+
+```ini
+SCITQ_AZURE_ACCOUNT=<storageaccount_name>
+SCITQ_AZURE_KEY=<storageaccount_key>
+```
+
+See in paragraph just above how to get the account name and key.
+The service must be reloaded to register the change (`systemctl restart scitq-worker`)
+
+NB if you migrate from an earlier version of scitq (v1.0rc10 or lower), you will need to add a line in `/etc/systemd/system/scitq-worker.service`, you should have a line `EnvironmentFile=/etc/scitq-worker.conf` in your `[Service]` section (as appear in the `template/template_worker_service.tpl` in source tree). You'll need to `systemctl daemon-reload` before restarting ther service in that case.
+
 ## Docker private image: registry management
 
 Docker private registry management comes with two options, the authenticated and the insecure option. 
