@@ -154,6 +154,9 @@ def main():
     debug_run_parser.add_argument('-r','--retry', help='Do not re-download input and resources, it is just a retry', action='store_true')
     debug_run_parser.add_argument('--no-resource', help='Do not re-download resources, but re-download inputs', action='store_true')
     debug_run_parser.add_argument('-c','--conf', help='Use this environment file to set environment (default to /etc/scitq.conf)', type=str, default='/etc/scitq.conf')
+    debug_run_parser.add_argument('-w','--worker-conf', help='Use this environment file to set extra environment (default to /etc/scitq-worker.conf)', 
+                                  type=str, default='/etc/scitq-worker.conf')
+    
 
     args=parser.parse_args()
 
@@ -381,7 +384,7 @@ def main():
             if args.no_resource:
                 get_resource = False
             Debugger(task, get_input=get_input, get_resource=get_resource, 
-                     configuration=args.conf).run()
+                     configuration=args.conf, extra_configuration=args.worker_conf).run()
 
 if __name__=="__main__":
     main()

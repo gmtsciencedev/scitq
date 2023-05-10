@@ -1,5 +1,32 @@
 # troubleshooting
 
+## troubleshooting a specific scitq task
+
+Sometime a task might not behave in your docker like it should: switching from interactive to queued task is always a source of (joy and) surprises in any queuing system due to context issues (see [docker context](usage.md#docker--d) for instance). The execution can, however, be closely mimicked on any worker node using `scitq-manage debug run` command. It will run a command as closely as possible to scitq usual execution context, except it will be run locally and interactively (docker is run with `-d` flag in normal scitq execution, here it will be run with `-it`). For this to work, you need some queued task(s) in a batch. Having the batch in pause is advised (but not mandatory).
+
+This will fetch randomly a task in the batch mybatch and launch it interactively:
+
+```bash
+scitq-manage debug run -b mybatch
+```
+More accurately, it fetch the resource, input, and docker and run it. If you want to change the command you may modify it, or change a shell script you would have in resource folder (to test) and you can retry. There are several useful flags to do add to the previous command:
+- `-r`/'`--retry` won't redownload anything, (thus preserving any change you might have done in resource or input,
+- `--no-resource` won't redownload resource, but will fetch randomly another task (with different inputs)),
+- you might replace `-b mybatch` by `-i <taskid>` (the taskid should appear in the log) if commands differ from one input to another and you use `-r`.
+
+Any error should appear more clearly in this context and if scitq classical debug output is not enough.
+
+One important thing with `scitq-manage debug run` is that it never send the result to the database, so even if it succeed at some point, the task will not be considered succeeded, and output won't ever be uploaded (even if the task features an output instruction).
+
+### minimal requirements for scitq-manage debug run to work
+
+Obviously scitq should be installed. Then if your task use docker, docker should be installed. 
+
+Some configuration may also be needed (it should not be needed on a normal worker when used as root as these are part of normal requirements of a worker).
+Docker credentials should be set if you use a private registry (in `~/.docker/config.json`). Then if your task has some input either s3 or azure, then s3 access should be configured locally where you run the command (using classical aws authentication `~/.aws/credentials` - and maybe `~/.aws/config` which is likely if your s3 storage is not plain AWS), or scitq azure storage config should be activated, which suppose special variables `SCITQ_AZURE_ACCOUNT` and `SCITQ_AZURE_KEY` to be set and exported (or defined in `/etc/scitq-worker.conf` as it should be in a correctly deployed worker) (see [azure storage](specific.md#azure-storage) for details).
+
+To sum it up, the requirement are the same than for a normally deployed worker except scitq-worker service is not required to be installed and running.
+
 ## Ansible
 
 ### Specific Ansible errors

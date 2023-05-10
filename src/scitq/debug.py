@@ -15,7 +15,8 @@ class Debugger:
 
     def __init__(self,task,cpu=None,input_dir='input',output_dir='output',
                  resource_dir='resource', temp_dir='temp', 
-                 get_resource=True, get_input=True, configuration=None):
+                 get_resource=True, get_input=True, configuration=None,
+                 extra_configuration=None):
         """Associate the task to debug with the debugger"""
         if type(task)==dict:
             self.task = Namespace(**task)
@@ -31,8 +32,10 @@ class Debugger:
         self.temp_dir = os.path.abspath(no_slash(temp_dir))
         self.get_resource = get_resource
         self.get_input = get_input
-        if configuration is not None and os.path.isfile(configuration):
-            dotenv.load_dotenv(configuration)
+        for configuration_item in [configuration, extra_configuration]:
+            if configuration_item is not None and os.path.isfile(configuration_item):
+                dotenv.load_dotenv(configuration_item)
+        
             
         
         
