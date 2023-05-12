@@ -18,6 +18,9 @@ import pytz
 import io
 from azure.storage.blob import BlobServiceClient
 import azure.core.exceptions
+from .constants import DEFAULT_WORKER_CONF
+import dotenv
+from tabulate import tabulate 
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -32,6 +35,7 @@ FTP_DIR_SIZE_POSITION = 4
 FTP_DIR_MONTH_POSITION = 5
 FTP_DIR_DAY_POSITION = 6
 FTP_DIR_YEAR_POSITION = 7
+FTP_DIR_NAME_POSITION = 8
 
 # name of Azure variables
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
@@ -212,6 +216,18 @@ def s3_info(uri):
     except StopIteration:
         raise FetchError(f'{uri} was not found')
 
+def s3_list(uri):
+    """List content of an s3 folder in the form s3://bucket/path"""
+    log.warning(f'S3 getting listing for {uri}')
+    uri_match = S3_REGEXP.match(uri).groupdict()
+    bucket=get_s3().Bucket(uri_match['bucket'])
+    return [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
+                                rel_name=os.path.relpath(object.key, uri_match['path']),
+                                size=object.size, 
+                                creation_date=object.last_modified,
+                                modification_date=object.last_modified)
+                for object in bucket.objects.filter(Prefix=uri_match['path'])]
+
 
 # Azure
 
@@ -232,6 +248,13 @@ class AzureClient:
         """This deals with initialization"""
         account_name=os.environ.get(AZURE_ACCOUNT)
         account_key=os.environ.get(AZURE_KEY)
+        if account_name is None:
+            if os.path.isfile(DEFAULT_WORKER_CONF):
+                dotenv.load_dotenv(DEFAULT_WORKER_CONF)
+                account_name=os.environ.get(AZURE_ACCOUNT)
+                account_key=os.environ.get(AZURE_KEY)
+        if account_name is None:
+            raise FetchError(f'Azure account is not properly configured: either set {AZURE_ACCOUNT} and {AZURE_KEY} environment variables or adjust {DEFAULT_WORKER_CONF}.')
         connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
         self.client = BlobServiceClient.from_connection_string(connection_string)
 
@@ -317,6 +340,19 @@ class AzureClient:
         except StopIteration:
             raise FetchError(f'{uri} was not found')
 
+    def list(self,uri):
+        """List the content of an azure storage folder  azure://container/path"""
+        log.warning(f'Azure getting listing for {uri}')
+        uri_match = AZURE_REGEXP.match(uri).groupdict()
+        container=self.client.get_container_client(uri_match['container'])
+        return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
+                                    rel_name=os.path.relpath(object.name, uri_match['path']),
+                                    size=object.size, 
+                                    creation_date=object.creation_time,
+                                    modification_date=object.last_modified)
+                    for object in container.list_blobs(name_starts_with=uri_match['path'])]
+
+
 # FTP
 
 FTP_REGEXP=re.compile(r'^ftp://(?P<host>[^/]*)/(?P<path>.*)$')
@@ -326,6 +362,8 @@ def ftp_get(source, destination):
     """FTP downloader: download source expressed as ftp://host/path_to_file 
     to destination - a local file path"""
     log.info(f'FTP downloading {source} to {destination}')
+    if source.endswith('/'):
+        raise FetchError('Directory fetching is not yet supported for ftp:// URI')
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = FTP_REGEXP.match(source)
     if not uri_match:
@@ -376,6 +414,42 @@ def ftp_info(uri):
         else:
             raise FetchError(f'{uri} was not found')
 
+def ftp_list(uri):
+    """list recursively the content of a FTP folder"""
+    log.info(f'FTP get info for {uri}')
+    uri_match = FTP_REGEXP.match(uri).groupdict()
+    answer = []
+    with FTP(uri_match['host']) as ftp:
+        ftp.login()
+
+        with io.StringIO() as output:
+            listing = []
+            ftp.dir(uri_match['path'],listing.append)
+        
+        for item in listing:
+            obj = item.split()
+            is_dir=item[0]=='d'
+            if is_dir:
+                dir_name = obj[FTP_DIR_NAME_POSITION]
+                for item in ftp_list(os.path.join(uri, dir_name)):
+                    item.rel_name = f"{dir_name}/{item.rel_name}"
+                    answer.append(item)
+            else:
+                obj_date = datetime.datetime.strptime(
+                    ' '.join( (obj[FTP_DIR_MONTH_POSITION],
+                            obj[FTP_DIR_DAY_POSITION],
+                            obj[FTP_DIR_YEAR_POSITION])
+                        ),
+                    '%b %d %Y').replace(tzinfo=pytz.utc)
+                answer.append(argparse.Namespace(
+                    name=f"ftp://{uri_match['host']}/{os.path.join(uri_match['path'],obj[FTP_DIR_NAME_POSITION])}",
+                    rel_name=obj[FTP_DIR_NAME_POSITION],
+                    size=obj[FTP_DIR_SIZE_POSITION],
+                    creation_date=obj_date, 
+                    modification_date=obj_date))
+
+    return answer
+
 @cached_property
 def docker_available():
     """A property to see if docker is there"""
@@ -393,6 +467,9 @@ def fasp_get(source, destination):
     log.info(f'Aspera downloading {source} to {destination}')
     if not docker_available:
         raise FetchError('Cannot use fasp (aspera) without docker')
+
+    if source.endswith('/'):
+        raise FetchError('Directory fetching is not yet supported for fasp:// URI (aspera)')
 
     # we need destination to be expressed as a directory:
     # (but we remember that the target filename may be different from the source
@@ -583,6 +660,8 @@ def file_get(source, destination):
     """A plain local copy from a file://... source to a local path
     really just some plain syntaxic sugar above shutil.copyfile"""
     log.info(f'FILE downloading {source} to {destination}')
+    if source.endswith('/'):
+        raise FetchError('Directory fetching is not yet supported for file:// URI')
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = FILE_REGEXP.match(source).groupdict()
     shutil.copyfile(uri_match['path'], destination)
@@ -617,6 +696,28 @@ def file_info(uri):
                                   modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc))
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
+
+
+def file_list(uri):
+    """List recursively the content of a local folder expressed as file://... """
+    log.info(f'FILE getting info for {uri}')
+    uri_match = FILE_REGEXP.match(uri).groupdict()
+    if uri_match:
+        answer = []
+        complete_path = uri_match['path']
+        for dir_path,folders,files in os.walk(complete_path):
+            for file in files:
+                complete_file = os.path.join(dir_path,file)
+                stat = os.stat(complete_file)
+                answer.append(argparse.Namespace(name=f'file://{complete_file}',
+                                  rel_name=os.path.relpath(complete_file,complete_path),
+                                  size=stat.st_size, 
+                                  creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
+                                  modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc)))
+        return answer
+    else:
+        raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
+
 
 # generic wrapper
 
@@ -727,6 +828,31 @@ def info(uri):
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
+def list(uri):
+    """Return the recursive listing of folder specified as a URI
+    each item of the list should contains at least name (complete URI), rel_name (the name of the object relative to the provided uri), creation_date, modification_date and size
+    WARNING: with s3 or ftp URI, creation_date and modification_date are the same.
+    WARNING: this does not respect the pseudo-relativeness of s3/azure which is relative to the bucket/container, here the relativeness is to the folder URI"""
+    m = GENERIC_REGEXP.match(uri)
+    if m:
+        m = m.groupdict()
+        source = f"{m['proto']}://{m['resource']}"
+        if m['proto']=='s3':
+            return s3_list(source)
+        elif m['proto']=='azure':
+            return AzureClient().list(source) 
+        elif m['proto']=='ftp':
+            return ftp_list(source)
+        elif m['proto']=='file':
+            return file_list(source) 
+        #elif m['proto']=='fasp':
+        #    fasp_get(source, destination)
+        #elif m['proto']=='run+fastq':
+        #    fastq_run_get(source, destination)       
+        else:
+            raise FetchError(f"This URI protocol is not supported: {m['proto']}")
+
+
 if __name__=='__main__':
     parser = argparse.ArgumentParser(
                     prog = 'scitq.fetch module utility mode',
@@ -734,21 +860,43 @@ if __name__=='__main__':
 Takes one or two URI (generalised URL, including file://... and s3://... or ftp://...) 
 one of them must be a file URI (starts with file://... or be a simple path)
 if the file URI comes first, a put (upload) is performed, else a get (download) is performed
-if only one URI is given, the second default to '.', the local path''')
+if only one URI is given, the second default to '.', the local path
+
+As an ugly hack:
+- if source_uri is exactly 'list' then destination_uri is the argument and it perform a listing
+- if source_uri is exactlu 'rlist' then it is the same as above but the listing entry are relative to the path
+''')
     parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
     parser.add_argument('destination_uri', type=str, nargs='?',
                         help='the destination uri (same as above) (default to ., means download locally)', default=os.getcwd())
     args = parser.parse_args()
 
-    candidate_source = get_file_uri(args.source_uri)
-    if candidate_source is not None:
+    if args.source_uri=='list':
         check_uri(args.destination_uri)
-        put(candidate_source, args.destination_uri)
+        headers=['name','creation_date','modification_date','size']
+        print(tabulate(
+            [[ getattr(item,attribute) for attribute in headers  ] for item in list(args.destination_uri)],
+            headers=headers,
+            tablefmt='plain'
+        ))
+    elif args.source_uri=='rlist':
+        check_uri(args.destination_uri)
+        headers=['rel_name','creation_date','modification_date','size']
+        print(tabulate(
+            [[ getattr(item,attribute) for attribute in headers  ] for item in list(args.destination_uri)],
+            headers=headers,
+            tablefmt='plain'
+        ))
     else:
-        candidate_destination = get_file_uri(args.destination_uri)
-        if candidate_destination is not None:
-            check_uri(args.source_uri)
-            get(args.source_uri, candidate_destination)
+        candidate_source = get_file_uri(args.source_uri)
+        if candidate_source is not None:
+            check_uri(args.destination_uri)
+            put(candidate_source, args.destination_uri)
         else:
-            raise RuntimeError('Both source_uri and destination_uri seem non file URI: operation unsupported')
+            candidate_destination = get_file_uri(args.destination_uri)
+            if candidate_destination is not None:
+                check_uri(args.source_uri)
+                get(args.source_uri, candidate_destination)
+            else:
+                raise RuntimeError('Both source_uri and destination_uri seem non file URI: operation unsupported')
     

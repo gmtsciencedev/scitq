@@ -10,6 +10,7 @@ from .ansible.scitq.sqlite_inventory import inventory, decorate_parser
 import shutil
 import random
 from .debug import Debugger
+from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -153,9 +154,9 @@ def main():
     debug_run_parser.add_argument('-n','--name', help='Use the task with this id', type=str, default=None)
     debug_run_parser.add_argument('-r','--retry', help='Do not re-download input and resources, it is just a retry', action='store_true')
     debug_run_parser.add_argument('--no-resource', help='Do not re-download resources, but re-download inputs', action='store_true')
-    debug_run_parser.add_argument('-c','--conf', help='Use this environment file to set environment (default to /etc/scitq.conf)', type=str, default='/etc/scitq.conf')
-    debug_run_parser.add_argument('-w','--worker-conf', help='Use this environment file to set extra environment (default to /etc/scitq-worker.conf)', 
-                                  type=str, default='/etc/scitq-worker.conf')
+    debug_run_parser.add_argument('-c','--conf', help=f'Use this environment file to set environment (default to {DEFAULT_SERVER_CONF})', type=str, default=DEFAULT_SERVER_CONF)
+    debug_run_parser.add_argument('-w','--worker-conf', help=f'Use this environment file to set extra environment (default to {DEFAULT_WORKER_CONF})', 
+                                  type=str, default=DEFAULT_WORKER_CONF)
     
 
     args=parser.parse_args()
