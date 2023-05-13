@@ -918,14 +918,11 @@ def main():
     parser = argparse.ArgumentParser(
                     prog = 'scitq.fetch module utility mode',
                     description = '''Enable direct download or upload without python code.
-Takes one or two URI (generalised URL, including file://... and s3://... or ftp://...) 
+Takes a command with one or two URI (generalised URL, including file://... and s3://... or ftp://...) 
 one of them must be a file URI (starts with file://... or be a simple path)
 if the file URI comes first, a put (upload) is performed, else a get (download) is performed
 if only one URI is given, the second default to '.', the local path
 
-As an ugly hack:
-- if source_uri is exactly 'list' then destination_uri is the argument and it perform a listing
-- if source_uri is exactlu 'rlist' then it is the same as above but the listing entry are relative to the path
 ''')
     subparser=parser.add_subparsers(help='sub-command help',dest='command')
 
