@@ -42,6 +42,7 @@ AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
 MAX_PARALLEL_AZURE = 5
 
+MAX_PARALLEL_SYNC = 5
 
 class FetchError(Exception):
     pass
@@ -134,7 +135,7 @@ def _bucket_get(bucket, key, destination):
 def s3_get(source, destination):
     """S3 downloader: download source expressed as s3://bucket/path_to_file 
     to destination - a local file path"""
-    log.warning(f'S3 downloading {source} to {destination}')
+    log.info(f'S3 downloading {source} to {destination}')
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(source).groupdict()
     if uri_match['path'].endswith('/'):
@@ -152,7 +153,7 @@ def s3_get(source, destination):
                             destination_name = os.path.relpath(obj.key, uri_match['path'])
                             destination_name = os.path.join(destination, destination_name)
                             destination_path,_ = os.path.split(destination_name)
-                            log.warning(f'S3 downloading {obj.key} to {destination_name}')
+                            log.info(f'S3 downloading {obj.key} to {destination_name}')
                             if not os.path.exists(destination_path):
                                 os.makedirs(destination_path)
                             if not os.path.exists(destination_name):
@@ -160,7 +161,7 @@ def s3_get(source, destination):
                         for job in  concurrent.futures.as_completed(jobs):
                             obj = jobs[job]
                             if job.exception() is None:
-                                log.warning(f'Done for {obj.key}: {job.result()}')
+                                log.info(f'Done for {obj.key}: {job.result()}')
                             else:
                                 log.error(f'Could not download {obj.key}')
                                 log.exception(job.exception())
@@ -205,7 +206,7 @@ def s3_put(source, destination):
 
 def s3_info(uri):
     """S3 info fetcher: get some info on a blob specified with s3://bucket/path_to_file"""
-    log.warning(f'S3 getting info for {uri}')
+    log.info(f'S3 getting info for {uri}')
     uri_match = S3_REGEXP.match(uri).groupdict()
     try:
         bucket=get_s3().Bucket(uri_match['bucket'])
@@ -218,7 +219,7 @@ def s3_info(uri):
 
 def s3_list(uri):
     """List content of an s3 folder in the form s3://bucket/path"""
-    log.warning(f'S3 getting listing for {uri}')
+    log.info(f'S3 getting listing for {uri}')
     uri_match = S3_REGEXP.match(uri).groupdict()
     bucket=get_s3().Bucket(uri_match['bucket'])
     return [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
@@ -260,7 +261,7 @@ class AzureClient:
 
     @retry_if_it_fails(RETRY_TIME)
     def get(self, source, destination):
-        log.warning(f'Azure downloading {source} to {destination}')
+        log.info(f'Azure downloading {source} to {destination}')
         destination=complete_if_ends_with_slash(source, destination)
         uri_match = AZURE_REGEXP.match(source).groupdict()
         if uri_match['path'].endswith('/'):
@@ -278,7 +279,7 @@ class AzureClient:
                                 destination_name = os.path.relpath(obj.name, uri_match['path'])
                                 destination_name = os.path.join(destination, destination_name)
                                 destination_path,_ = os.path.split(destination_name)
-                                log.warning(f'Azure downloading {obj.name} to {destination_name}')
+                                log.info(f'Azure downloading {obj.name} to {destination_name}')
                                 if not os.path.exists(destination_path):
                                     os.makedirs(destination_path)
                                 if not os.path.exists(destination_name):
@@ -289,7 +290,7 @@ class AzureClient:
                             for job in  concurrent.futures.as_completed(jobs):
                                 obj = jobs[job]
                                 if job.exception() is None:
-                                    log.warning(f'Done for {obj.key}: {job.result()}')
+                                    log.info(f'Done for {obj.key}: {job.result()}')
                                 else:
                                     log.error(f'Could not download {obj.key}')
                                     log.exception(job.exception())
@@ -329,7 +330,7 @@ class AzureClient:
 
     def info(self,uri):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
-        log.warning(f'Azure getting info for {uri}')
+        log.info(f'Azure getting info for {uri}')
         uri_match = AZURE_REGEXP.match(uri).groupdict()
         try:
             container=self.client.get_container_client(uri_match['container'])
@@ -342,7 +343,7 @@ class AzureClient:
 
     def list(self,uri):
         """List the content of an azure storage folder  azure://container/path"""
-        log.warning(f'Azure getting listing for {uri}')
+        log.info(f'Azure getting listing for {uri}')
         uri_match = AZURE_REGEXP.match(uri).groupdict()
         container=self.client.get_container_client(uri_match['container'])
         return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
@@ -733,6 +734,11 @@ def get(uri, destination):
     if m:
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
+        complete_destination = complete_if_ends_with_slash(source, destination)
+        complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
+        if not os.path.exists(complete_destination_folder):
+            os.makedirs(complete_destination_folder)
+        
         if m['proto']=='s3':
             s3_get(source, destination)
         elif m['proto']=='azure':
@@ -749,7 +755,7 @@ def get(uri, destination):
             submitted_run_get(source, destination)
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
-        complete_destination = complete_if_ends_with_slash(source, destination)
+        
         if m['action']=='gunzip':
             gunzip(complete_destination)
         elif m['action']=='untar':
@@ -853,7 +859,62 @@ def list(uri):
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
 
-if __name__=='__main__':
+def sync(uri1, uri2):
+    """Sync two URI, one must be local
+    Identity of the files is assessed only with name and size
+    """
+    local_uri = get_file_uri(uri1)
+    if local_uri is not None:
+        command = put
+        remote = uri2
+        try:
+            check_uri(uri2)
+        except FetchError:
+            local_uri=get_file_uri(uri2)
+            if local_uri is None:
+                raise FetchError(f'uri2 appears to be neither locale nor prope: {uri2}')
+            else:
+                command=get
+                remote=uri1 if ':' in uri1 else f'file://{uri1}'
+    else:
+        local_uri = get_file_uri(uri2)
+        if local_uri is None:
+            raise FetchError('Neither URI seems to be local, unsupported yet')
+        command=get
+        check_uri(uri1)
+        remote=uri1
+    full_local_uri=f"file://{local_uri}"
+    if not os.path.exists(local_uri):
+        os.makedirs(local_uri)
+
+    local_list = dict([(item.rel_name,item) for item in list(full_local_uri)])
+    remote_list = dict([(item.rel_name,item) for item in list(remote)])
+
+    if command==get:
+        source_list=remote_list
+        dest_list=local_list
+        source_uri=remote
+        dest_uri=local_uri
+    else:
+        source_list=local_list
+        dest_list=remote_list
+        source_uri=local_uri
+        dest_uri=remote
+
+    jobs = {}
+    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_SYNC) as executor:
+        for item_name, item in source_list.items():
+            if item_name not in dest_list or \
+                    dest_list[item_name].size!=item.size:
+                log.warning(f'Copying {os.path.join(source_uri, item_name)} to {os.path.join(dest_uri, item_name)}')
+                jobs[executor.submit(command, 
+                                os.path.join(source_uri, item_name),
+                                os.path.join(dest_uri, item_name))]=item_name
+    
+    tuple(concurrent.futures.as_completed(jobs))
+
+
+def main():
     parser = argparse.ArgumentParser(
                     prog = 'scitq.fetch module utility mode',
                     description = '''Enable direct download or upload without python code.
@@ -866,28 +927,27 @@ As an ugly hack:
 - if source_uri is exactly 'list' then destination_uri is the argument and it perform a listing
 - if source_uri is exactlu 'rlist' then it is the same as above but the listing entry are relative to the path
 ''')
-    parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
-    parser.add_argument('destination_uri', type=str, nargs='?',
-                        help='the destination uri (same as above) (default to ., means download locally)', default=os.getcwd())
+    subparser=parser.add_subparsers(help='sub-command help',dest='command')
+
+    get_parser = subparser.add_parser('copy', help='Copy some file or folder to some folder (one of them must be local)')
+    get_parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
+    get_parser.add_argument('destination_uri', type=str, nargs='?',
+                        help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
+    
+    list_parser = subparser.add_parser('list', help='List the content of a remote folder (outputs some absolute URI)')
+    list_parser.add_argument('uri', type=str, help='the remote folder uri')
+    
+    rlist_parser = subparser.add_parser('rlist', help='List the content of a remote folder (outputs some relative path to the URI)')
+    rlist_parser.add_argument('uri', type=str, help='the remote folder uri')
+
+    sync_parser = subparser.add_parser('sync', help='Sync some file or folder to some folder (one of them must be local) (identity is checked using name and size)')
+    sync_parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
+    sync_parser.add_argument('destination_uri', type=str, nargs='?',
+                        help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
+    
     args = parser.parse_args()
 
-    if args.source_uri=='list':
-        check_uri(args.destination_uri)
-        headers=['name','creation_date','modification_date','size']
-        print(tabulate(
-            [[ getattr(item,attribute) for attribute in headers  ] for item in list(args.destination_uri)],
-            headers=headers,
-            tablefmt='plain'
-        ))
-    elif args.source_uri=='rlist':
-        check_uri(args.destination_uri)
-        headers=['rel_name','creation_date','modification_date','size']
-        print(tabulate(
-            [[ getattr(item,attribute) for attribute in headers  ] for item in list(args.destination_uri)],
-            headers=headers,
-            tablefmt='plain'
-        ))
-    else:
+    if args.command=='copy':
         candidate_source = get_file_uri(args.source_uri)
         if candidate_source is not None:
             check_uri(args.destination_uri)
@@ -899,4 +959,32 @@ As an ugly hack:
                 get(args.source_uri, candidate_destination)
             else:
                 raise RuntimeError('Both source_uri and destination_uri seem non file URI: operation unsupported')
-    
+    elif args.command=='list':
+        if ':' not in args.uri:
+            uri=f'file://{args.uri}'
+        else:
+            check_uri(args.uri)
+            uri=args.uri
+        headers=['name','creation_date','modification_date','size']
+        print(tabulate(
+            [[ getattr(item,attribute) for attribute in headers  ] for item in list(uri)],
+            headers=headers,
+            tablefmt='plain'
+        ))
+    elif args.command=='rlist':
+        if ':' not in args.uri:
+            uri=f'file://{args.uri}'
+        else:
+            check_uri(args.uri)
+            uri=args.uri
+        headers=['rel_name','creation_date','modification_date','size']
+        print(tabulate(
+            [[ getattr(item,attribute) for attribute in headers  ] for item in list(uri)],
+            headers=headers,
+            tablefmt='plain'
+        ))
+    elif args.command=='sync':
+        sync(args.source_uri, args.destination_uri)
+
+if __name__=='__main__':
+    main()
