@@ -230,6 +230,12 @@ def s3_list(uri):
                                 modification_date=object.last_modified)
                 for object in bucket.objects.filter(Prefix=uri_match['path'])]
 
+def s3_delete(uri):
+    """Delete an s3 blob"""
+    log.info(f'S3 deleting {uri}')
+    uri_match = S3_REGEXP.match(uri).groupdict()
+    xboto3().client('s3').delete_object(Bucket=uri_match['bucket'], Key=uri_match['path'])
+
 
 # Azure
 
@@ -353,6 +359,13 @@ class AzureClient:
                                     creation_date=object.creation_time,
                                     modification_date=object.last_modified)
                     for object in container.list_blobs(name_starts_with=uri_match['path'])]
+
+    def delete(self, uri):
+        """Delete an azure blob"""
+        log.info(f'Azure deleting {uri}')
+        uri_match = AZURE_REGEXP.match(uri).groupdict()
+        container=self.client.get_container_client(uri_match['container'])
+        container.delete_blob(uri_match['path'])
 
 
 # FTP
@@ -720,6 +733,17 @@ def file_list(uri):
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
+def file_delete(uri):
+    """Delete a local file expressed as file://... """
+    log.info(f'FILE deliting {uri}')
+    uri_match = FILE_REGEXP.match(uri).groupdict()
+    if uri_match:
+        if os.path.exists(uri_match['path']):
+            os.remove(uri_match['path'])
+        else:
+            raise FetchError(f"Local file {uri} does not seem to exist")
+    else:
+        raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
 # generic wrapper
 
@@ -797,6 +821,26 @@ def put(source, uri):
             raise FetchError(f"This URI proto is not supported: {m['proto']}")
     else:
         raise FetchError(f'This URI is malformed: {uri}')
+
+
+def delete(uri):
+    """General deleter for a URI."""
+    m = GENERIC_REGEXP.match(uri)
+    if m:
+        m = m.groupdict()
+        if m['action']:
+            raise FetchError(f'Action are unsupported when deleting a {uri}')
+        if m['proto']=='s3':
+            s3_delete(uri)
+        elif m['proto']=='azure':
+            AzureClient().delete(uri) 
+        elif m['proto']=='file':
+            file_delete(uri)        
+        else:
+            raise FetchError(f"This URI proto is not supported: {m['proto']}")
+    else:
+        raise FetchError(f'This URI is malformed: {uri}')
+
 
 def check_uri(uri):
     """A small utility to check URI: return True if URI is valid, raise an exception otherwise"""
@@ -937,6 +981,37 @@ def sync(uri1, uri2, include=None):
     if failed:
         raise FetchError('At least some objects could not be synchronized')
 
+def recursive_delete(uri, include=None, dryrun=False):
+    """Works the same way than sync, recursively deleting some objects from uri"""
+    jobs = {}
+    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_SYNC) as executor:
+        for item in list_content(uri):
+            item_name=item.rel_name.split('/')[-1]
+            if include:
+                for inc in include:
+                    if fnmatch(item_name, inc):
+                        break
+                else:
+                    continue
+            log.warning(f'Deleting {item.name}')
+            if not dryrun:
+                jobs[executor.submit(delete, 
+                            item.name)]=item.name
+    
+    failed = False
+    for job in concurrent.futures.as_completed(jobs):
+        item_name = jobs[job]
+        if job.exception() is None:
+            log.info(f'Done for {item_name}: {job.result()}')
+        else:
+            log.error(f'Could not delete {item_name}')
+            log.exception(job.exception())
+            failed = True
+
+    if failed:
+        raise FetchError('At least some objects could not be deleted')
+
+
 def main():
     parser = argparse.ArgumentParser(
                     prog = 'scitq.fetch module utility mode',
@@ -963,6 +1038,13 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
                         help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
     sync_parser.add_argument('--include',action='append',type=str,
                         help="A pattern that should be included (only those will be synced) (can be specified several times)")
+
+    delete_parser = subparser.add_parser('delete', help='Delete some file or folder expressed as a URI')
+    delete_parser.add_argument('uri', type=str, help='the uri (can be a local file or a remote URI)')
+    delete_parser.add_argument('--include',action='append',type=str,
+                        help="A pattern that should be included (only those will be synced) (can be specified several times)")
+    delete_parser.add_argument('--dryrun',action='store_true',
+                        help="Do not really delete, just print what it would delete")
 
     args = parser.parse_args()
 
@@ -1007,6 +1089,8 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
         ))
     elif args.command=='sync':
         sync(args.source_uri, args.destination_uri, include=args.include)
+    elif args.command=='delete':
+        recursive_delete(args.uri, include=args.include, dryrun=args.dryrun)
 
 if __name__=='__main__':
     main()
