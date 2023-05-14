@@ -911,8 +911,18 @@ def sync(uri1, uri2):
                                 os.path.join(source_uri, item_name),
                                 os.path.join(dest_uri, item_name))]=item_name
     
-    tuple(concurrent.futures.as_completed(jobs))
-
+    failed = False
+    for job in concurrent.futures.as_completed(jobs):
+        item_name = jobs[job]
+        if job.exception() is None:
+            log.info(f'Done for {item_name}: {job.result()}')
+        else:
+            log.error(f'Could not download {item_name}')
+            log.exception(job.exception())
+            failed = True
+    
+    if failed:
+        raise FetchError('At least some objects could not be synchronized')
 
 def main():
     parser = argparse.ArgumentParser(
@@ -924,6 +934,7 @@ if the file URI comes first, a put (upload) is performed, else a get (download) 
 if only one URI is given, the second default to '.', the local path
 
 ''')
+    parser.add_argument('-v','--verbose',action='store_true',help='Turn log level to info')
     subparser=parser.add_subparsers(help='sub-command help',dest='command')
 
     get_parser = subparser.add_parser('copy', help='Copy some file or folder to some folder (one of them must be local)')
@@ -943,6 +954,9 @@ if only one URI is given, the second default to '.', the local path
                         help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
     
     args = parser.parse_args()
+
+    if args.verbose:
+        log.basicConfig(level=log.INFO)
 
     if args.command=='copy':
         candidate_source = get_file_uri(args.source_uri)
