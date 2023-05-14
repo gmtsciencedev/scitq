@@ -21,6 +21,7 @@ import azure.core.exceptions
 from .constants import DEFAULT_WORKER_CONF
 import dotenv
 from tabulate import tabulate 
+from fnmatch import fnmatch
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -735,9 +736,11 @@ def get(uri, destination):
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
         complete_destination = complete_if_ends_with_slash(source, destination)
-        if complete_destination.endswith('/'):
-            complete_destination=complete_destination[:1]
-        complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
+        if uri.endswith('/'):
+            complete_destination=complete_destination[:-1]
+            complete_destination_folder=complete_destination            
+        else:
+            complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
         if not os.path.exists(complete_destination_folder):
             os.makedirs(complete_destination_folder)
         
@@ -863,7 +866,7 @@ def list_content(uri):
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
 
-def sync(uri1, uri2):
+def sync(uri1, uri2, include=None):
     """Sync two URI, one must be local
     Identity of the files is assessed only with name and size
     """
@@ -910,6 +913,12 @@ def sync(uri1, uri2):
         for item_name, item in source_list.items():
             if item_name not in dest_list or \
                     dest_list[item_name].size!=item.size:
+                if include:
+                    for inc in include:
+                        if fnmatch(item_name, inc):
+                            break
+                    else:
+                        continue
                 log.warning(f'Copying {os.path.join(source_uri, item_name)} to {os.path.join(dest_uri, item_name)}')
                 jobs[executor.submit(command, 
                                 os.path.join(source_uri, item_name),
@@ -950,9 +959,11 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
 
     sync_parser = subparser.add_parser('sync', help='Sync some file or folder to some folder (one of them must be local) (identity is checked using name and size)')
     sync_parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
-    sync_parser.add_argument('destination_uri', type=str, nargs='?',
+    sync_parser.add_argument('destination_uri', type=str,
                         help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
-    
+    sync_parser.add_argument('--include',action='append',type=str,
+                        help="A pattern that should be included (only those will be synced) (can be specified several times)")
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -995,7 +1006,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             tablefmt='plain'
         ))
     elif args.command=='sync':
-        sync(args.source_uri, args.destination_uri)
+        sync(args.source_uri, args.destination_uri, include=args.include)
 
 if __name__=='__main__':
     main()
