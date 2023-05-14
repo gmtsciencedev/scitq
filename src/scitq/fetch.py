@@ -156,7 +156,7 @@ def s3_get(source, destination):
                             destination_path,_ = os.path.split(destination_name)
                             log.info(f'S3 downloading {obj.key} to {destination_name}')
                             if not os.path.exists(destination_path):
-                                os.makedirs(destination_path)
+                                os.makedirs(destination_path, exist_ok=True)
                             if not os.path.exists(destination_name):
                                 jobs[executor.submit(_bucket_get, uri_match['bucket'], obj.key, destination_name)]=obj
                         for job in  concurrent.futures.as_completed(jobs):
@@ -282,7 +282,7 @@ class AzureClient:
                                 destination_path,_ = os.path.split(destination_name)
                                 log.info(f'Azure downloading {obj.name} to {destination_name}')
                                 if not os.path.exists(destination_path):
-                                    os.makedirs(destination_path)
+                                    os.makedirs(destination_path, exist_ok=True)
                                 if not os.path.exists(destination_name):
                                     jobs[executor.submit(_container_get, 
                                             container.container_name, 
@@ -679,7 +679,7 @@ def file_put(source, destination):
         complete_path = uri_match['path']
         path=os.path.dirname(complete_path)
         if not os.path.exists(path):
-            os.makedirs(path)
+            os.makedirs(path, exist_ok=True)
         shutil.copyfile(source, complete_path)
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {destination}")
@@ -742,7 +742,7 @@ def get(uri, destination):
         else:
             complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
         if not os.path.exists(complete_destination_folder):
-            os.makedirs(complete_destination_folder)
+            os.makedirs(complete_destination_folder, exist_ok=True)
         
         if m['proto']=='s3':
             s3_get(source, destination)
@@ -892,7 +892,7 @@ def sync(uri1, uri2, include=None):
         remote=uri1
     full_local_uri=f"file://{local_uri}"
     if not os.path.exists(local_uri):
-        os.makedirs(local_uri)
+        os.makedirs(local_uri, exist_ok=True)
 
     local_list = dict([(item.rel_name,item) for item in list_content(full_local_uri)])
     remote_list = dict([(item.rel_name,item) for item in list_content(remote)])
