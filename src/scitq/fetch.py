@@ -834,7 +834,7 @@ def info(uri):
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
-def list(uri):
+def list_content(uri):
     """Return the recursive listing of folder specified as a URI
     each item of the list should contains at least name (complete URI), rel_name (the name of the object relative to the provided uri), creation_date, modification_date and size
     WARNING: with s3 or ftp URI, creation_date and modification_date are the same.
@@ -887,8 +887,8 @@ def sync(uri1, uri2):
     if not os.path.exists(local_uri):
         os.makedirs(local_uri)
 
-    local_list = dict([(item.rel_name,item) for item in list(full_local_uri)])
-    remote_list = dict([(item.rel_name,item) for item in list(remote)])
+    local_list = dict([(item.rel_name,item) for item in list_content(full_local_uri)])
+    remote_list = dict([(item.rel_name,item) for item in list_content(remote)])
 
     if command==get:
         source_list=remote_list
@@ -974,7 +974,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             uri=args.uri
         headers=['name','creation_date','modification_date','size']
         print(tabulate(
-            [[ getattr(item,attribute) for attribute in headers  ] for item in list(uri)],
+            [[ getattr(item,attribute) for attribute in headers  ] for item in list_content(uri)],
             headers=headers,
             tablefmt='plain'
         ))
@@ -986,7 +986,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             uri=args.uri
         headers=['rel_name','creation_date','modification_date','size']
         print(tabulate(
-            [[ getattr(item,attribute) for attribute in headers  ] for item in list(uri)],
+            [[ getattr(item,attribute) for attribute in headers  ] for item in list_content(uri)],
             headers=headers,
             tablefmt='plain'
         ))

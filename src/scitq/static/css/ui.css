@@ -39,14 +39,25 @@
 }
 
 .awf-input  {
-    width: 40px;
+    width: 50px;
     margin: 0px 10px 0px 0px;
 }
 
 .awf-input-large  {
-    width: 80px;
+    width: 100px;
     margin: 0px 10px 0px 0px;
 }
+
+.awf-input-larger  {
+    width: 150px;
+    margin: 0px 10px 0px 0px;
+}
+
+.awf-input-largest  {
+    width: 200px;
+    margin: 0px 10px 0px 0px;
+}
+
 
 .awf-label {
     margin: 0px 0px 0px 10px;
