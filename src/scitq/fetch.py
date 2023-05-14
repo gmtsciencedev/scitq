@@ -735,6 +735,8 @@ def get(uri, destination):
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
         complete_destination = complete_if_ends_with_slash(source, destination)
+        if complete_destination.endswith('/'):
+            complete_destination=complete_destination[:1]
         complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
         if not os.path.exists(complete_destination_folder):
             os.makedirs(complete_destination_folder)
@@ -772,6 +774,8 @@ def put(source, uri):
     destination ends with slash it will be completed with source end item)
     file://... is also supported but be careful that it is local to worker."""
     m = GENERIC_REGEXP.match(uri)
+    if source.endswith('/'):
+        raise FetchError('Recursive put is not yet supported, invalid source: '+source)
     if m:
         m = m.groupdict()
         if m['action']:
