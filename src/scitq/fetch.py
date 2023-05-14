@@ -929,11 +929,7 @@ def main():
                     prog = 'scitq.fetch module utility mode',
                     description = '''Enable direct download or upload without python code.
 Takes a command with one or two URI (generalised URL, including file://... and s3://... or ftp://...) 
-one of them must be a file URI (starts with file://... or be a simple path)
-if the file URI comes first, a put (upload) is performed, else a get (download) is performed
-if only one URI is given, the second default to '.', the local path
-
-''')
+one of them must be a file URI (starts with file://... or be a simple path)''')
     parser.add_argument('-v','--verbose',action='store_true',help='Turn log level to info')
     subparser=parser.add_subparsers(help='sub-command help',dest='command')
 
