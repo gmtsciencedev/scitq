@@ -796,6 +796,14 @@ class Client:
                                   not part.mountpoint.startswith('/boot') and
                                   not part.mountpoint.startswith('/System')]
                     
+                    # removes device that we see several times (i.e. bind mount)
+                    seen_devices=[]
+                    for part in list(partitions):
+                        if part.device not in seen_devices:
+                            seen_devices.append(part.device)
+                        else:
+                            partitions.remove(part)
+                    
                     disk_usage=[(part.mountpoint,psutil.disk_usage(part.mountpoint).percent) 
                                 for part in partitions]
                     scratch_usage = None
