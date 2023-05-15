@@ -508,6 +508,7 @@ class Executor:
                                 transfer_failed = True
                                 log.warning(f'Transfer failed for {obj}: {job.exception()}')
                                 log.exception(job.exception())
+                                latest_exception = job.exception()
                             else:
                                 log.warning(f'Transfer done for {obj}: {job.result()}')
                                 output_files.append(local_data)
@@ -518,7 +519,7 @@ class Executor:
                             log.warning(f'Reducing parallel upload to {self.maximum_parallel_upload}')
                         retry -= 1
                         if retry<=0:
-                            raise
+                            raise latest_exception
                         else:
                             continue
                     if output_files:

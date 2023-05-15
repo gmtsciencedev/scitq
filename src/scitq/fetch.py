@@ -333,7 +333,7 @@ class AzureClient:
         blob_client = self.client.get_blob_client(container=uri_match['container'],
                                                 blob=uri_match['path'])
         with open(file=source, mode="rb") as data:
-            blob_client.upload_blob(data)
+            blob_client.upload_blob(data, overwrite=True)
 
     def info(self,uri):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
