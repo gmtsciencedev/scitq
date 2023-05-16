@@ -1053,15 +1053,15 @@ class BatchDelete(Resource):
         """Delete all tasks and executions for this batch"""
         if name=='Default':
             log.warning('Deleting default batch')
-            tasks = db.session.query(Task.task_id).where(Task.batch.is_(None))
-            db.session.query(Execution).filter(Execution.task_id.in_(tasks)).delete(
-                synchronize_session=False)
+            db.session.execute(delete(Execution).where(Execution.task_id.in_(
+                select(Task.task_id).where(Task.batch.is_(None)))), 
+                execution_options={'synchronize_session':False})
             db.session.execute(delete(Task).where(Task.batch.is_(None)))
         else:
             log.warning(f'Deleting batch {name}')
-            tasks = db.session.query(Task).where(Task.batch==name)
-            db.session.query(Execution).filter(Execution.task_id.in_(tasks)).delete(
-                synchronize_session=False)
+            db.session.execute(delete(Execution).where(Execution.task_id.in_(
+                select(Task.task_id).where(Task.batch==name))), 
+                execution_options={'synchronize_session':False})
             db.session.execute(delete(Task).where(Task.batch==name))
         db.session.commit()
         return {'result':'Ok'}
