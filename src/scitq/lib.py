@@ -323,7 +323,7 @@ class Server:
         """Update a specific worker ping time (heartbit)
         return a updated worker object with attribute or key (depending on style)"""
         return self.put(f'/workers/{id}/ping', data={'load':load,'memory':memory,
-            'read_bytes':stats}, asynchronous=asynchronous)
+            'stats':stats}, asynchronous=asynchronous)
 
     def worker_callback(self, id, message, asynchronous=False):
         """Send a callback message (mainly idle) to trigger action on worker from the server
@@ -353,20 +353,25 @@ class Server:
         """
         return self.get(f'/executions/')
     
-    def execution_create(self, worker_id, task_id, status='pending', asynchronous=True):
+    def execution_create(self, worker_id, task_id, status='pending', command=None,
+                         asynchronous=True):
         """Create a new execution, return the newly created execution
         """
-        return self.post('/executions/', data={
-            'worker_id':worker_id, 'task_id':task_id, 'status':status
-        }, asynchronous=asynchronous)
+        return self.post('/executions/', data=_clean(
+            {
+            'worker_id':worker_id, 'task_id':task_id, 'command':command,
+            'status':status
+            }
+            ), asynchronous=asynchronous)
 
     def execution_update(self, id, status=None, pid=None, return_code=None, 
-                        output=None, output_files=None, asynchronous=True):
+                        output=None, output_files=None, command=None,
+                        asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/executions/{id}', data=_clean(
             {'status':status, 'pid':pid, 'return_code':return_code, 
-                'output':output, 'output_files':output_files}
+                'output':output, 'output_files':output_files, 'command':command}
         ), asynchronous=asynchronous)
 
     def execution_output_write(self, id, output, asynchronous=True):

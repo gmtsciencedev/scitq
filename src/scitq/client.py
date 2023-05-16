@@ -66,7 +66,7 @@ STATUS_TXT = ['LAUNCHING', 'DOWNLOADING', 'WAITING', 'RUNNING', 'UPLOADING',
 
 def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_options,
         container, command, mode='-d'):
-    docker_cmd = ['docker','run', '--rm', mode]
+    docker_cmd = ['docker','run', mode]
     if os.path.exists('/data'):
         docker_cmd.extend(['-v', '/data:/data'])
     docker_cmd.extend([
@@ -94,6 +94,12 @@ def docker_inspect(container_id):
     except Exception:
         log.exception(f'Docker ps gave an non exploitable output: {alive_container}')
         return None
+
+def docker_logs(container_id):
+    return subprocess.run(['docker','logs',container_id],
+            capture_output=True, check=True
+            ).stdout.decode('utf-8')
+
 
 
 def create_dir(base_dir, sub_dir):
@@ -200,6 +206,7 @@ class Executor:
         self.maximum_parallel_upload = MAXIMUM_PARALLEL_UPLOAD
         self.recover=recover
         self.working_dirs=working_dirs
+        self.docker_attach_failed=False
         if not self.recover:
             self.workdir = tempfile.mkdtemp(dir=BASE_WORKDIR)
             self.s.execution_update(execution_id, status='accepted')
@@ -254,7 +261,42 @@ class Executor:
     def status(self, status_value):
         """A wrapper around status multiprocessing.Value, set status.value as STATUS_"""
         self.__status__.value = status_value
-        
+
+    def post_process_docker_inspect(self, output_files=None):
+        """An emergency process to look into docker if possible for more information
+        when a process apparently fails - return True if inpection worked, f"""
+        if self.container_id is not None:
+            log.warning(f'Docker inspecting task {self.task_id}')
+            container_inspection_data = docker_inspect(self.container_id)
+            if container_inspection_data is not None:
+                try:
+                    if container_inspection_data['State']['Status']=='exited':
+                        log.warning('Docker process was too quick for us but we can inspect what went on')
+                        return_code=container_inspection_data['State']['ExitCode']
+                        self.status = STATUS_SUCCEEDED if return_code==0 else STATUS_FAILED
+                        output = docker_logs(self.container_id)
+                        self.s.execution_update(
+                            self.execution_id, 
+                            status='succeeded' if self.status==STATUS_SUCCEEDED else 'failed',
+                            output=output,
+                            command=self.command,
+                            return_code=return_code,
+                            output_files=output_files
+                        )
+                        self.process = None
+
+                        if self.status==STATUS_FAILED:
+                            log.error(f'... task failed with error code {return_code}')
+                        else:
+                            log.warning(f'... task succeeded')
+                            self.clean()
+                            log.warning('Cleaned')
+
+                        return True
+                except Exception as e:
+                    log.exception(e)
+        return False        
+    
     # via: https://stackoverflow.com/questions/10756383/timeout-on-subprocess-readline-in-python/34114767?noredirect=1#comment55978734_10756738
     async def execute(self, execution_id):
         # Start child process
@@ -282,13 +324,14 @@ class Executor:
                 self.run_slots.value -= 1
                 self.status = STATUS_RUNNING
                 self.run_slots_semaphore.release()
-                self.s.execution_update(execution_id, pid=self.process.pid, status='running')
+                self.s.execution_update(execution_id, pid=self.process.pid, status='running',
+                                        command=self.command)
             except Exception as e:
                 self.status = STATUS_FAILED
                 self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
-                self.s.execution_update(execution_id, status='failed')
+                self.s.execution_update(execution_id, status='failed', command=self.command)
         else:
             # this is the safe way to keep docker process attached while still getting its container id
             try:
@@ -310,18 +353,30 @@ class Executor:
                 self.run_slots.value -= 1
                 self.run_slots_semaphore.release()
                 if not self.recover:
-                    self.s.execution_update(execution_id, pid=self.container_id, status='running')
+                    self.s.execution_update(execution_id, pid=self.container_id, 
+                                            command=self.command, status='running')
             except subprocess.CalledProcessError as e:
-                self.status = STATUS_FAILED
+                log.warning('Could not attach docker process')
                 self.run_slots_semaphore.release()
-                self.s.execution_error_write(execution_id,e.stderr.decode('utf-8'))
-                self.s.execution_update(execution_id, status='failed')
+
+                fix_status = False
+                if self.container_id is not None:
+                    fix_status=self.post_process_docker_inspect()
+
+                if not fix_status:
+                    log.error('Finally there was no clue why the execution failed')
+                    self.status = STATUS_FAILED
+                    self.s.execution_error_write(execution_id,e.stderr.decode('utf-8'))
+                    self.s.execution_update(execution_id, status='failed', command=self.command)
+
             except Exception as e:
+                log.error('Could not launch docker and attach it for some reason')
+                log.exception(e)
                 self.status = STATUS_FAILED
                 self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
-                self.s.execution_update(execution_id, status='failed')
+                self.s.execution_update(execution_id, status='failed', command=self.command)
 
                 
 
@@ -373,7 +428,11 @@ class Executor:
         retry = 2
         while retry > 0:
             try:
-                self.s.execution_error_write(execution_id,''.join(error))
+                joint_error=''.join(error)
+                if joint_error.startswith('You cannot attach to a stopped container'):
+                    log.warning('It seems our container failed to attach')
+                    self.docker_attach_failed=True
+                self.s.execution_error_write(execution_id,joint_error)
                 break
             except:
                 log.exception(f'Could not write error for {execution_id}:{error}')
@@ -540,6 +599,7 @@ class Executor:
         """Clean working directory (triggered if all went well)"""
         shutil.rmtree(self.workdir)
         del(self.working_dirs[self.execution_id])
+        subprocess.run(['docker','container','rm',self.container_id], check=True)
 
     async def run(self):
         """Launching part of Executor
@@ -665,18 +725,22 @@ class Executor:
                         returncode=-1000
                     
                     self.status = STATUS_SUCCEEDED if returncode==0 else STATUS_FAILED
-                    self.s.execution_update(self.execution_id, 
-                        status='succeeded' if returncode==0 else 'failed', 
-                        return_code=returncode, output_files=output_files)
+                    if self.status == STATUS_FAILED and self.docker_attach_failed:
+                        log.warning('Trying to see if status can be enhanced with docker')
+                        self.post_process_docker_inspect(output_files=output_files)
+                    else:
+                        self.s.execution_update(self.execution_id, 
+                            status='succeeded' if returncode==0 else 'failed', 
+                            return_code=returncode, output_files=output_files)
                     
-                    if returncode!=0:
-                        log.error(f'... task failed with error code {returncode}')
+                        if returncode!=0:
+                            log.error(f'... task failed with error code {returncode}')
+                        else:
+                            log.warning(f'... task succeeded')
+                            self.clean()
+                            log.warning('Cleaned')
                     log.warning(f'Run slots: {self.run_slots.value}')
 
-
-                    if returncode==0:
-                        self.clean()
-                        log.warning('Cleaned')
                     break
                 else:
                     try:

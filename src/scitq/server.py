@@ -179,8 +179,7 @@ class Worker(db.Model):
     prefetch = db.Column(db.Integer)
     load = db.Column(db.String)
     memory=db.Column(db.String)
-    read_bytes=db.Column(db.String)
-    written_bytes=db.Column(db.String)
+    stats=db.Column(db.String)
     creation_date = db.Column(db.DateTime)
     modification_date = db.Column(db.DateTime)
     last_contact_date = db.Column(db.DateTime)
@@ -225,10 +224,11 @@ class Execution(db.Model):
     return_code = db.Column(db.Integer)
     pid = db.Column(db.String)
     output_files = db.Column(db.String, nullable=True)
+    command = db.Column(db.String, nullable=True)
     
 
     def __init__(self, worker_id, task_id, status='pending', pid=None, 
-                    return_code=None):
+                    return_code=None, command=None):
         self.worker_id = worker_id
         self.task_id = task_id
         self.status = status
@@ -236,6 +236,7 @@ class Execution(db.Model):
         self.return_code = return_code
         self.creation_date = datetime.utcnow()
         self.modification_date = self.creation_date
+        self.command = command
 
 class Signal(db.Model):
     __tablename__ = "signal"
@@ -471,11 +472,11 @@ class WorkerDAO(BaseDAO):
     ObjectType = Worker
     authorized_status = ['paused','running','offline','failed']
 
-    def update_contact(self, id, load,memory,read_bytes,written_bytes):
+    def update_contact(self, id, load,memory,stats):
         db.engine.execute(
             db.update(Worker
                     ).values({'last_contact_date':datetime.utcnow(),
-                        'load':load,'memory':memory,'read_bytes':read_bytes,'written_bytes':written_bytes}
+                        'load':load,'memory':memory,'stats':stats}
                     ).where(Worker.worker_id==id)
         )
         db.session.commit()
@@ -510,9 +511,8 @@ worker = api.model('Worker', {
     'status': fields.String(required=False,
          description=f'The worker status: {", ".join(WorkerDAO.authorized_status)}'), 
     'load': fields.String(readonly=True, description='The worker load (in %)'),
-    'memory':fields.Float(readonly=True, description='Memory not use (in %)'),
-    'read_bytes':fields.String(readonly=True,description='read bytes'),
-    'written_bytes':fields.Float(readonly=True,description='written bytes'),
+    'memory':fields.Float(readonly=True, description='Memory used (in %)'),
+    'stats':fields.String(readonly=True,description='Other worker stats'),
     'creation_date': fields.DateTime(readonly=True, 
         description='timestamp of worker creation'),
     'modification_date': fields.DateTime(readonly=True, 
@@ -592,9 +592,8 @@ class WorkerObject(Resource):
 
 ping_parser = api.parser()
 ping_parser.add_argument('load', type=str, help='Worker load', location='json')
-ping_parser.add_argument('memory', type=float, help='Worker load', location='json')
-ping_parser.add_argument('read_bytes', type=str, help='Worker load', location='json')
-ping_parser.add_argument('written_bytes', type=float, help='Worker load', location='json')
+ping_parser.add_argument('memory', type=float, help='Worker memory', location='json')
+ping_parser.add_argument('stats', type=str, help='Worker other stats', location='json')
 
 @ns.route("/<id>/ping")
 @ns.param("id", "The worker identifier")
@@ -606,7 +605,7 @@ class WorkerPing(Resource):
     def put(self, id):
         """Update a worker last contact"""
         args = ping_parser.parse_args()
-        worker_dao.update_contact(id, args.get('load',''),args.get('memory',''),args.get('read_bytes',''),args.get('written_bytes',''))
+        worker_dao.update_contact(id, args.get('load',''),args.get('memory',''),args.get('stats',''))
         return worker_dao.get(id)
 
 callback_parser = api.parser()
@@ -752,7 +751,8 @@ class ExecutionDAO(BaseDAO):
         sorting_column='execution_id'
         q=Execution.query
         if no_output:
-            q=q.with_entities(Execution.execution_id, 
+            q=q.with_entities(Execution.execution_id,
+                              Execution.command, 
                               Execution.status,
                               Execution.task_id,
                               Execution.creation_date,
@@ -780,6 +780,7 @@ execution = api.model('Execution', {
     'output': fields.String(readonly=True, description='The standard output of the execution'),
     'error': fields.String(readonly=True, description='The standard error of the execution (if any)'),
     'output_files': fields.String(readonly=True, description='A list of output files transmitted (if any)'),
+    'command': fields.String(required=False, description='The command that was really launched for this execution (it case Task.execution is modified)'),
 })
 
 
@@ -1118,7 +1119,7 @@ def handle_get():
                     (SELECT count(execution_id) FROM execution WHERE execution.worker_id=worker.worker_id) as total,
                     load,
                     memory,
-                    read_bytes as stats
+                    stats
                 FROM worker
                 ORDER BY worker.batch,worker.name''')]),
             'totals': next(iter([dict(row) for row in db.session.execute(

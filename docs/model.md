@@ -60,21 +60,24 @@ pprint(s.workers())
 ```
 
 ```python
-[{'batch': 'test',
+[{'batch': 'Default',
   'concurrency': 1,
-  'creation_date': datetime.datetime(2022, 11, 16, 8, 25, 25, 747354),
-  'hostname': 'epeire.local',
+  'creation_date': datetime.datetime(2023, 4, 4, 7, 23, 52, 920295),
+  'hostname': 'bioit',
   'idle_callback': None,
-  'last_contact_date': datetime.datetime(2022, 11, 16, 17, 25, 30, 519453),
-  'load': '2.7↓',
-  'memory': 36.4,
-  'modification_date': datetime.datetime(2022, 11, 16, 17, 20, 40, 145415),
-  'name': 'epeire.local',
+  'last_contact_date': datetime.datetime(2023, 5, 16, 20, 6, 35, 62751),
+  'load': '0.1↓ / 0.0',
+  'memory': 4.0,
+  'modification_date': datetime.datetime(2023, 5, 16, 19, 36, 39, 770733),
+  'name': 'bioit',
   'prefetch': 0,
-  'read_bytes': 1411.32,
+  'stats': '{"load": "0.2 0.1 0.1", "disk": {"speed": "0.0/0.02 Mb/s", '
+           '"usage": ["/:52", "/home:64", "/var/lib/docker:68", "/data:89", '
+           '"/scratch:16", "/data/results:83", "/var/lib/postgresql:82"], '
+           '"counter": "0.04/0.05 Gb"}, "network": {"speed": "0.01/0.25 Mb/s", '
+           '"counter": "0.01/0.44 Gb"}}',
   'status': 'running',
-  'worker_id': 1,
-  'written_bytes': 1348.97}]
+  'worker_id': 1}]
 ```
 
 The function are available in a consistent style:
