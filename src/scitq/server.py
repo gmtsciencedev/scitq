@@ -296,7 +296,27 @@ with app.app_context():
                            
 
 
+def process_filtering_args(ObjectType, args):
+    """In list functions it seems natural to filter the results with some attributes
+    conditions (such as 'batch="foo"' or 'status="succeeded"') and it makes more 
+    efficient queries than listing the lot and filtering the results out or sending
+    several individual queries (one per item id).
+    However sqlalchemy filtering syntax is not friendly when using typical python
+    optional args dictionary, this function does this transformation:
+    
+    When args maybe something as 'batch="foo"' or 'batch=["foo","bar"]'
+    - the function will return 'ObjectType.batch=="foo"'
+    - or 'ObjectType.batch.in_(["foo","bar"])' if value is a list
 
+    which can then be passed to sqlalchemy .filter() function
+    """
+    # 
+    # filter expects something as 'ObjectType.batch=="foo"'
+    # or 'ObjectType.batch.in_(["foo","bar"])' if value is a list
+    new_args = [ getattr(ObjectType,attribute).in_(value) if type(value)==list else \
+                 getattr(ObjectType,attribute)==value 
+                    for attribute,value in args.items() ]
+    return and_(*new_args) if len(new_args)>1 else new_args[0]
 
 
 # via https://flask-restx.readthedocs.io/en/latest/example.html
@@ -351,9 +371,10 @@ class BaseDAO(object):
         db.session.commit()
         return object
     
-    def list(self, *args, sorting_column=None):
+    def list(self, sorting_column=None, **args):
         if args:
-            return list(self.ObjectType.query.filter(*args).order_by(sorting_column))
+            final_filter = process_filtering_args(self.ObjectType, args)
+            return list(self.ObjectType.query.filter(final_filter).order_by(sorting_column))
         else:
             return list(self.ObjectType.query.order_by(sorting_column).all())
         
@@ -367,8 +388,8 @@ class TaskDAO(BaseDAO):
     ObjectType = Task
     authorized_status = ['paused','pending','assigned','accepted','running','failed','succeeded']
 
-    def list(self):
-        return super().list(sorting_column='task_id')
+    def list(self, **args):
+        return super().list(sorting_column='task_id',**args)
 
     def update(self, id, data):
         task = self.get(id)
@@ -423,15 +444,22 @@ task = api.model('Task', {
         decription="Resource data required for task (much like input except it is shared between tasks) (space separated files URL in s3://...)"),
 })
 
+task_filter = api.model('TaskFilter', {
+    'task_id': fields.List(fields.Integer(),required=False,decription='A list of ids to restrict listing'),
+    'batch': fields.String(required=False, description="Filter with this batch"),
+    'status': fields.String(required=False, description="Filter with this status")
+})
+
 
 @ns.route('/')
 class TaskList(Resource):
     '''Shows a list of all tasks, and lets you POST to add new tasks'''
     @ns.doc('list_tasks')
+    @ns.expect(task_filter)
     @ns.marshal_list_with(task)
     def get(self):
         '''List all tasks'''
-        return task_dao.list()
+        return task_dao.list(**api.payload) if api.payload else task_dao.list()
 
     @ns.doc('create_task')
     @ns.expect(task)
@@ -747,9 +775,11 @@ class ExecutionDAO(BaseDAO):
             db.session.commit()
         return execution
 
-    def list(self,*args,no_output=False):
+    def list(self,no_output=False,**args):
         sorting_column='execution_id'
         q=Execution.query
+        if args:
+            q=q.filter(process_filtering_args(Execution, args))
         if no_output:
             q=q.with_entities(Execution.execution_id,
                               Execution.command, 
@@ -759,8 +789,7 @@ class ExecutionDAO(BaseDAO):
                               Execution.modification_date,
                               Execution.pid,
                               Execution.output_files)
-        if args:
-            q=q.filter(*args)
+
         return list(q.order_by(sorting_column).all())
  
 execution_dao = ExecutionDAO()
@@ -793,7 +822,7 @@ class WorkerExecutionObject(Resource):
     def get(self, id):
         """Fetch a worker executions given the worker identifier"""
         #worker_dao.update_contact(id)
-        return execution_dao.list(Execution.worker_id==id, no_output=True)
+        return execution_dao.list(worker_id=id, no_output=True)
 
 
 @ns.route("/<id>/executions/<status>")
@@ -806,7 +835,7 @@ class WorkerExecutionFilterObject(Resource):
     def get(self, id, status):
         """Fetch a worker executions given the worker identifier and the executions status"""
         #worker_dao.update_contact(id)
-        return execution_dao.list(Execution.worker_id==id, Execution.status==status)
+        return execution_dao.list(worker_id=id, status=status)
 
 signal = api.model('Signal', {
     'execution_id': fields.Integer(readonly=True, description='The execution unique identifier'), 
@@ -843,14 +872,19 @@ class WorkerSignal(Resource):
 
 ns = api.namespace('executions', description='EXECUTION operations')
 
+execution_filter = api.model('ExecutionFilter', {
+    'task_id': fields.Integer(required=False,decription='A list of ids to restrict listing'),
+    'status': fields.String(required=False, description="Filter with this status")
+})
 @ns.route('/')
 class ExecutionList(Resource):
     '''Shows a list of all executions, and lets you POST to add new workers'''
     @ns.doc('list_executions')
+    @ns.expect(execution_filter)
     @ns.marshal_list_with(execution)
     def get(self):
         '''List all executions'''
-        return execution_dao.list()
+        return execution_dao.list(**api.payload) if api.payload else execution_dao.list()
 
     @ns.doc('create_execution')
     @ns.expect(execution)

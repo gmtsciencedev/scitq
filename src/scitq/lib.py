@@ -348,10 +348,13 @@ class Server:
         """Return a list of all the different tasks for a certain worker"""
         return self.get(f'/workers/tasks')
     
-    def executions(self):
+    def executions(self, **args):
         """Get a list of all executions. 
+        Optional args are optional attributes to filter list with:
+        - task_id: int
+        - status: str
         """
-        return self.get(f'/executions/')
+        return self.get(f'/executions/', **args)
     
     def execution_create(self, worker_id, task_id, status='pending', command=None,
                          asynchronous=True):
@@ -426,10 +429,14 @@ class Server:
         return the task"""
         return self.get(f'/tasks/{id}')
 
-    def tasks(self):
-        """Get a list of all tasks. 
+    def tasks(self, **args):
+        """Get a list of all tasks
+        Optional args are optional attributes to filter list with:
+        - task_id: list(int)
+        - status: str
+        - batch: str
         """
-        return self.get(f'/tasks/')
+        return self.get(f'/tasks/', **args)
 
     def task_delete(self,id, asynchronous=True):
         """delete a specific task"""
@@ -500,27 +507,26 @@ class Server:
             all_task_done = True
             old_tasks = tasks
             tasks = {'assigned':0,'failed':0, 'running':0, 'accepted':0, 'pending':0,'succeeded':0, 'paused':0}
-            for task in self.tasks():
+            for task in self.tasks(task_id=task_ids):
                 if type(task)==dict:
                     task = Namespace(**task)
-                if task.task_id in task_ids:
-                    if task.status=='failed':
-                        if task_retries[task.task_id]<retry:
-                            print(f'Retrying task {task.name or task.task_id} [{task_retries[task.task_id]+1}/{retry}]...')
-                            self.task_update(task.task_id, status='pending')
-                            task_retries[task.task_id]+=1
-                            tasks['pending']+=1
-                            all_task_done = False
-                        else:
-                            tasks['failed']+=1
-                            if task.task_id not in failed_tasks:
-                                print(f'Task {task.name or task.task_id} failed too many times giving up')
-                                failed_tasks.append(task.task_id)
-                    elif task.status in ['running','accepted','pending','assigned']:
+                if task.status=='failed':
+                    if task_retries[task.task_id]<retry:
+                        print(f'Retrying task {task.name or task.task_id} [{task_retries[task.task_id]+1}/{retry}]...')
+                        self.task_update(task.task_id, status='pending')
+                        task_retries[task.task_id]+=1
+                        tasks['pending']+=1
                         all_task_done = False
-                        tasks[task.status]+=1
                     else:
-                        tasks[task.status]+=1
+                        tasks['failed']+=1
+                        if task.task_id not in failed_tasks:
+                            print(f'Task {task.name or task.task_id} failed too many times giving up')
+                            failed_tasks.append(task.task_id)
+                elif task.status in ['running','accepted','pending','assigned']:
+                    all_task_done = False
+                    tasks[task.status]+=1
+                else:
+                    tasks[task.status]+=1
             print(f"Remaining tasks pending : {tasks['pending']}, assigned: {tasks['assigned']}, accepted: {tasks['accepted']}, running: {tasks['running']}, failed: {tasks['failed']}, succeeded: {tasks['succeeded']}")
             
             # sleeping if needed
