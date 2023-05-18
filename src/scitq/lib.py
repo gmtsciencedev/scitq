@@ -193,14 +193,14 @@ class Server:
         """A method to estimate send queue size"""
         return self.send_queue.qsize()        
 
-    def get(self, url):
+    def get(self, url, **args):
         """A wrapper used for all get operations.
         - url: extra string to add after base server URL
         
         return the objects according to Server style (see style in class doc)"""
         try:
             return self._wrap(requests.get(
-                self.url+url, timeout=self.get_timeout
+                self.url+url, timeout=self.get_timeout, json=args
             ))
         except (ConnectionError,Timeout) as e:
             log.warning(f'Exception when trying to get: {e}')
