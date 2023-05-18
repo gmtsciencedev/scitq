@@ -205,7 +205,7 @@ class Server:
         except (ConnectionError,Timeout) as e:
             log.warning(f'Exception when trying to get: {e}')
             sleep(self.get_timeout)
-            return self.get(url)
+            return self.get(url, **args)
 
     def put(self,url, data, asynchronous=None, timeout=None):
         """A wrapper used for all put operations.

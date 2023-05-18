@@ -24,6 +24,7 @@ import concurrent.futures
 import json
 import datetime
 import sys
+from .util import isfifo
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -554,13 +555,15 @@ class Executor:
                             rel_path = os.path.relpath(root, self.output_dir)
                             for local_data in files:
                                 data = os.path.join(root, local_data)
-                                if not os.path.islink(data) and data not in output_files:
+                                if not os.path.islink(data) and not isfifo(data) and data not in output_files:
                                     jobs[executor.submit(put, data, pathjoin(self.output,rel_path,'/'))]=data
                                 else:
                                     if data in output_files:
                                         log.warning(f'Passing {data} as it is already transfered')
-                                    else:
+                                    elif os.path.islink(data):
                                         log.warning(f'{local_data} is ignored as it is a symbolic link.')
+                                    elif isfifo(data):
+                                        log.warning(f'{local_data} is ignored as it is a FIFO (named pipe).')
                         for job in concurrent.futures.as_completed(jobs):
                             obj = jobs[job]
                             if job.exception() is not None:

@@ -3,6 +3,7 @@ import os
 import boto3
 from configparser import ConfigParser
 import re
+import stat
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -139,3 +140,7 @@ def tryupdate(mydict, key, f, *args, alternative=None, **kwargs):
         if alternative is not None:
             mydict[key]=alternative
     return mydict
+
+def isfifo(filepath):
+    """Return True if file is a fifo"""
+    return stat.S_ISFIFO(os.stat(filepath).st_mode)

@@ -297,9 +297,9 @@ def main():
                         break
                 else:
                     raise RuntimeError(f'No such task {args.name}...')
-            for execution in reversed(s.executions()):
-                if execution['task_id']==id:
-                    break
+            executions = s.executions(task_id=id)
+            if executions:
+                execution = list(executions)[-1]
             else:
                 raise RuntimeError(f'No execution for this task {id}')
             if args.output:
