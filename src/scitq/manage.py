@@ -265,21 +265,21 @@ def main():
                 headers = info_task
             else:
                 headers = []
-            task_list=s.tasks()
-            if args.batch!='':
-                task_list=[task for task in task_list if task['batch']==args.batch]
-            if args.status!='':
-                task_list=[task for task in task_list if task['status']==args.status]
+            filters={}
+            if args.batch:
+                filters['batch']=args.batch
+            if args.status:
+                filters['status']=args.status
+            task_list=s.tasks(**filters)
             __list_print(task_list, info_task, headers, long=args.long)
 
         elif args.action=='relaunch':
             if args.id is not None:
                 id=args.id
             elif args.name is not None:
-                for task in s.tasks():
-                    if task['name']==args.name:
-                        id=task['task_id']
-                        break
+                for task in s.tasks(name=args.name):
+                    id=task['task_id']
+                    break
                 else:
                     raise RuntimeError(f'No such task {args.name}...')       
             if s.task_get(id)['status']=='pending':
@@ -291,16 +291,15 @@ def main():
             if args.id is not None:
                 id=args.id
             elif args.name is not None:
-                for task in s.tasks():
-                    if task['name']==args.name:
-                        id=task['task_id']
-                        break
+                for task in s.tasks(name=args.name):
+                    id=task['task_id']
+                    break
                 else:
-                    raise RuntimeError(f'No such task {args.name}...')
-            executions = s.executions(task_id=id)
-            if executions:
-                execution = list(executions)[-1]
-            else:
+                    raise RuntimeError(f'No such task {args.name}...')   
+            executions = s.executions(task_id=id, latest=True)
+            try:
+                execution = next(iter(executions))
+            except StopIteration:
                 raise RuntimeError(f'No execution for this task {id}')
             if args.output:
                 print(execution['output'])
@@ -313,12 +312,11 @@ def main():
             if args.id is not None:
                 id=args.id
             elif args.name is not None:
-                for task in s.tasks():
-                    if task['name']==args.name:
-                        id=task['task_id']
-                        break
+                for task in s.tasks(name=args.name):
+                    id=task['task_id']
+                    break
                 else:
-                    raise RuntimeError(f'No such task {args.name}...')
+                    raise RuntimeError(f'No such task {args.name}...')   
             s.task_update(id, name=args.new_name, status=args.status, batch=args.batch,
                 command=args.command, container=args.docker, container_options=args.option,
                 input=args.input, output=args.output)
@@ -326,12 +324,11 @@ def main():
             if args.id is not None:
                 id=args.id
             elif args.name is not None:
-                for task in s.tasks():
-                    if task['name']==args.name:
-                        id=task['task_id']
-                        break
+                for task in s.tasks(name=args.name):
+                    id=task['task_id']
+                    break
                 else:
-                    raise RuntimeError(f'No such task {args.name}...')
+                    raise RuntimeError(f'No such task {args.name}...')   
             else:
                 raise RuntimeError('You must specify either name (-n) or id (-i)')
             s.task_delete(id)

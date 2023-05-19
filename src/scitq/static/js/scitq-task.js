@@ -64,6 +64,14 @@ async function get_tasks(parameters) {
     else {
         parameters.object='tasks';
     }
+    
+    if (order_by!=undefined) {
+        parameters.order_by=order_by
+    }
+    if (filter.get('worker')!=undefined) {
+        parameters.worker=filter.get('worker')
+    }
+
     await $.getJSON('/ui/get/', parameters, function(data) {
     
         tasks= data.tasks;
@@ -227,7 +235,7 @@ function create_table(type_task){
     // the information go through a filter settled by the arguments in the url that doesn't let it pass if it has not the exact information defined by the filter
     tasks.forEach((task,i) => {
         if (displayed_rows<MAX_DISPLAYED_ROW && (all || type_task.includes(task.status)) ) {
-            if ( (!filter.get('worker') || task.worker_name==filter.get('worker')) &&
+            if ( (!filter.get('worker') || task.worker_id==filter.get('worker')) &&
                  (!filter.get('batch')  || task.batch==filter.get('batch')) ) {
                 displayed_rows++;
                 var date_started = new Date(task['creation_date']+"+00");

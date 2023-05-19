@@ -2,7 +2,7 @@ from argparse import Namespace
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, and_, select, delete, true
+from sqlalchemy import func, and_, select, delete, true, event, DDL
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import ProgrammingError
 from flask_restx import Api, Resource, fields
@@ -41,6 +41,7 @@ WORKER_CREATE_CONCURRENCY = 10
 WORKER_CREATE_RETRY=2
 WORKER_CREATE_RETRY_SLEEP=30
 UI_OUTPUT_TRUNC=100
+UI_MAX_DISPLAYED_ROW = 500
 WORKER_DESTROY_RETRY=2
 
 if os.environ.get('QUEUE_PROCESS') and os.environ.get('QUEUE_LOG_FILE'):
@@ -225,6 +226,7 @@ class Execution(db.Model):
     pid = db.Column(db.String)
     output_files = db.Column(db.String, nullable=True)
     command = db.Column(db.String, nullable=True)
+    latest = db.Column(db.Boolean, default=True)
     
 
     def __init__(self, worker_id, task_id, status='pending', pid=None, 
@@ -237,6 +239,45 @@ class Execution(db.Model):
         self.creation_date = datetime.utcnow()
         self.modification_date = self.creation_date
         self.command = command
+
+trigger_latest_sqlite = DDL("""
+        CREATE TRIGGER is_latest BEFORE INSERT ON execution FOR EACH ROW 
+        BEGIN
+            UPDATE execution SET latest=false WHERE latest AND task_id=NEW.task_id;
+        END
+        """)
+
+func_latest_postgres = DDL("""
+        CREATE OR REPLACE FUNCTION render_obsolete() 
+        RETURNS TRIGGER
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            UPDATE execution 
+            SET latest=false
+            WHERE task_id=NEW.task_id
+            AND latest;
+            RETURN NEW;
+        END;
+        $$
+        """)
+
+trigger_latest_postgres = DDL("""
+CREATE TRIGGER is_latest BEFORE INSERT ON execution FOR EACH ROW EXECUTE PROCEDURE render_obsolete()
+""")
+
+event.listen(
+    Execution.__table__, 'after_create',
+    trigger_latest_sqlite.execute_if(dialect="sqlite")    
+)
+event.listen(
+    Execution.__table__, 'after_create',
+    func_latest_postgres.execute_if(dialect="postgresql")    
+)
+event.listen(
+    Execution.__table__, 'after_create',
+    trigger_latest_postgres.execute_if(dialect="postgresql")    
+)
 
 class Signal(db.Model):
     __tablename__ = "signal"
@@ -447,7 +488,8 @@ task = api.model('Task', {
 task_filter = api.model('TaskFilter', {
     'task_id': fields.List(fields.Integer(),required=False,decription='A list of ids to restrict listing'),
     'batch': fields.String(required=False, description="Filter with this batch"),
-    'status': fields.String(required=False, description="Filter with this status")
+    'status': fields.String(required=False, description="Filter with this status"),
+    'name': fields.String(required=False, description="Filter with this name"),
 })
 
 
@@ -586,9 +628,8 @@ class WorkerTaskList(Resource):
         return list(db.session.execute("""SELECT w.worker_id, e.status, count(e.task_id) as count 
             FROM worker w
             JOIN execution e ON (e.worker_id=w.worker_id)
-            JOIN task t ON e.task_id=t.task_id 
-                AND e.execution_id=
-                    (SELECT max(execution_id) FROM execution e2 WHERE e2.task_id=t.task_id)
+            JOIN task t ON (e.task_id=t.task_id 
+                AND e.latest)
             GROUP BY w.worker_id,e.status"""))
     
 
@@ -788,7 +829,8 @@ class ExecutionDAO(BaseDAO):
                               Execution.creation_date,
                               Execution.modification_date,
                               Execution.pid,
-                              Execution.output_files)
+                              Execution.output_files,
+                              Execution.latest)
 
         return list(q.order_by(sorting_column).all())
  
@@ -810,6 +852,7 @@ execution = api.model('Execution', {
     'error': fields.String(readonly=True, description='The standard error of the execution (if any)'),
     'output_files': fields.String(readonly=True, description='A list of output files transmitted (if any)'),
     'command': fields.String(required=False, description='The command that was really launched for this execution (it case Task.execution is modified)'),
+    'latest': fields.Boolean(readonly=True, description='Latest or current execution for the related task')
 })
 
 
@@ -874,7 +917,8 @@ ns = api.namespace('executions', description='EXECUTION operations')
 
 execution_filter = api.model('ExecutionFilter', {
     'task_id': fields.Integer(required=False,decription='A list of ids to restrict listing'),
-    'status': fields.String(required=False, description="Filter with this status")
+    'status': fields.String(required=False, description="Filter with this status"),
+    'latest': fields.Boolean(required=False, decription="Filter only for latest execution")
 })
 @ns.route('/')
 class ExecutionList(Resource):
@@ -1169,7 +1213,9 @@ def handle_get():
     elif json['object']=='tasks':
         order_by = json.get('order_by', None)
         filter_by = json.get('filter_by', None)
-        log.warning(f"sending task ordered by {order_by} filter by {filter_by}")
+        worker = json.get('worker', None)
+
+        log.warning(f"sending task ordered by {order_by} filtered by {filter_by} for worker {worker}")
 
 
         if order_by=='worker':
@@ -1179,14 +1225,21 @@ def handle_get():
         else:
             sort_clause='ORDER BY task.task_id DESC'
         
+        where_clauses = []
+
         if filter_by=='terminated':
-            where_clause = "WHERE execution.status IN ('succeeded','failed')"
-        elif filter_by=='all':
-            where_clause = ""
+            where_clauses.append("execution.status IN ('succeeded','failed')")
         elif filter_by:
-            where_clause = f"WHERE execution.status='{filter_by}'"
-        else:
-            where_clause = ""
+            where_clauses.append(f"execution.status='{filter_by}'")
+
+        if worker is not None:
+            try:
+                worker=int(worker)
+                where_clauses.append(f"execution.worker_id={worker}")
+            except:
+                log.error(f'task filtering with worker is not possible: {worker} is not a valid id')
+
+        where_clause = f'''WHERE {' AND '.join(where_clauses)}''' if where_clauses else ''
 
         if IS_SQLITE:
             trunc_output=f'SUBSTR(execution.output,-{UI_OUTPUT_TRUNC},{UI_OUTPUT_TRUNC})'
@@ -1212,11 +1265,11 @@ def handle_get():
         execution.worker_id,
         task.status
         FROM task 
-        LEFT JOIN execution ON (task.task_id=execution.task_id 
-            AND execution.creation_date=(SELECT MAX(creation_date) FROM execution AS e1 WHERE e1.task_id=task.task_id))
+        LEFT JOIN execution ON (task.task_id=execution.task_id AND latest)
         LEFT JOIN worker ON execution.worker_id=worker.worker_id 
         {where_clause}
         {sort_clause}
+        LIMIT {UI_MAX_DISPLAYED_ROW}
         '''
         )])
         
@@ -1245,9 +1298,7 @@ def handle_get():
         batch_query=f'''SELECT * FROM (
     SELECT batch,status,COUNT(task_id) as count,MAX(duration) as max,MIN(duration) as min, AVG(duration) as avg FROM (
         SELECT {duration_query} as duration, e1.task_id, e1.status,task.batch FROM execution e1 JOIN task ON (
-            task.task_id=e1.task_id AND e1.creation_date=(
-                SELECT MAX(creation_date) FROM execution WHERE execution.task_id=task.task_id
-            )
+            task.task_id=e1.task_id AND e1.latest
         )
     ) AS e2 GROUP BY batch,status
     UNION	 

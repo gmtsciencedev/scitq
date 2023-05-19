@@ -353,6 +353,7 @@ class Server:
         Optional args are optional attributes to filter list with:
         - task_id: int
         - status: str
+        - latest: boolean
         """
         return self.get(f'/executions/', **args)
     
@@ -435,6 +436,7 @@ class Server:
         - task_id: list(int)
         - status: str
         - batch: str
+        - name: str
         """
         return self.get(f'/tasks/', **args)
 
