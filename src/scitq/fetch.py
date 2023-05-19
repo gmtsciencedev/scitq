@@ -558,21 +558,34 @@ def fastq_run_get(source, destination):
     uri_match = FASTQ_RUN_REGEXP.match(source).groupdict()
     query_try = RETRY_TIME+1
     while query_try>0:
-        try:
-            run_query = requests.get(f"https://www.ebi.ac.uk/ena/portal/api/filereport?\
+        while query_try>0:
+            try:
+                run_query = requests.get(f"https://www.ebi.ac.uk/ena/portal/api/filereport?\
 accession={uri_match['run_accession']}&result=read_run&fields=fastq_md5,fastq_aspera,\
 fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
-        except requests.Timeout:
+            except requests.Timeout:
+                query_try -= 1
+                continue
+            break
+        else:
+            log.exception('EBI does not answer our query')
+            return fastq_sra_get(uri_match['run_accession'], destination)
+        if run_query.status_code==204:
+            log.exception('This does not seem to be available on EBI')
+            return fastq_sra_get(uri_match['run_accession'], destination)
+        runs = run_query.json()
+        if len(runs)==0:
+            # it seems the new API of EBI tends to answer empty responses
+            # hoping this will change in near future
             query_try -= 1
             continue
-        break
+        else:
+            run=runs[0]
+            break
     else:
         log.exception('EBI does not answer our query')
         return fastq_sra_get(uri_match['run_accession'], destination)
-    if run_query.status_code==204:
-        log.exception('This does not seem to be available on EBI')
-        return fastq_sra_get(uri_match['run_accession'], destination)
-    run = run_query.json()[0]
+        
 
 
 

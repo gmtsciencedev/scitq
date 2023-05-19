@@ -1671,18 +1671,25 @@ def background():
                             del(worker_process_queue[('create',job.target)])
                             session.query(Job).get(job_id).status='failed'
                     worker = Namespace(**job.args)
-                    if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
-                        log.warning(f'Launching destroy process for {job.target}, command is "{worker.idle_callback}"')
-                        worker_delete_process = Popen(
-                                worker.idle_callback,
-                                stdout = PIPE,
-                                stderr = PIPE,
-                                shell = True,
-                                encoding = 'utf-8'
-                            )
-                        job.status='running'
-                        worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process, job.job_id)
-                        log.warning(f'Worker {job.target} destruction process has been launched')
+                    host_exist_in_ansible = bool(json_module.loads(scitq_inventory(host=job.target)))
+                    if host_exist_in_ansible:
+                        if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
+                            log.warning(f'Launching destroy process for {job.target}, command is "{worker.idle_callback}"')
+                            worker_delete_process = Popen(
+                                    worker.idle_callback,
+                                    stdout = PIPE,
+                                    stderr = PIPE,
+                                    shell = True,
+                                    encoding = 'utf-8'
+                                )
+                            job.status='running'
+                            worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process, job.job_id)
+                            log.warning(f'Worker {job.target} destruction process has been launched')
+                    else:
+                        log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
+                        real_worker = session.query(Worker).get(worker.worker_id)
+                        if real_worker is not None:
+                            session.delete(real_worker)
                 
                 if job.action == 'worker_create':
                     change = True

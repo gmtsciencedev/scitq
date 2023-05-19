@@ -573,7 +573,7 @@ class Executor:
                                 latest_exception = job.exception()
                             else:
                                 log.warning(f'Transfer done for {obj}: {job.result()}')
-                                output_files.append(local_data)
+                                output_files.append(obj)
                     if transfer_failed:
                         log.error(f'Upload partially failed for task {self.task_id}')
                         if self.maximum_parallel_upload>1:
