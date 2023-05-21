@@ -602,7 +602,8 @@ class Executor:
         """Clean working directory (triggered if all went well)"""
         shutil.rmtree(self.workdir)
         del(self.working_dirs[self.execution_id])
-        subprocess.run(['docker','container','rm',self.container_id], check=True)
+        if self.container_id is not None:
+            subprocess.run(['docker','container','rm',self.container_id], check=True)
 
     async def run(self):
         """Launching part of Executor

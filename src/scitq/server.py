@@ -1689,7 +1689,9 @@ def background():
                         log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
                         real_worker = session.query(Worker).get(worker.worker_id)
                         if real_worker is not None:
+                            change = True
                             session.delete(real_worker)
+                            job.status='succeeded'
                 
                 if job.action == 'worker_create':
                     change = True
