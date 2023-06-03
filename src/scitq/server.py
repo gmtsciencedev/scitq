@@ -1073,7 +1073,6 @@ class BatchStop(Resource):
                 w.status = 'paused'
         args = batch_parser.parse_args()
         if args.get('signal',False):
-            log.warning(args['signal'])
             log.warning(f'Sending signal {args["signal"]} to executions for batch {name}')
             if name=='Default':
                 for e in db.session.scalars(select(Execution).join(Execution.task).where(
@@ -1106,7 +1105,6 @@ class BatchGo(Resource):
                 w.status = 'running'
         args = batch_parser.parse_args()
         if args.get('signal',False):
-            log.warning(args['signal'])
             log.warning(f'Sending signal {args["signal"]} to executions for batch {name}')
             if name=='Default':
                 for e in db.session.scalars(select(Execution).join(Execution.task).where(

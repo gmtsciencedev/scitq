@@ -392,9 +392,9 @@ class Executor:
         now = time()
         while True:
             try:
-                output.append(
-                    (await asyncio.wait_for(self.process.stdout.readline(), self.dynamic_read_timeout)).decode('utf-8')
-                )
+                line = (await asyncio.wait_for(self.process.stdout.readline(), self.dynamic_read_timeout)).decode('utf-8')
+                if line:
+                    output.append(line)
                 if time()-now>self.dynamic_read_timeout:
                     break
             except asyncio.TimeoutError:
@@ -403,21 +403,22 @@ class Executor:
                 error.append(f'During stdout collection this error occured: {traceback.format_exc()}\n' )
                 break
         
-        retry = 2
-        while retry > 0:
-            try:
-                self.s.execution_output_write(execution_id, ''.join(output))
-                break
-            except:
-                log.exception(f'Could not write output for {execution_id}:{output}')
-                retry -= 1                
+        if output:
+            retry = 2
+            while retry > 0:
+                try:
+                    self.s.execution_output_write(execution_id, ''.join(output))
+                    break
+                except:
+                    log.exception(f'Could not write output for {execution_id}:{output}')
+                    retry -= 1                
 
         now = time()
         while True:
             try:
-                error.append(
-                    (await asyncio.wait_for(self.process.stderr.readline(), self.dynamic_read_timeout)).decode('utf-8')
-                )
+                line = (await asyncio.wait_for(self.process.stderr.readline(), self.dynamic_read_timeout)).decode('utf-8')
+                if line:
+                    error.append(line)
                 if time()-now>self.dynamic_read_timeout:
                     break
             except asyncio.TimeoutError:
@@ -426,18 +427,19 @@ class Executor:
                 error.append(f'During stderr collection this error occured: {traceback.format_exc()}\n' )
                 break
         
-        retry = 2
-        while retry > 0:
-            try:
-                joint_error=''.join(error)
-                if joint_error.startswith('You cannot attach to a stopped container'):
-                    log.warning('It seems our container failed to attach')
-                    self.docker_attach_failed=True
-                self.s.execution_error_write(execution_id,joint_error)
-                break
-            except:
-                log.exception(f'Could not write error for {execution_id}:{error}')
-                retry -= 1
+        if error:
+            retry = 2
+            while retry > 0:
+                try:
+                    joint_error=''.join(error)
+                    if joint_error.startswith('You cannot attach to a stopped container'):
+                        log.warning('It seems our container failed to attach')
+                        self.docker_attach_failed=True
+                    self.s.execution_error_write(execution_id,joint_error)
+                    break
+                except:
+                    log.exception(f'Could not write error for {execution_id}:{error}')
+                    retry -= 1
 
         qsize = self.s.queue_size()
         if qsize > QUEUE_SIZE_THRESHOLD:
@@ -491,7 +493,7 @@ class Executor:
                         try:
                             log.warning(f'Downloading resource {data}...')
                             get(data, self.resource_dir)
-                            log.warning(repr(data_info.modification_date))
+                            log.warning(f'Modification date is {repr(data_info.modification_date)}')
                             self.resources_db[data]={'status':'loaded',
                                             'date':data_info.modification_date,
                                             'size':data_info.size}
