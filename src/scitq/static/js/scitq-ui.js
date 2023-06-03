@@ -94,12 +94,27 @@ function DeleteWorker(worker_id){
     $.ajax({url: '/ui/delete_worker', data: {worker_id:worker_id} });
     console.log(('Deleting worker'));
 }
-//send an order to server to delete in db the worker
+
+//send an order to server to delete the job job_id
 function DeleteJob(job_id){
-    //socket.emit('delete_job',{job_id:job_id});
     $.ajax({url: '/ui/delete_job', data: {job_id:job_id} })
     console.log(('Deleting job'));
 }
+
+//send an order to server to delete all jobs (succeeded then failed then pending)
+function DeleteJobs(){
+    $.ajax({url: '/ui/delete_jobs' })
+    console.log(('Deleting jobs'));
+}
+
+//send an order to server to restart the job job_id
+function RestartJob(job_id){
+    $.ajax({url: '/ui/restart_job', data: {job_id:job_id} })
+    console.log(('Restarting job'));
+}
+
+
+
 //Function that open a text area in order to modify the batch and send the modification when the key "enter" triggers
 function ChangeBatch(id_worker,i){
     document.getElementById('batch-name-'+id_worker).innerHTML='<input class="col-9" id=batch-name-input-'+id_worker+' value="'+(workers[i][2]==null?'':workers[i][2])+'"><a type="button" class="btn btn-outline-dark border-0" style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" onclick="HideChangeBatch(\''+id_worker+'\','+i+')">X</a>';
@@ -148,16 +163,23 @@ async function get_jobs() {
         } ;
         if (data.jobs.length>0) {
             table = '<table class="table table-responsive text-center table-hover table-striped">\n' +
-                '<thead class=" table-secondary"><tr><th>Job</th> <th>Target</th> <th>Status</th> <th style="width: 40em;">Details</th> <th>Action</th> </tr> </thead>\n'+
+                '<thead class=" table-secondary"><tr><th>Job</th> <th>Target</th> <th>Status</th> <th style="width: 40em;">Details</th> <th>Action  <button type="button" title="delete"' +
+                ' onclick="DeleteJobs()" class="btn btn-outline-dark btn-sm">' + 
+                svg_trash + '</button> </th> </tr> </thead>\n'+
                 '<tbody>\n';
             data.jobs.forEach(function(job){
 
                 var action = '';
-                if (job.status=='succeeded' || job.status=='failed') {
+                if (['succeeded','failed','pending'].includes(job.status)) {
                     action = '<button type="button" title="delete" onclick="DeleteJob('+
                             job.job_id+
                             ')" class="btn btn-outline-dark btn-sm">' + svg_trash
                             +'</button>';
+                }
+
+                if (job.status=='failed') {
+                    action += `<button type="button" title="delete" onclick="RestartJob(${job.job_id})"
+                        class="btn btn-outline-dark btn-sm">${svg_restart}</button>`
                 }
 
                 if (job.log.length>60) {

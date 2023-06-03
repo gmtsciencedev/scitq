@@ -1521,7 +1521,6 @@ def handle_jobs():
     """Provide UI with job list"""
     return jsonify(jobs = [to_dict(job) for job in db.session.query(Job).order_by(Job.job_id.desc()).all()])
 
-#@socketio.on('delete_job') #Delete a worker.
 @app.route('/ui/delete_job')
 def delete_job():
     """Delete a job in db"""
@@ -1529,6 +1528,41 @@ def delete_job():
     job = db.session.query(Job).get(json['job_id'])
     if job:
         db.session.delete(job)
+        db.session.commit()
+    else:
+        log.warning(f"Job {json['job_id']} already deleted")
+    return '"ok"'
+
+@app.route('/ui/delete_jobs')
+def delete_jobs():
+    """Delete terminated jobs"""
+    if db.session.execute(
+            select(func.count()).select_from(Job).where(Job.status=='succeeded')
+            ).scalar_one()>0:
+        log.warning('Here')
+        db.session.execute(delete(Job).where(Job.status=='succeeded'))
+    elif db.session.execute(
+            select(func.count()).select_from(Job).where(Job.status=='failed')
+            ).scalar_one()>0:
+        log.warning('There')
+        db.session.execute(delete(Job).where(Job.status=='failed'))
+    elif db.session.execute(
+            select(func.count()).select_from(Job).where(Job.status=='pending')
+            ).scalar_one()>0:
+        db.session.execute(delete(Job).where(Job.status=='pending'))
+    else:
+        return '"nothing to do"'
+    db.session.commit()
+    return '"ok"'
+
+@app.route('/ui/restart_job')
+def restart_job():
+    """Restart a job in db"""
+    json = request.args
+    job = db.session.query(Job).get(json['job_id'])
+    if job:
+        job.status = 'pending'
+        job.retry = 0
         db.session.commit()
     else:
         log.warning(f"Job {json['job_id']} already deleted")
@@ -1774,6 +1808,12 @@ def background():
                             if action=='create':
                                 worker = session.query(Worker).get(job.args['worker_id'])
                                 worker.status = 'failed'
+
+            for job in list(session.query(Job).filter(Job.status == 'running')):
+                if (job.action, job.target) not in worker_process_queue:
+                    job.status='failed'
+                    change = True
+
             if change:
                 session.commit()
                 
