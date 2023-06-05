@@ -1810,7 +1810,14 @@ def background():
                                 worker.status = 'failed'
 
             for job in list(session.query(Job).filter(Job.status == 'running')):
-                if (job.action, job.target) not in worker_process_queue:
+                if job.action=='worker_deploy':
+                    action='create'
+                elif job.action=='worker_destroy':
+                    action='destroy'
+                else:
+                    action=job.action
+                if (action, job.target) not in worker_process_queue:
+                    log.warning(f'Job {(job.action, job.target)} seems to have failed, not in {worker_process_queue}')
                     job.status='failed'
                     change = True
 

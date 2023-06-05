@@ -16,7 +16,8 @@ import argparse
 import datetime
 import pytz
 import io
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, BlobBlock
+import uuid
 import azure.core.exceptions
 from .constants import DEFAULT_WORKER_CONF
 import dotenv
@@ -42,8 +43,9 @@ FTP_DIR_NAME_POSITION = 8
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
 MAX_PARALLEL_AZURE = 5
+AZURE_CHUNK_SIZE = 50*1024**2
 
-MAX_PARALLEL_SYNC = 5
+MAX_PARALLEL_SYNC = 10
 
 class FetchError(Exception):
     pass
@@ -333,7 +335,20 @@ class AzureClient:
         blob_client = self.client.get_blob_client(container=uri_match['container'],
                                                 blob=uri_match['path'])
         with open(file=source, mode="rb") as data:
-            blob_client.upload_blob(data, overwrite=True)
+            if os.path.getsize(source)>=AZURE_CHUNK_SIZE:
+                if blob_client.exists():
+                    blob_client.delete_blob()
+                block_list=[]
+                while True:
+                    read_data = data.read(AZURE_CHUNK_SIZE)
+                    if not read_data:
+                        break # done
+                    blk_id = str(uuid.uuid4())
+                    blob_client.stage_block(block_id=blk_id,data=read_data) 
+                    block_list.append(BlobBlock(block_id=blk_id))
+                blob_client.commit_block_list(block_list)
+            else:
+                blob_client.upload_blob(data, overwrite=True)
 
     def info(self,uri):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
@@ -923,7 +938,7 @@ def list_content(uri):
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
 
-def sync(uri1, uri2, include=None):
+def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC):
     """Sync two URI, one must be local
     Identity of the files is assessed only with name and size
     """
@@ -966,7 +981,7 @@ def sync(uri1, uri2, include=None):
         dest_uri=remote
 
     jobs = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_SYNC) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=process) as executor:
         for item_name, item in source_list.items():
             if item_name not in dest_list or \
                     dest_list[item_name].size!=item.size:
@@ -1032,6 +1047,8 @@ def main():
 Takes a command with one or two URI (generalised URL, including file://... and s3://... or ftp://...) 
 one of them must be a file URI (starts with file://... or be a simple path)''')
     parser.add_argument('-v','--verbose',action='store_true',help='Turn log level to info')
+    parser.add_argument('-p','--process',type=int,default=MAX_PARALLEL_SYNC,
+                        help=f'Number of parallel process (default to {MAX_PARALLEL_SYNC})')
     subparser=parser.add_subparsers(help='sub-command help',dest='command')
 
     get_parser = subparser.add_parser('copy', help='Copy some file or folder to some folder (one of them must be local)')
@@ -1051,6 +1068,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
                         help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
     sync_parser.add_argument('--include',action='append',type=str,
                         help="A pattern that should be included (only those will be synced) (can be specified several times)")
+    
 
     delete_parser = subparser.add_parser('delete', help='Delete some file or folder expressed as a URI')
     delete_parser.add_argument('uri', type=str, help='the uri (can be a local file or a remote URI)')
@@ -1101,7 +1119,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             tablefmt='plain'
         ))
     elif args.command=='sync':
-        sync(args.source_uri, args.destination_uri, include=args.include)
+        sync(args.source_uri, args.destination_uri, include=args.include, process=args.process)
     elif args.command=='delete':
         recursive_delete(args.uri, include=args.include, dryrun=args.dryrun)
 
