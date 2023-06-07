@@ -10,7 +10,7 @@ import requests
 import glob
 import hashlib
 import subprocess
-from .util import PropagatingThread, xboto3
+from .util import PropagatingThread, xboto3, if_is_not_None
 import concurrent.futures
 import argparse
 import datetime
@@ -220,12 +220,33 @@ def s3_info(uri):
     except StopIteration:
         raise FetchError(f'{uri} was not found')
 
-def s3_list(uri):
-    """List content of an s3 folder in the form s3://bucket/path"""
+def s3_list(uri, no_rec = False):
+    """List content of an s3 folder in the form s3://bucket/path
+    if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
     log.info(f'S3 getting listing for {uri}')
     uri_match = S3_REGEXP.match(uri).groupdict()
-    bucket=get_s3().Bucket(uri_match['bucket'])
-    return [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
+    if no_rec:
+        s3_client=xboto3().client('s3')
+        bucket_name=uri_match['bucket']
+        query = s3_client.list_objects_v2(
+                Bucket=bucket_name,
+                Delimiter='/',
+                Prefix=uri_match['path'])
+        return [argparse.Namespace(name=f's3://{bucket_name}/{prefix["Prefix"]}',
+                                   rel_name=os.path.relpath(prefix['Prefix'], uri_match['path'])+'/',
+                                   size=0,
+                                   creation_date=None,
+                                   modification_date=None) for prefix in query['CommonPrefixes']
+                ] if 'CommonPrefixes' in query else [] + [
+                argparse.Namespace(name=f's3://{bucket_name}/{object["Key"]}',
+                            rel_name=os.path.relpath(object['Key'], uri_match['path']),
+                            size=object['Size'], 
+                            creation_date=object['LastModified'],
+                            modification_date=object['LastModified'])
+                for object in query['Contents']] if 'Contents' in query else []
+    else:
+        bucket=get_s3().Bucket(uri_match['bucket'])
+        return [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
                                 rel_name=os.path.relpath(object.key, uri_match['path']),
                                 size=object.size, 
                                 creation_date=object.last_modified,
@@ -363,12 +384,21 @@ class AzureClient:
         except StopIteration:
             raise FetchError(f'{uri} was not found')
 
-    def list(self,uri):
-        """List the content of an azure storage folder  azure://container/path"""
+    def list(self,uri, no_rec=False):
+        """List the content of an azure storage folder  azure://container/path
+        if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
         log.info(f'Azure getting listing for {uri}')
         uri_match = AZURE_REGEXP.match(uri).groupdict()
         container=self.client.get_container_client(uri_match['container'])
-        return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
+        if no_rec:
+            return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
+                                    rel_name=os.path.relpath(object.name, uri_match['path']),
+                                    size=object.get('size',0), 
+                                    creation_date=object.get('creation_time',None),
+                                    modification_date=object.get('last_modified',None))
+                    for object in container.walk_blobs(name_starts_with=uri_match['path'],delimiter='/')]
+        else:
+            return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
                                     rel_name=os.path.relpath(object.name, uri_match['path']),
                                     size=object.size, 
                                     creation_date=object.creation_time,
@@ -444,8 +474,9 @@ def ftp_info(uri):
         else:
             raise FetchError(f'{uri} was not found')
 
-def ftp_list(uri):
-    """list recursively the content of a FTP folder"""
+def ftp_list(uri, no_rec=False):
+    """list recursively the content of a FTP folder
+    not recursively if no_rec is True"""
     log.info(f'FTP get info for {uri}')
     uri_match = FTP_REGEXP.match(uri).groupdict()
     answer = []
@@ -460,10 +491,36 @@ def ftp_list(uri):
             obj = item.split()
             is_dir=item[0]=='d'
             if is_dir:
-                dir_name = obj[FTP_DIR_NAME_POSITION]
-                for item in ftp_list(os.path.join(uri, dir_name)):
-                    item.rel_name = f"{dir_name}/{item.rel_name}"
-                    answer.append(item)
+                if no_rec:
+                    try:
+                        obj_date = datetime.datetime.strptime(
+                            ' '.join( (obj[FTP_DIR_MONTH_POSITION],
+                                    obj[FTP_DIR_DAY_POSITION],
+                                    obj[FTP_DIR_YEAR_POSITION])
+                                ),
+                            '%b %d %Y').replace(tzinfo=pytz.utc)
+                    except ValueError:
+                        try:
+                            obj_date = datetime.datetime.strptime(
+                                ' '.join( (obj[FTP_DIR_MONTH_POSITION],
+                                        obj[FTP_DIR_DAY_POSITION],
+                                        str(datetime.datetime.now().year))
+                                    ),
+                                '%b %d %Y').replace(tzinfo=pytz.utc)
+                        except ValueError:
+                            obj_date = None
+                    answer.append(argparse.Namespace(
+                        name=f"ftp://{uri_match['host']}/{os.path.join(uri_match['path'],obj[FTP_DIR_NAME_POSITION]+'/')}",
+                        rel_name=obj[FTP_DIR_NAME_POSITION]+'/',
+                        size=0,
+                        creation_date = obj_date,
+                        modification_date=obj_date
+                    ))
+                else:
+                    dir_name = obj[FTP_DIR_NAME_POSITION]
+                    for item in ftp_list(os.path.join(uri, dir_name)):
+                        item.rel_name = f"{dir_name}/{item.rel_name}"
+                        answer.append(item)
             else:
                 obj_date = datetime.datetime.strptime(
                     ' '.join( (obj[FTP_DIR_MONTH_POSITION],
@@ -741,22 +798,36 @@ def file_info(uri):
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
 
-def file_list(uri):
-    """List recursively the content of a local folder expressed as file://... """
+def file_list(uri, no_rec=False):
+    """List recursively the content of a local folder expressed as file://... 
+    Not recursively if no_rec is True"""
     log.info(f'FILE getting info for {uri}')
     uri_match = FILE_REGEXP.match(uri).groupdict()
     if uri_match:
         answer = []
         complete_path = uri_match['path']
-        for dir_path,folders,files in os.walk(complete_path):
-            for file in files:
-                complete_file = os.path.join(dir_path,file)
+        if no_rec:
+            for file in os.listdir(complete_path):
+                complete_file = os.path.join(complete_path,file)
+                if os.path.isdir(complete_file):
+                    file+='/'
+                    complete_file+='/'
                 stat = os.stat(complete_file)
                 answer.append(argparse.Namespace(name=f'file://{complete_file}',
-                                  rel_name=os.path.relpath(complete_file,complete_path),
-                                  size=stat.st_size, 
-                                  creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
-                                  modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc)))
+                                rel_name=file,
+                                size=stat.st_size, 
+                                creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
+                                modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc)))
+        else:
+            for dir_path,_,files in os.walk(complete_path):
+                for file in files:
+                    complete_file = os.path.join(dir_path,file)
+                    stat = os.stat(complete_file)
+                    answer.append(argparse.Namespace(name=f'file://{complete_file}',
+                                    rel_name=os.path.relpath(complete_file,complete_path),
+                                    size=stat.st_size, 
+                                    creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
+                                    modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc)))
         return answer
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
@@ -913,9 +984,10 @@ def info(uri):
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
-def list_content(uri):
+def list_content(uri, no_rec=False):
     """Return the recursive listing of folder specified as a URI
     each item of the list should contains at least name (complete URI), rel_name (the name of the object relative to the provided uri), creation_date, modification_date and size
+    if no_rec is True, then the listing is non recursive -> MEANS SOME "FOLDERS" WILL APPEAR IN LISTING, eventually with None attribute (in dates)
     WARNING: with s3 or ftp URI, creation_date and modification_date are the same.
     WARNING: this does not respect the pseudo-relativeness of s3/azure which is relative to the bucket/container, here the relativeness is to the folder URI"""
     m = GENERIC_REGEXP.match(uri)
@@ -923,13 +995,13 @@ def list_content(uri):
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
         if m['proto']=='s3':
-            return s3_list(source)
+            return s3_list(source, no_rec=no_rec)
         elif m['proto']=='azure':
-            return AzureClient().list(source) 
+            return AzureClient().list(source, no_rec=no_rec) 
         elif m['proto']=='ftp':
-            return ftp_list(source)
+            return ftp_list(source, no_rec=no_rec)
         elif m['proto']=='file':
-            return file_list(source) 
+            return file_list(source, no_rec=no_rec) 
         #elif m['proto']=='fasp':
         #    fasp_get(source, destination)
         #elif m['proto']=='run+fastq':
@@ -1057,9 +1129,11 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
                         help='the destination uri (same as above, default to ., means download locally)', default=os.getcwd())
     
     list_parser = subparser.add_parser('list', help='List the content of a remote folder (outputs some absolute URI)')
+    list_parser.add_argument('--not-recursive', action="store_true", help="Do not be recursive")
     list_parser.add_argument('uri', type=str, help='the remote folder uri')
     
     rlist_parser = subparser.add_parser('rlist', help='List the content of a remote folder (outputs some relative path to the URI)')
+    rlist_parser.add_argument('--not-recursive', action="store_true", help="Do not be recursive")
     rlist_parser.add_argument('uri', type=str, help='the remote folder uri')
 
     sync_parser = subparser.add_parser('sync', help='Sync some file or folder to some folder (one of them must be local) (identity is checked using name and size)')
@@ -1102,7 +1176,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             uri=args.uri
         headers=['name','creation_date','modification_date','size']
         print(tabulate(
-            [[ getattr(item,attribute) for attribute in headers  ] for item in list_content(uri)],
+            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri, no_rec=args.not_recursive)],
             headers=headers,
             tablefmt='plain'
         ))
@@ -1114,7 +1188,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             uri=args.uri
         headers=['rel_name','creation_date','modification_date','size']
         print(tabulate(
-            [[ getattr(item,attribute) for attribute in headers  ] for item in list_content(uri)],
+            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri, no_rec=args.not_recursive)],
             headers=headers,
             tablefmt='plain'
         ))

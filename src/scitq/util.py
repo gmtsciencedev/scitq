@@ -144,3 +144,7 @@ def tryupdate(mydict, key, f, *args, alternative=None, **kwargs):
 def isfifo(filepath):
     """Return True if file is a fifo"""
     return stat.S_ISFIFO(os.stat(filepath).st_mode)
+
+def if_is_not_None(x, default):
+    """A small helper function that replace None with a default value"""
+    return x if x is not None else default
