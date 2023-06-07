@@ -392,7 +392,7 @@ class AzureClient:
         container=self.client.get_container_client(uri_match['container'])
         if no_rec:
             return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
-                                    rel_name=os.path.relpath(object.name, uri_match['path']),
+                                    rel_name=os.path.relpath(object.name, uri_match['path'])+('/' if object.name.endswith('/') else ''),
                                     size=object.get('size',0), 
                                     creation_date=object.get('creation_time',None),
                                     modification_date=object.get('last_modified',None))
