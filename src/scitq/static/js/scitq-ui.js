@@ -54,7 +54,8 @@ async function get_workers() {
                 }    
 
             worker_table += '<tr class="" ><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch="">'+workers[i].name
-                    +'</a></td><td class="" id="batch-name-'+workers[i].worker_id+'" style="padding:0"><a target="_blank" href="/ui/task/?sortby=&worker=&batch='+(workers[i].batch==null?'':workers[i].batch).replace(' ','+')+'" type="button" class="btn btn-outline-dark border-0">'+(workers[i].batch==null?'':workers[i].batch)+'</a><button type="button" onclick="ChangeBatch(\''+workers[i].worker_id+'\','+i+'); pause()" class="btn btn-sm" style="margin-top:0.5em;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>'
+                    +'</a></td><td class="" id="batch-name-'+workers[i].worker_id+'" style="padding:0"><a target="_blank" href="/ui/task/?sortby=&worker=&batch='+(workers[i].batch==null?'':workers[i].batch).replace(' ','+')+'" type="button" class="btn btn-outline-dark border-0">'+(workers[i].batch==null?'':workers[i].batch)+'</a><button type="button" onclick="ChangeBatch(\''+workers[i].worker_id+'\','+i+'); pause()" class="btn btn-sm" style="margin-top:0.5em;">'
+                    +svg_edit+'</button>'
                     +'</td><td class="text-center text-'+worker_status+'" title ="'+workers[i].status+'"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg>'
                     +'</td><td>'+workers[i].concurrency
                         +'<div class ="btn-group"><button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change('
@@ -117,7 +118,11 @@ function RestartJob(job_id){
 
 //Function that open a text area in order to modify the batch and send the modification when the key "enter" triggers
 function ChangeBatch(id_worker,i){
-    document.getElementById('batch-name-'+id_worker).innerHTML='<input class="col-9" id=batch-name-input-'+id_worker+' value="'+(workers[i][2]==null?'':workers[i][2])+'"><a type="button" class="btn btn-outline-dark border-0" style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" onclick="HideChangeBatch(\''+id_worker+'\','+i+')">X</a>';
+    document.getElementById('batch-name-'+id_worker).innerHTML=`<input class="col-9" id=batch-name-input-${id_worker} 
+                                value="${workers[i].batch==null?'':workers[i].batch}" autofocus>
+                            <a type="button" class="btn btn-outline-dark border-0" 
+                                style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" 
+                                onclick="HideChangeBatch('${id_worker}',${i})">X</a>`;
     document.getElementById('batch-name-input-'+id_worker).addEventListener("keypress",function(event){
         if (event.key==='Enter'){
             event.preventDefault();
@@ -131,7 +136,12 @@ function ChangeBatch(id_worker,i){
     })
 }
 function HideChangeBatch(id_worker,i){
-    document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">'+(workers[i][2]==null?'':workers[i][2])+'</a><button type="button" onclick="ChangeBatch(\''+workers[i][0]+'\','+i+'); pause()" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/></button>';
+    document.getElementById('batch-name-'+id_worker).innerHTML=`<a type="button" class="btn btn-outline-dark border-0">
+            ${workers[i].batch==null?'':workers[i].batch}</a>
+            <button type="button" onclick="pause(); ChangeBatch('${id_worker}',${i})" 
+            class="btn btn-sm">
+            ${svg_edit}
+            </button>`;
     //pause=false;
     unpause();
 }
