@@ -256,9 +256,16 @@ function ChangeBatch(id_worker,i){
         if (event.key==='Enter'){
             event.preventDefault();
             //socket.emit('change_batch',{batch_name : document.getElementById('batch-name-input-'+id_worker).value,worker_id:id_worker});
+            new_batch = document.getElementById('batch-name-input-'+id_worker).value;
             $.ajax({url: '/ui/change_batch', 
-                data: {batch_name : document.getElementById('batch-name-input-'+id_worker).value,worker_id:id_worker} });
-            document.getElementById('batch-name-'+id_worker).innerHTML='<a type="button" class="btn btn-outline-dark border-0">Loading..</a>';
+                data: {batch_name : new_batch,worker_id:id_worker} });
+            document.getElementById('batch-name-'+id_worker).innerHTML=`<a target="_blank" href="/ui/task/?sortby=&worker=&batch=${(workers[i].batch==null?'':workers[i].batch).replace(' ','+')}" 
+            type="button" class="btn btn-outline-dark border-0">
+        ${(new_batch==null?'':new_batch)}
+    </a>
+    <button type="button" onclick="ChangeBatch('${id_worker}','${i}'); pause()" class="btn btn-sm" style="margin-top:0.5em;">
+        ${svg_edit}
+    </button>`;
             //pause=false;
             unpause();
         }
