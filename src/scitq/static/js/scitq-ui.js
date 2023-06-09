@@ -82,10 +82,12 @@ async function get_workers() {
                 ${workers[i].concurrency}
             </div>
             <div class ="btn-group" style="float: left">
-                <button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change(${workers[i].worker_id},1,${i})">
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change(${workers[i].worker_id},1,${i})"
+                        style="width: 21px;height: 23px;padding: 0px 3px 0px 3px;">
                     +
                 </button>
-                <button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change(${workers[i].worker_id},-1,${i})">
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change(${workers[i].worker_id},-1,${i})"
+                        style="width: 21px;height: 23px;padding: 0px 3px 0px 3px;">
                     -
                 </button>
             </div>
@@ -95,10 +97,12 @@ async function get_workers() {
                 ${workers[i].prefetch}
             </div>
             <div class ="btn-group" style="float: left">
-                <button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change(${workers[i].worker_id},1,${i})">
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change(${workers[i].worker_id},1,${i})" 
+                        style="width: 21px;height: 23px;padding: 0px 3px 0px 3px;">
                     +
                 </button>
-                <button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change(${workers[i].worker_id},-1,${i})">
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change(${workers[i].worker_id},-1,${i})"
+                        style="width: 21px;height: 23px;padding: 0px 3px 0px 3px;">
                     -
                 </button>
             </div>
