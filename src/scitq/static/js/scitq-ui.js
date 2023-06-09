@@ -25,7 +25,14 @@ function add_worker(concurrency, prefetch, flavor, region, provider, batch, numb
     $.ajax({url: '/ui/create_worker', data:{concurrency: concurrency, prefetch: prefetch, 
         flavor: flavor, region: region, provider: provider, batch:batch, number: number} });
 }
-
+function worker_status2class(status) {
+    return {
+        'failed':'danger',
+        'paused':'warning',
+        'offline':'secondary',
+        'running':'primary',
+        }[status]||'dark'; 
+}
 
 async function get_workers() {
     console.log('Fetching workers...');
@@ -48,21 +55,7 @@ async function get_workers() {
         
         worker_table = '';
         for (i=0; i<workers.length; i++) {
-            switch(workers[i].status){
-                case 'failed':
-                    var worker_status = 'danger';
-                    break;
-                case 'paused':
-                    var worker_status = 'warning';
-                    break;
-                case 'offline':
-                    var worker_status = 'secondary';
-                    break;
-                case 'running':
-                    var worker_status = 'primary';
-                    break;
-                }    
-
+            
             worker_table += `
     <tr class="" >
         <td>
@@ -79,7 +72,7 @@ async function get_workers() {
                 ${svg_edit}
             </button>
         </td>
-        <td class="text-center text-${worker_status}" title ="${workers[i].status}">
+        <td class="text-center text-${worker_status2class(workers[i].status)}" title="${workers[i].status}" id="worker-status-${workers[i].worker_id}">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-circle-fill " viewBox="0 0 16 16">
                 <circle cx="8" cy="8" r="8"/>
             </svg>
@@ -161,6 +154,10 @@ async function get_workers() {
             '<td>-</td><td>-</td><td>-</td><td>-</td>')
         }
         <td>
+            <button type="button" title="${workers[i].status!='paused'?'pause':'resume'}" onclick="PauseUnpauseWorker(${workers[i].worker_id},${i})" 
+                    class="btn btn-outline-dark btn-sm" id="pause-${workers[i].worker_id}">
+                ${workers[i].status!='paused'?svg_pause:svg_resume}
+            </button>
             <button type="button" title="delete" onclick="DeleteWorker(${workers[i].worker_id})" 
                     class="btn btn-outline-dark btn-sm">
                 ${svg_trash}
@@ -180,6 +177,28 @@ function DeleteWorker(worker_id){
     //socket.emit('delete_worker',{worker_id:worker_id});
     $.ajax({url: '/ui/delete_worker', data: {worker_id:worker_id} });
     console.log(('Deleting worker'));
+}
+
+function PauseUnpauseWorker(worker_id,i){
+    if (workers[i].status!='paused') {
+        workers[i].status='paused';
+        button_element = document.getElementById(`pause-${worker_id}`);
+        button_element.innerHTML=svg_resume;
+        button_element.title='resume';
+    }
+    else {
+        workers[i].status='running';
+        button_element = document.getElementById(`pause-${worker_id}`);
+        button_element.innerHTML=svg_pause;
+        button_element.title='pause'
+    }
+
+    status_element = document.getElementById(`worker-status-${worker_id}`);
+    status_element.className=`text-center text-${worker_status2class(workers[i].status)}`;
+    status_element.title=workers[i].status;
+    
+    $.ajax({url: '/ui/pause_unpause_worker', data: {id:worker_id,status:workers[i].status} });
+    console.log(`Setting worker to ${workers[i].status}`);
 }
 
 //send an order to server to delete the job job_id

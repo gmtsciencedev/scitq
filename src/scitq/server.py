@@ -1352,6 +1352,16 @@ def handle_prefetch_change():
     db.session.commit()
     return '"ok"'
 
+@app.route('/ui/pause_unpause_worker')
+def handle_pause_unpause_worker():
+    log.info('here')
+    json = request.args
+    worker_id = json['id']
+    status = json['status']
+    Worker.query.filter(Worker.worker_id==worker_id).update({Worker.status:status})
+    log.warning(f'changing status for worker {worker_id}: {status}')
+    db.session.commit()
+    return '"ok"'
 
 #@socketio.on('create_worker')
 @app.route('/ui/create_worker')
