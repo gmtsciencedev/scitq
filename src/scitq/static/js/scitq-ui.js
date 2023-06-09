@@ -1,11 +1,21 @@
 
-function worker_concurrency_change(worker_id, change) {
+function worker_concurrency_change(worker_id, change,i) {
     //socket.emit('concurrency_change', {object: 'worker', id: worker_id, change:change})
     $.ajax({url: '/ui/concurrency_change', data: {object: 'worker', id: worker_id, change:change} });
+    workers[i].concurrency += change;
+    if (workers[i].concurrency<0) {
+        workers[i].concurrency=0;
+    }
+    document.getElementById(`concurrency-${worker_id}`).innerHTML=workers[i].concurrency;
 }
-function worker_prefetch_change(worker_id, change) {
+function worker_prefetch_change(worker_id, change,i) {
     //socket.emit('prefetch_change', {object: 'worker', id: worker_id, change:change})
     $.ajax({url: '/ui/prefetch_change', data: {object: 'worker', id: worker_id, change:change} });
+    workers[i].prefetch += change;
+    if (workers[i].prefetch<0) {
+        workers[i].prefetch=0;
+    }
+    document.getElementById(`prefetch-${worker_id}`).innerHTML=workers[i].prefetch;
 }
 function add_worker(concurrency, prefetch, flavor, region, provider, batch, number) {
     console.log('Launching new workers: concurrency:',concurrency,
@@ -53,34 +63,110 @@ async function get_workers() {
                     break;
                 }    
 
-            worker_table += '<tr class="" ><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch="">'+workers[i].name
-                    +'</a></td><td class="" id="batch-name-'+workers[i].worker_id+'" style="padding:0"><a target="_blank" href="/ui/task/?sortby=&worker=&batch='+(workers[i].batch==null?'':workers[i].batch).replace(' ','+')+'" type="button" class="btn btn-outline-dark border-0">'+(workers[i].batch==null?'':workers[i].batch)+'</a><button type="button" onclick="ChangeBatch(\''+workers[i].worker_id+'\','+i+'); pause()" class="btn btn-sm" style="margin-top:0.5em;">'
-                    +svg_edit+'</button>'
-                    +'</td><td class="text-center text-'+worker_status+'" title ="'+workers[i].status+'"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg>'
-                    +'</td><td>'+workers[i].concurrency
-                        +'<div class ="btn-group"><button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change('
-                        +workers[i].worker_id
-                        +',1)">+</button><button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change('
-                        +workers[i].worker_id
-                        +',-1)"">-</button></div>'
-                    +'</td><td>'+workers[i].prefetch
-                        +'<div class ="btn-group"><button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change('
-                        +workers[i].worker_id
-                        +',1)">+</button><button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change('
-                        +workers[i].worker_id
-                        +',-1)"">-</button></div>'
-                    +'</td><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch=&show=accepted">'+workers[i].accepted
-                    +'</a></td><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch=&show=running">'+workers[i].running
-                    +'</a></td><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch=&show=succeeded">'+workers[i].succeeded
-                    +'</a></td><td><a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker='+workers[i].worker_id+'&batch=&show=failed">'+workers[i].failed
-                    +'</a></td><td>'+(workers[i].load==null?'':workers[i].load)
-                    +'</td><td>'+(workers[i].memory==null?'':workers[i].memory)+'</td>'
-                    +(workers[i].stats!=undefined && typeof(workers[i].stats)=='object'?('<td>'+(workers[i].stats.load)
-                        +'</td><td><table><tr><td style="white-space: nowrap;">'+(workers[i].stats.disk.usage.join('</td></tr><tr><td>').replaceAll(':','</td><td width="99">'))
-                        +'</td></tr></table></td><td>'+(workers[i].stats.disk.speed+'<br/>'+workers[i].stats.disk.counter)
-                        +'</td><td>'+(workers[i].stats.network.speed+'<br/>'+workers[i].stats.network.counter)):'<td>-</td><td>-</td><td>-</td><td>-</td>')
-                    +'<td><button type="button" title="delete" onclick="DeleteWorker('+workers[i].worker_id+')" class="btn btn-outline-dark btn-sm"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash3-fill" viewBox="0 0 16 16"><path d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5Zm-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5ZM4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06Zm6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528ZM8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5Z"/></svg></button>'
-                    +'</td></tr>\n';
+            worker_table += `
+    <tr class="" >
+        <td>
+            <a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch="">
+                ${workers[i].name}
+            </a>
+        </td>
+        <td class="" id="batch-name-${workers[i].worker_id}" style="padding:0">
+            <a target="_blank" href="/ui/task/?sortby=&worker=&batch=${(workers[i].batch==null?'':workers[i].batch).replace(' ','+')}" 
+                    type="button" class="btn btn-outline-dark border-0">
+                ${(workers[i].batch==null?'':workers[i].batch)}
+            </a>
+            <button type="button" onclick="ChangeBatch('${workers[i].worker_id}','${i}'); pause()" class="btn btn-sm" style="margin-top:0.5em;">
+                ${svg_edit}
+            </button>
+        </td>
+        <td class="text-center text-${worker_status}" title ="${workers[i].status}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-circle-fill " viewBox="0 0 16 16">
+                <circle cx="8" cy="8" r="8"/>
+            </svg>
+        </td>
+        <td>
+            <div id="concurrency-${workers[i].worker_id}" style="float: left;margin-right: 0.1em;margin-left: 0.8em">
+                ${workers[i].concurrency}
+            </div>
+            <div class ="btn-group" style="float: left">
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change(${workers[i].worker_id},1,${i})">
+                    +
+                </button>
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_concurrency_change(${workers[i].worker_id},-1,${i})">
+                    -
+                </button>
+            </div>
+        </td>
+        <td>
+            <div id="prefetch-${workers[i].worker_id}" style="float: left;margin-right: 0.1em;margin-left: 0.6em">
+                ${workers[i].prefetch}
+            </div>
+            <div class ="btn-group" style="float: left">
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change(${workers[i].worker_id},1,${i})">
+                    +
+                </button>
+                <button class="btn btn-outline-dark btn-sm" onClick="worker_prefetch_change(${workers[i].worker_id},-1,${i})">
+                    -
+                </button>
+            </div>
+        </td>
+        <td>
+            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
+                    href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=accepted">
+                ${workers[i].accepted}
+            </a>
+        </td>
+        <td>
+            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
+                    href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=running">
+                ${workers[i].running}
+            </a>
+        </td>
+        <td>
+            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
+                        href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=succeeded">
+                ${workers[i].succeeded}
+            </a>
+        </td>
+        <td>
+            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
+                        href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=failed">
+                ${workers[i].failed}
+            </a>
+        </td>
+        <td>
+            ${workers[i].load==null?'':workers[i].load}
+        </td>
+        <td>
+            ${workers[i].memory==null?'':workers[i].memory}
+        </td>
+        ${(workers[i].stats!=undefined && typeof(workers[i].stats)=='object'?(`
+            <td>
+                ${workers[i].stats.load}
+            </td>
+            <td>
+                <table>
+                    <tr>
+                        <td style="white-space: nowrap;">
+                            ${workers[i].stats.disk.usage.join('</td></tr><tr><td>').replaceAll(':','</td><td width="99">')}
+                        </td>
+                    </tr>
+                </table>
+            </td>
+            <td>
+                ${workers[i].stats.disk.speed+'<br/>'+workers[i].stats.disk.counter}
+            </td>
+            <td>
+                ${workers[i].stats.network.speed+'<br/>'+workers[i].stats.network.counter}`):
+            '<td>-</td><td>-</td><td>-</td><td>-</td>')
+        }
+        <td>
+            <button type="button" title="delete" onclick="DeleteWorker(${workers[i].worker_id})" 
+                    class="btn btn-outline-dark btn-sm">
+                ${svg_trash}
+            </button>
+        </td>
+    </tr>\n`;
         }
 
 
@@ -119,7 +205,7 @@ function RestartJob(job_id){
 //Function that open a text area in order to modify the batch and send the modification when the key "enter" triggers
 function ChangeBatch(id_worker,i){
     document.getElementById('batch-name-'+id_worker).innerHTML=`<input class="col-9" id=batch-name-input-${id_worker} 
-                                value="${workers[i].batch==null?'':workers[i].batch}" autofocus>
+                                value="${workers[i].batch==null?'':workers[i].batch}" autofocus  style="margin-top:0.5em;">
                             <a type="button" class="btn btn-outline-dark border-0" 
                                 style="--bs-btn-padding-y: .10rem; --bs-btn-padding-x: .3rem; --bs-btn-font-size: .75rem;" 
                                 onclick="HideChangeBatch('${id_worker}',${i})">X</a>`;
@@ -139,8 +225,8 @@ function HideChangeBatch(id_worker,i){
     document.getElementById('batch-name-'+id_worker).innerHTML=`<a type="button" class="btn btn-outline-dark border-0">
             ${workers[i].batch==null?'':workers[i].batch}</a>
             <button type="button" onclick="pause(); ChangeBatch('${id_worker}',${i})" 
-            class="btn btn-sm">
-            ${svg_edit}
+                    class="btn btn-sm" style="margin-top:0.5em;">
+                ${svg_edit}
             </button>`;
     //pause=false;
     unpause();
