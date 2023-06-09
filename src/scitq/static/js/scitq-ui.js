@@ -128,30 +128,36 @@ async function get_workers() {
             </a>
         </td>
         <td>
-            ${workers[i].load==null?'':workers[i].load}
+            <small>${workers[i].load==null?'':workers[i].load}</small>
         </td>
         <td>
-            ${workers[i].memory==null?'':workers[i].memory}
+            <small>${workers[i].memory==null?'':workers[i].memory}</small>
         </td>
         ${(workers[i].stats!=undefined && typeof(workers[i].stats)=='object'?(`
             <td>
-                ${workers[i].stats.load}
+                <small>${workers[i].stats.load}</small>
             </td>
             <td>
-                <table>
-                    <tr>
-                        <td style="white-space: nowrap;">
-                            ${workers[i].stats.disk.usage.join('</td></tr><tr><td>').replaceAll(':','</td><td width="99">')}
-                        </td>
-                    </tr>
-                </table>
+                <small>
+                    <table>
+                        <tr>
+                            <td style="white-space: nowrap;">
+                                ${workers[i].stats.disk.usage.join('</td></tr><tr><td>').replaceAll(':','</td><td width="99">')}
+                            </td>
+                        </tr>
+                    </table>
+                </small>
             </td>
             <td>
-                ${workers[i].stats.disk.speed+'<br/>'+workers[i].stats.disk.counter}
+                <small>
+                    ${workers[i].stats.disk.speed+'<br/>'+workers[i].stats.disk.counter}
+                </small>
             </td>
             <td>
-                ${workers[i].stats.network.speed+'<br/>'+workers[i].stats.network.counter}`):
-            '<td>-</td><td>-</td><td>-</td><td>-</td>')
+                <small>
+                    ${workers[i].stats.network.speed+'<br/>'+workers[i].stats.network.counter}
+                </small>`):
+            '<small><td>-</td><td>-</td><td>-</td><td>-</td></small>')
         }
         <td>
             <button type="button" title="${workers[i].status!='paused'?'pause':'resume'}" onclick="PauseUnpauseWorker(${workers[i].worker_id},${i})" 
