@@ -20,6 +20,7 @@ from sqlalchemy.dialects import sqlite
 from .util import PropagatingThread, package_path, package_version, check_dir, to_dict, tryupdate
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 from .ansible.scitq.sqlite_inventory import scitq_inventory
+from .constants import SIGNAL_CLEAN, SIGNAL_RESTART
 
 
 MAIN_THREAD_SLEEP = 5
@@ -1354,13 +1355,31 @@ def handle_prefetch_change():
 
 @app.route('/ui/pause_unpause_worker')
 def handle_pause_unpause_worker():
-    log.info('here')
     json = request.args
     worker_id = json['id']
     status = json['status']
     Worker.query.filter(Worker.worker_id==worker_id).update({Worker.status:status})
-    log.warning(f'changing status for worker {worker_id}: {status}')
+    log.info(f'changing status for worker {worker_id}: {status}')
     db.session.commit()
+    return '"ok"'
+
+
+@app.route('/ui/clean_worker')
+def handle_clean_worker():
+    json = request.args
+    worker_id = json['worker_id']
+    db.session.add(Signal(execution_id=None, worker_id=worker_id, signal=SIGNAL_CLEAN))
+    db.session.commit()
+    log.info(f'sending clean signal for worker {worker_id}')
+    return '"ok"'
+
+@app.route('/ui/restart_worker')
+def handle_restart_worker():
+    json = request.args
+    worker_id = json['worker_id']
+    db.session.add(Signal(execution_id=None, worker_id=worker_id, signal=SIGNAL_RESTART))
+    db.session.commit()
+    log.info(f'sending restart signal for worker {worker_id}')
     return '"ok"'
 
 #@socketio.on('create_worker')

@@ -158,6 +158,14 @@ async function get_workers() {
                     class="btn btn-outline-dark btn-sm" id="pause-${workers[i].worker_id}">
                 ${workers[i].status!='paused'?svg_pause:svg_resume}
             </button>
+            <button type="button" title="clean" onclick="CleanWorker(${workers[i].worker_id})" 
+                    class="btn btn-outline-dark btn-sm">
+                ${svg_wipe}
+            </button>
+            <button type="button" title="restart" onclick="RestartWorker(${workers[i].worker_id})" 
+                    class="btn btn-outline-dark btn-sm">
+                ${svg_restart}
+            </button>
             <button type="button" title="delete" onclick="DeleteWorker(${workers[i].worker_id})" 
                     class="btn btn-outline-dark btn-sm">
                 ${svg_trash}
@@ -178,6 +186,22 @@ function DeleteWorker(worker_id){
     $.ajax({url: '/ui/delete_worker', data: {worker_id:worker_id} });
     console.log(('Deleting worker'));
 }
+
+//send an order to server to delete in db the worker
+function CleanWorker(worker_id){
+    //socket.emit('delete_worker',{worker_id:worker_id});
+    $.ajax({url: '/ui/clean_worker', data: {worker_id:worker_id} });
+    console.log(('Cleaning worker'));
+}
+
+//send an order to server to delete in db the worker
+function RestartWorker(worker_id){
+    //socket.emit('delete_worker',{worker_id:worker_id});
+    $.ajax({url: '/ui/restart_worker', data: {worker_id:worker_id} });
+    console.log(('Restarting worker'));
+}
+
+
 
 function PauseUnpauseWorker(worker_id,i){
     if (workers[i].status!='paused') {
