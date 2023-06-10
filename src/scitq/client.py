@@ -18,7 +18,7 @@ import traceback
 import shutil
 import subprocess
 from signal import SIGTERM, SIGKILL, SIGTSTP, SIGCONT
-from .constants import SIGNAL_CLEAN, SIGNAL_RESTART, SIGNAL_RESET_RESOURCES
+from .constants import SIGNAL_CLEAN, SIGNAL_RESTART, SIGNAL_RESET_RESOURCES, HTTP_ERROR_CODE_NOT_FOUND
 import shlex
 import concurrent.futures
 import json
@@ -64,6 +64,18 @@ STATUS_SUCCEEDED = 6
 STATUS_TXT = ['LAUNCHING', 'DOWNLOADING', 'WAITING', 'RUNNING', 'UPLOADING', 
     'FAILED', 'SUCCEEDED']
 
+CLIENT_STATUS_RUNNING = 1
+CLIENT_STATUS_PAUSED = 2
+CLIENT_STATUS_UNKNOWN = 0
+
+def client_status_code(status):
+    """A small wrapper to translate status string to a int code"""
+    if status=='running':
+        return CLIENT_STATUS_RUNNING
+    elif status=='paused':
+        return CLIENT_STATUS_PAUSED
+    else:
+        return CLIENT_STATUS_UNKNOWN
 
 def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_options,
         container, command, mode='-d'):
@@ -178,7 +190,7 @@ class Executor:
     def __init__(self, server, execution_id, task_id, command, input, output, 
                 container, container_options, execution_started, execution_queue,
                 cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore,
-                worker_id, status, working_dirs,
+                worker_id, status, working_dirs, client_status,
                 recover=False, input_dir=None, output_dir=None, 
                 temp_dir=None, workdir=None, container_id=None):
         log.warning(f'Starting executor for {execution_id}')
@@ -207,6 +219,7 @@ class Executor:
         self.maximum_parallel_upload = MAXIMUM_PARALLEL_UPLOAD
         self.recover=recover
         self.working_dirs=working_dirs
+        self.client_status=client_status
         self.docker_attach_failed=False
         if not self.recover:
             self.workdir = tempfile.mkdtemp(dir=BASE_WORKDIR)
@@ -231,7 +244,7 @@ class Executor:
                 container, container_options, execution_started, execution_queue,
                 cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore, 
                 worker_id, status, working_dirs,
-                docker_container ):
+                docker_container, client_status ):
         for mount in docker_container['Mounts']:
             if mount['Destination']=='/input':
                 input_dir = final_slash(mount['Source'])
@@ -250,7 +263,7 @@ class Executor:
             resource=resource, resources_db=resources_db, run_slots=run_slots, 
             run_slots_semaphore=run_slots_semaphore, worker_id=worker_id,
             status=status, working_dirs=working_dirs, recover=True, input_dir=input_dir, output_dir=output_dir,
-            temp_dir=temp_dir, workdir=workdir, container_id=container_id)
+            temp_dir=temp_dir, workdir=workdir, container_id=container_id, client_status=client_status)
 
     @property
     def status(self):
@@ -409,6 +422,13 @@ class Executor:
                 try:
                     self.s.execution_output_write(execution_id, ''.join(output))
                     break
+                except HTTPException as http_exception:
+                    if http_exception.status_code == HTTP_ERROR_CODE_NOT_FOUND:
+                        log.error(f'Execution was deleted, must stop at once')
+                        self.terminate()
+                    else:
+                        log.exception(f'Could not write output for {execution_id}:{output} ({http_exception})')
+                        retry -= 1    
                 except:
                     log.exception(f'Could not write output for {execution_id}:{output}')
                     retry -= 1                
@@ -607,6 +627,22 @@ class Executor:
         if self.container_id is not None:
             subprocess.run(['docker','container','rm',self.container_id], check=True)
 
+
+    def terminate(self):
+        """End current process as soon as possible - should be only called from the Executor process"""
+        if self.status == "running":
+            if self.container_id:
+                subprocess.run(['docker','kill',self.container_id])
+            else:
+                self.process.send_signal(SIGKILL)
+        while True:
+            sleep(POLLING_TIME)
+            if self.process.returncode is not None:
+                break
+        self.clean()
+        sys.exit(1)
+
+        
     async def run(self):
         """Launching part of Executor
         """
@@ -642,13 +678,16 @@ class Executor:
                     self.container = task.container
 
                     
-                    if task.status != 'paused' and self.run_slots.value>0:
+                    if task.status != 'paused' and self.run_slots.value>0 \
+                            and self.client_status.value==CLIENT_STATUS_RUNNING:
                         break
 
                     if self.run_slots.value<=0:
                         log.warning(f'Task {self.task_id} has been prefetched and is waiting')
-                    else:
+                    elif task.status == 'paused':
                         log.warning(f'Task {self.task_id} is paused, waiting...')
+                    else:
+                        log.warning(f'Client is paused, task {self.task_id} is waiting...')
                     self.run_slots_semaphore.release()
                     sleep(POLLING_TIME)
                     self.run_slots_semaphore.acquire()
@@ -667,11 +706,17 @@ class Executor:
                     self.clean()
                     self.run_slots_semaphore.release()
                     return None
-            except HTTPException:
-                log.error(f'Execution {self.execution_id} was deleted.')
-                self.clean()
-                self.run_slots_semaphore.release()
-                return None
+            except HTTPException as http_exception:
+                if http_exception.status_code == HTTP_ERROR_CODE_NOT_FOUND:
+                    log.error(f'Execution {self.execution_id} was deleted.')
+                    self.clean()
+                    self.run_slots_semaphore.release()
+                    return None
+                else:
+                    log.error(f'Unhandled http exception {http_exception}')
+                    self.clean()
+                    self.run_slots_semaphore.release()
+                    raise
         
             new_input = []
             if task.input != self.input:
@@ -797,6 +842,7 @@ class Client:
         if not os.path.exists(self.resource_dir):
             os.makedirs(self.resource_dir)
         self.run_slots = multiprocessing.Value('i', concurrency)
+        self.shared_status = multiprocessing.Value('i', client_status_code(DEFAULT_WORKER_STATUS))
         self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
         self.has_run_slots_semaphore=False
         self.executions_status = {}
@@ -938,6 +984,10 @@ class Client:
                     log.warning(f'CPU is {cpu_string}')
                     self.w=self.s.worker_ping(self.w.worker_id, cpu_string, memory, 
                                               json.dumps(worker_stats))
+                    if client_status_code(self.w.status)!=self.shared_status.value:
+                        log.warning(f'Client status was changed to {self.w.status}')
+                        self.shared_status.value = client_status_code(self.w.status)
+
                     previous_time = current_time
                     previous_disk = disk
                     previous_network = network
@@ -982,7 +1032,8 @@ class Client:
                                     'execution_queue': execution_queue,
                                     'container': task.container,
                                     'container_options': task.container_options,
-                                    'cpu': psutil.cpu_count()//self.w.concurrency,
+                                    'cpu': max(1,
+                                               psutil.cpu_count()//self.w.concurrency if self.w.concurrency>0 else psutil.cpu_count()),
                                     'resource_dir': self.resource_dir,
                                     'resource': task.resource,
                                     'resources_db': self.resources_db,
@@ -990,7 +1041,8 @@ class Client:
                                     'run_slots_semaphore': self.run_slots_semaphore,
                                     'worker_id': self.w.worker_id,
                                     'status': self.executions_status[execution.execution_id],
-                                    'working_dirs': self.working_dirs
+                                    'working_dirs': self.working_dirs,
+                                    'client_status': self.shared_status,
                                 })
                             p.start()
                             self.executions[execution.execution_id]=(p,execution_queue)
@@ -1052,7 +1104,8 @@ class Client:
                         # ok time to look what is really going on
                         
                     running = waiting = 0
-                    for execution in self.s.worker_executions(self.w.worker_id):
+                    executions_from_server = list(self.s.worker_executions(self.w.worker_id))
+                    for execution in executions_from_server:
                         if execution.status in ['failed','succeeded','pending']:
                             continue
                         if execution.execution_id not in self.executions_status:
@@ -1091,7 +1144,8 @@ class Client:
                                                 'worker_id': self.w.worker_id,
                                                 'status': self.executions_status[execution.execution_id],
                                                 'working_dirs': self.working_dirs,
-                                                'docker_container': container
+                                                'docker_container': container,
+                                                'client_status': self.shared_status
                                             })
                                         p.start()
                                         self.executions[execution.execution_id]=(p,execution_queue)
@@ -1126,6 +1180,12 @@ class Client:
                     if self.run_slots.value != self.concurrency - running:
                         log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
                         self.run_slots.value = self.concurrency - running
+                    if self.executions_status:
+                        executions_ids = list([execution.execution_id for execution in executions_from_server])
+                        for execution_id in self.executions_status.keys():
+                            if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_RUNNING:
+                                log.warning(f'Execution {execution_id} is still running but is no more assigned to us (or likely was deleted), sending SIGTERM signal')
+                                self.executions[execution_id][1].put(SIGTERM)
                     self.run_slots_semaphore.release()
                     self.has_run_slots_semaphore=False
                 else:
