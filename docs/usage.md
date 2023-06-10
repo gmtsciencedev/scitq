@@ -102,8 +102,11 @@ You can specify several time this option so that as to have several input files.
 
 - `ftp://...` : an anonymous FTP link to a file (no recursive folder),
 - `s3://...` : an S3 link which requires that [S3](specific.md#aws-or-others-s3) was properly set up,
+- `azure://...` : an Azure link which requires that [Azure storage](specific.md#azure_storage) was properly set up, (Microsoft standard of using https://... URI for Azure was not followed so as to be similar to S3, which keep the endpoint as a parameter, and because plain https:// file transport maybe added in the future)
 - `fasp://...` : an IBM Aspera link, used notably in bioinformatics,
 - `file:///....` : a local file in the worker, thus unlikely to be suitable except in specific contexts where files are brought to the worker by means not provided by scitq.
+
+For S3 and Azure, if the URI ends with `/` then it is understand as a recursive fetch.
 
 Specifically for bioinformatics (and it is in fact the only thing really specific for that field in scitq), there is a dedicated custom URI called run+fastq:
 
@@ -124,8 +127,7 @@ scitq-launch -i run+fastq://SRR5666311 -d ubuntu:latest sh -c 'zcat /input/*.f*q
 On workers, input dirs are in `/scratch/<someuniquename>/input`.
 NB the `/scratch` thing is unrelated to the eponymous language, it is just a reminder that in the end all in that directories will be scratched once the worker is deleted.
 
-!!! note
-    New since version 1.0b19 and above (1.0rcX versions are above 1.0bX versions), and **only with S3**, an input can end with a trailing slash which means recursively import all the directory as input. This can be convenient notably when you chain tasks (as output is recursive itself).
+
 
 ### resource (-r)
 
@@ -183,3 +185,47 @@ scitq-launch -o 's3://results/test/' -d 'ubuntu:latest' touch /output/helloworld
 ## Managing your task executions
 
 Now that you have queued your tasks, the hard work is done, you can recruit your workers, distribute the work and watch it done, relaxing... You can do that either using the [GUI](gui.md) or using [scitq-manage utility](manage.md).
+
+## scitq-fetch : a convenient utility
+
+It is strongly advised to use either S3 or Azure storage. While S3 seems to be the de facto standard for object storage, Azure provides also some excellent storage solution with more options than S3 (notably different storage redondancy options, and performance and cost choices). Anyway, either solution provides substantial benefits over simple NFS (the main being that it has a much larger bandwidth) and are prefered. 
+
+This means you are likely to end up moving files back and forth S3 or Azure storage. While you can certainly use the native solutions, which provide the best level of integration with the provider, you have to learn the different way to set them up, and each one has a different syntax. In the case of Azure, you also have to translate the URI as Microsoft Azure standard is not exactly followed. So to provide the end user with a more unified environment, `scitq-fetch` is proposed. It just brings to the command line the `scitq.fetch` library functions, which are what `-i/--input`, `-r/--resource` or `-o/--output` are calling under the hood.
+
+Some examples:
+- `scitq-fetch list s3://rnd/data/mylogin` : will list recursively all the content of `s3://rnd/data/mylogin`,
+- `scitq-fetch list --not-recursive azure://rnd/data/mylogin` : will list the immediate content of `azure://rnd/data/mylogin`, not recursively,
+- `scitq-fetch sync myfolder azure://rnd/data/mylogin/myfolder` : will synchronize the content of `myfolder` to `azure://...` (so that `myfolder/rep/file1.data` is sent to `azure://rnd/data/mylogin/myfolder/rep/file1.data`),
+- `scitq-fetch sync --include '*.data' s3://rnd/data/mylogin/myfolder ./myfolder` : same as above, the other way around, get back some remote folder to some local folder, but only for `.data` files.
+- `scitq-fetch delete s3://rnd/data/mylogin/myfolder` : recursively delete the folder `s3://rnd/data/mylogin/myfolder`.
+
+See `scitq-fetch -h` for complete help.
+
+This utility can also be used out of scitq use context.
+
+### scitq.fetch
+
+As explained above `scitq.fetch` is the library behind `scitq-fetch` utility (and in fact `python -m scitq.fetch` is really exactly the same as `scitq-fetch`). It comes in handy when coding the logic of the distributed tasks in python.
+
+For instance instead of :
+
+```python
+from subprocess import run
+
+[...]
+
+run(f'aws s3 sync {SAMPLE_SUBDIR} {s3_camisim_config_folder}',
+    shell=True, check=True)
+```
+
+Use:
+
+```python
+import scitq.fetch
+
+[...]
+
+scitq.fetch.sync(SAMPLE_SUBDIR, s3_camisim_config_folder)
+```
+
+(this comes from `scitq-camisim.py` in [scitq-examples](https://github.com/gmtsciencedev/scitq-examples)). It is convenient as it provides a simple python integration and it reduces external dependancies (no need to install aws utility).

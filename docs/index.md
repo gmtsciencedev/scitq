@@ -11,6 +11,7 @@ How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) 
 * [GUI](gui.md): monitor (and tune) what's going on in scitq.
 * [scitq-manage](manage.md): same as above but for command line lovers.
 * [model](model.md): some insights about the underlying model, API and database.
+* [motivation](motivation.md): why scitq, and how it came to exist.
 
 ## Project layout
 
