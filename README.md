@@ -131,9 +131,9 @@ PS remember to install the `.aws` folder that is needed for s3.
 
 A very minimal setup, but enough for what we need to do. In a production setup, you'd want scitq to deploy the workers automatically for you, but that requires ansible install and setup, we'll come to that later.
 
-#### the computation
+#### running the tasks
 
-First we want to get a list of all the runs and samples, and we will use ENA API to do so (remember that the EBI mirror NCBI and so this work for any project except extremely recent projects deposited on NCBI SRA - now you can certainly use sratools if you prefer, but you'll have to adpat the code and install sratools):
+First we want to get a list of all the runs and samples, and we will use ENA API to do so (remember that the EBI mirror NCBI and so this works for any project except extremely recent projects deposited on NCBI SRA - now you could certainly use sratools, but you would have to adapt the code and install sratools):
 ```python
 import requests
 import sys
@@ -149,7 +149,7 @@ def get_sample_runs(project):
   return samples
 ```
 
-Next for our task, we need to download the FASTQs, but scitq will take care of that for us, which we will show just after. Next we must pass them to fastp. We need to find a docker image with fastp included. We could of course build our own and use conda to install fastp, but here we are lucky and some nice people from StaPH-B did that for us, the docker image is public and called: staphb/fastp.
+Next for our task, we need to download the FASTQs, but scitq will take care of that for us, which we will see just after. Next we must pass them to fastp. We need to find a docker image with fastp included. We could of course build our own and use conda to install fastp, but here we are lucky and some nice people from StaPH-B did that for us, the docker image is public and called: staphb/fastp.
 
 We will run this rather classical fastp command (suited for unpaired reads):
 ```bash
@@ -188,10 +188,10 @@ Ok, here our s.task_create command is obviously doing lots of things, let's look
 
 - `command` : you recognize the shell command that we discussed above. We have wraped it in a shell (using `sh -c '...'`) because scitq tasks do not use shell by default (which is not always present in docker images), but here we use a pipe which is a shell comodity, so we need a shell. Next, we have taken our input files from the `/input/` folder, and we output all we want back in the `/output` folder. Otherwise it is the same command.
 - `input` this is were we ask scitq to fetch the public data for us and make it available in the `/input` folder of our docker. It is a string of space separated URI, and here we use a very specialised URI: `run+fastq://<run accession>` that probably only scitq understand. scitq will use whatever works, starting from EBI ftp, then switching to NCBI sratools if it does not work, and trying 10 times (EBI Aspera will also be tempted). As you have noticed we installed nothing for sratools or aspera, but scitq will use the official dockers of those solutions to fetch the data, if it thinks it is needed. (note that `scitq-fetch` is a standalone utility that understand these URIs and can be used outside of scitq, it is included in scitq python package)
-- `output` this is where all that is in our docker `/output/` at the end of the task will be copied to. Here you may recognize a completely standard s3 URI, designating a folder in our s3 bucket, we have an independant subfolder for each sample, which is not mandatory in our case as output files have different names for each sample, but is generally advised.
+- `output` this is where all that is in our docker `/output/` at the end of the task will be copied to. Here you may recognized a completely standard s3 URI, designating a folder in our s3 bucket, we have an different subfolder for each sample, which is not mandatory in our case as output files have different names for each sample, but is generally advised.
 - `container` this is simply the docker image that will be used to run the command.
 
-In the end, the last line, we use a small command to wait for all the tasks to complete, which name is reminiscent of a function in python threading package. It will block python code, waiting that all the task completed, making the queuing script end only when all tasks are done. It takes an optional parameter, retry, which tels scitq to automatically retry failed tasks two times before giving up. It makes a small reporting log during execution also.
+In the end, the last line, we use a small command (`s.join(tasks)`) to wait for all the tasks to complete, which name is reminiscent of a function much alike in python threading package. It will block python code, waiting that all the task completed, making the queuing script end only when all tasks are done. It takes an optional parameter, `retry`, which tels scitq to automatically retry failed tasks two times before giving up. It makes a small reporting log during execution also.
 
 And that's it!
 
@@ -245,13 +245,13 @@ python scitq-fastp.py PRJEB46098
 
 Now connect to your scitq server on `http://<public-ip-of-server>:5000/ui/` and watch the tasks being distributed. You may also want to increase the prefetch option in workers to tell scitq to prepare the input of several tasks in advance. You may want to increase the concurrency option if your worker(s) have some spare power (several CPU). You may notice that running tasks seem to exceed the concurrency of the worker at some times. It is because the task uploading their results are reported as running, but as the worker does not really work when it upload results, it still frees a running slot. So in fact, tasks are not really running in excess, do not worry.
 
-Note that killing the python script won't stop the tasks. The script is just a queuing script, the engine that run the tasks is scitq. The simple way to stop it is to use the `scitq-manage` utility, like you would in production (here we run it on the server, hence the 127.0.0.1):
+Note that killing the python script won't stop the tasks. The script is just a queuing script, the engine that runs the tasks is scitq. The simple way to stop it is to use the `scitq-manage` utility, like you would in production (here we run it on the server, hence the 127.0.0.1):
 
 This first command will prevent any new task to be run.
 ```bash
 scitq-manage -s 127.0.0.1 batch stop -n Default
 ```
-(the `-n Default` comes in because we did not specify a batch in our task_create command, so by default, it uses the `Default` batch. batches are just a convenient way of grouping tasks)
+(the `-n Default` option is required because we did not specify a batch in our task_create command, so by default, tasks are in the `Default` batch. batches are just a convenient way of grouping tasks)
 
 This second command will also terminate all running tasks as soon as possible:
 ```bash
@@ -268,14 +268,14 @@ If you want to completely remove any trace of this computation on scitq, just de
 scitq-manage -s 127.0.0.1 batch delete -n Default
 ```
 
-Of course for the purpose of demonstration, do not delete the batch and let a few tasks terminate normally.
+Of course for the purpose of demonstration, do not delete the batch and let a few tasks end normally at least.
 
 
 #### getting back the results
 
-Ok so now your results are all in `s3://mybucket/myresults/PRJEB46098`. You should get them back on the server and see them.
+So now your results are all in `s3://mybucket/myresults/PRJEB46098`. You should get them back on the server and see them.
 
-You can of course use AWS utility:
+You can of course use AWS CLI utility:
 ```bash
 aws s3 sync s3://mybucket/myresults/PRJEB46098 ./PRJEB46098
 ```
@@ -285,22 +285,22 @@ But you can also use `scitq-fetch` utility:
 scitq-fetch sync s3://mybucket/myresults/PRJEB46098 ./PRJEB46098
 ```
 
-Both command will do pretty much the same thing, except AWS native command is more thorough, it will check file integrity with an hash algorithm (very much like MD5), which scitq-fetch won't do, relying only on file name and exact size. However, it uses the AWS library `boto3` under the hood, and is thus safe. Also scitq-fetch comes in with scitq package, you won't need to install anything else, and it is agnostic of the provider, meaning you can also use it on Azure storages, or plain ftp with the same syntax, something AWS native command won't do.
+Both command will do pretty much the same thing, except AWS native command is more thorough, it will check file integrity with a hash algorithm (much like MD5), which scitq-fetch won't do, relying only on file name and exact size. However, it uses the AWS library `boto3` under the hood, and is thus safe. Also scitq-fetch comes in with scitq package, you won't need to install anything else, and it is agnostic of the provider, meaning you can also use it on Azure storages, or plain ftp with the same syntax, something AWS native command won't do.
 
-#### getting back the outputs
+#### getting back outputs
 
-If you want to get back the output, which you cannot do if you deleted the batch as shown previously, you can list the tasks:
+If you want to get back some task output, which you cannot do if you deleted the batch as shown previously, you can first list the tasks:
 
 ```bash
 scitq-manage -s 127.0.0.1 task list
 ```
 
-And get the output of any task:
+Then get the output of any task:
 ```bash
 scitq-manage -s 127.0.0.1 task output -i <id of task>
 ```
 
-You can also group both commands to get a listing of all outputs (the first line enable us to give up the `-s` argument we've used up to now):
+You can also group both commands to get a listing of all outputs (the first line enable us to give up the `-s` argument we've used up to now with `scitq-manage`):
 ```bash
 export SCITQ_SERVER=127.0.0.1
 scitq-manage task list -S succeeded -H|cut -d' ' -f1|xargs -n 1 scitq-manage task output --output -i
@@ -319,6 +319,6 @@ NB by default the scitq.lib.Server return answers with dictionary objects, trans
 
 Note that you can also export the task outputs from the task UI (`http://<public-ip-of-server>:5000/ui/task/`) as a json file.
 
-Do not let the debug server run like that as it does not offer any security and some people could remotely launch commands on your workers... In a production server, accesses are restricted to trusted IPs. This is covered in the install.
+Do not let the debug server continue to run as it does not offer any security and some people could remotely launch commands on your workers... In a production server, accesses are restricted to trusted IPs. This is covered in the install.
 
 For even more complete examples, see [https://github.com/gmtsciencedev/scitq-examples](https://github.com/gmtsciencedev/scitq-examples).
