@@ -19,5 +19,5 @@ How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) 
     src/scitq/ansible     # The ansible recipes that enable to recruit, install and destroy workers 
     docs                  # The MkDocs documentation source
     templates             # Some templates to help install primarily the server service 
-    docker                # The source of Dockers for 
+    docker                # The source of scitq-worker and scitq-server dockers (only for testing purpose, do not use in production)
 
