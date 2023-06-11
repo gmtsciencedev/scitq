@@ -7,8 +7,11 @@ docker run --privileged --rm -d gmtscience/scitq-worker:latest
 # Recommended usage
 
 ```bash
-docker run -v /tmp:/scratch -v /tmp:/var/lib/docker -e NAME=node1  -e SCITQ_SERVER=$SCITQ_SERVER --privileged --rm -d gmtscience/scitq-worker:latest
+docker run -v /tmp:/scratch -v /tmp:/var/lib/docker -e NAME=node1  -e SCITQ_SERVER=$SCITQ_SERVER --privileged -d gmtscience/scitq-worker:latest
 ```
+
+You can mount also `/etc/scitq-worker.conf` notably to provide Azure storage identifyers, and `/root/.aws` for AWS S3 storage identifyers.
+
 
 # dind or dood ?
 

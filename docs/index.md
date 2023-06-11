@@ -15,8 +15,9 @@ How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) 
 
 ## Project layout
 
-    src         # The python src code (and scitq python package)
-    ansible     # The ansible recipes that enable to recruit, install and destroy workers 
-    docs        # The MkDocs documentation source
-    templates   # Some templates to help install primarily the server service 
+    src                   # The python src code (and scitq python package)
+    src/scitq/ansible     # The ansible recipes that enable to recruit, install and destroy workers 
+    docs                  # The MkDocs documentation source
+    templates             # Some templates to help install primarily the server service 
+    docker                # The source of Dockers for 
 
