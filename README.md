@@ -245,7 +245,7 @@ python scitq-fastp.py PRJEB46098
 
 Now connect to your scitq server on `http://<public-ip-of-server>:5000/ui/` and watch the tasks being distributed. You may also want to increase the prefetch option in workers to tell scitq to prepare the input of several tasks in advance. You may want to increase the concurrency option if your worker(s) have some spare power (several CPU). You may notice that running tasks seem to exceed the concurrency of the worker at some times. It is because the task uploading their results are reported as running, but as the worker does not really work when it upload results, it still frees a running slot. So in fact, tasks are not really running in excess, do not worry.
 
-Note that killing the python script won't stop the tasks. The script is just a queuing script, the engine that runs the tasks is scitq. The simple way to stop it is to use the `scitq-manage` utility, like you would in production (here we run it on the server, hence the 127.0.0.1):
+Note that killing the python script won't stop the tasks. The script is just a queuing script, the engine that runs the tasks is scitq. The simplest way to stop it is to use the `scitq-manage` utility, like you would in production (here we run it on the server, hence the 127.0.0.1):
 
 This first command will prevent any new task to be run.
 ```bash

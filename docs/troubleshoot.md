@@ -286,16 +286,16 @@ Let us say, you have a unique batch in the database, the batch is not yet finish
 
 So you can select the `task_id` of those tasks like that:
 ```sql
-SELECT COUNT(task_id) FROM execution WHERE status='succeeded' AND error LIKE '%error%';
+SELECT task_id FROM execution WHERE latest AND status='succeeded' AND error LIKE '%error%';
 ```
+NB latest column is a boolean column which is true only if this is the latest execution.
 
-Ok, so to relaunch those tasks, we have to set the execution as failed and set the failed tasks to pending - so that they are re-queued, and we must do the changes the other way around as we filter the execution by their `succeeded` status. We will introduce the `last_execution` view which conveniently restricts the `execution` table to the last execution (more accurately, the latest, but last is simpler and more intuitive for non-English speakers in that context - feel free to call it latest if you mind):
+Ok, so to relaunch those tasks, we have to set the execution as failed and set the failed tasks to pending - so that they are re-queued, and we must do the changes the other way around as we filter the execution by their `succeeded` status. :
 
 ```sql
 BEGIN;
-CREATE OR REPLACE VIEW last_execution AS (SELECT * FROM execution e1 WHERE e1.modification_date=(SELECT MAX(e2.modification_date) FROM execution e2 WHERE e2.task_id=e1.task_id)); 
-UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM last_execution WHERE status='succeeded' AND error LIKE '%error%');
-UPDATE execution SET status='failed' WHERE execution_id IN (SELECT execution_id FROM last_execution WHERE status='succeeded' AND error LIKE '%error%');
+UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE latest AND status='succeeded' AND error LIKE '%error%');
+UPDATE execution SET status='failed' WHERE latest AND status='succeeded' AND error LIKE '%error%';
 COMMIT;
 ```
 
