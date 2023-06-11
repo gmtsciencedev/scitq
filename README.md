@@ -243,7 +243,7 @@ python scitq-fastp.py PRJEB46098
 ```
 (this project is 69 heavy FASTQ so it takes a little while to compute on low end machines).
 
-Now connect to your scitq server on http://<public-ip-of-server>:5000/ui/ and watch the tasks being distributed. You may also want to increase the prefetch option in workers to tell scitq to prepare the input of several tasks in advance. You may want to increase the concurrency option if your worker(s) have some spare power (several CPU). You may notice that running tasks seem to exceed the concurrency of the worker at some times. It is because the task uploading their results are reported as running, but as the worker does not really work when it upload results, it still frees a running slot. So in fact, tasks are not really running in excess, do not worry.
+Now connect to your scitq server on `http://<public-ip-of-server>:5000/ui/` and watch the tasks being distributed. You may also want to increase the prefetch option in workers to tell scitq to prepare the input of several tasks in advance. You may want to increase the concurrency option if your worker(s) have some spare power (several CPU). You may notice that running tasks seem to exceed the concurrency of the worker at some times. It is because the task uploading their results are reported as running, but as the worker does not really work when it upload results, it still frees a running slot. So in fact, tasks are not really running in excess, do not worry.
 
 Note that killing the python script won't stop the tasks. The script is just a queuing script, the engine that run the tasks is scitq. The simple way to stop it is to use the `scitq-manage` utility, like you would in production (here we run it on the server, hence the 127.0.0.1):
 
@@ -317,7 +317,7 @@ for task in s.tasks(status='succeeded'):
 ```
 NB by default the scitq.lib.Server return answers with dictionary objects, translating plainly JSON the usual way in python. However, object notation is nicer in python, so we use the `style='object'` option to pass the dictionaries to argparse.Namespace, which implements the object notation. 
 
-Note that you can also export the task outputs from the task UI (http://<public-ip-of-server>:5000/ui/task/) as a json file.
+Note that you can also export the task outputs from the task UI (`http://<public-ip-of-server>:5000/ui/task/`) as a json file.
 
 Do not let the debug server run like that as it does not offer any security and some people could remotely launch commands on your workers... In a production server, accesses are restricted to trusted IPs. This is covered in the install.
 
