@@ -33,6 +33,7 @@ these, so docker remains non-mandatory in scitq).
 ## What it does, and what it does not
 
 **scitq** is a practical tool; it is meant as a cloud solution to dispatch a serie of tasks and monitor them. It tries to do just this job in a convenient way, not getting in the middle. In a lot of concurrent tools, once a serie of tasks is launched, there is very little you can do: this is where scitq is at its best: 
+
 - you can pause all the tasks to fix something amiss,
 - you can change the command executed for the future tasks whithout relaunching the whole serie,
 - you can resume and relauch very easily any failed task with or without changing the command (with UI or command line tools, no code needed),
@@ -47,6 +48,7 @@ these, so docker remains non-mandatory in scitq).
 It provides convenient utilities such as scitq-fetch which can replace specialised tools like AWS or Azure tool and address the different storages the same way.
 
 It does not provide:
+
 - a workflow solution, as in its usual use case workflows are managed within tasks (notably in bioinformatics, useful programs tends to be provided as packaged workflows - no need to re-implement what is already done),
 - an abstract environment: it runs vanilla docker with some mount options (or whatever option you want),
 - a custom language to express the orchestration logic, yet it provides a simple python library (`scitq.lib`) which makes orchestration through python an easy task (it can be done with some shell code also)
