@@ -228,13 +228,25 @@ With scitq, where you must protect from the initial shell and a python process, 
 ```bash
 scitq-launch echo "\"\\\"l'avion\\\"\""
 ```
-# Upgrading workers using Ansible
+# Upgrading servers and workers using Ansible
 
-In case you need to upgrade workers during a batch: (note that it will kill current running tasks)
+The server can be upgraded anytime. The workers will wait for it to come up again.
+
+```bash
+pip install --upgrade scitq
+scitq-manage ansible install
+systemctl restart scitq-queue scitq-main
+```
+NB : this does not use ansible, the command involving ansible is just in case the basic options of scitq ansible were changed.
+
+In case you need to upgrade workers during a batch: (this command upgrade just the binaries on each worker, it does not restart anything)
 ```bash
 cd $(scitq-manage ansible path)
 ansible-playbook update_workers.yaml
 ```
+
+To make the workers reload their binary, you can use the restart button on the page, or use a direct SQL command that will be seen below.
+In either case: "reloading the binary" is really restarting scitq.client python code: it is not safe in the case of non-dockerized tasks. It is safe in principle in the case of dockerized tasks. It is really safe in the case of a restart with some task running and no task stoping at that moment. There is a mechanism to prevent restart during an upload. It is not 100% bullet proof yet. So the advice for now is to avoid live update if having to restart one or two tasks is not possible for you.
 
 # Using SQL directly
 
@@ -298,4 +310,30 @@ UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution
 UPDATE execution SET status='failed' WHERE latest AND status='succeeded' AND error LIKE '%error%';
 COMMIT;
 ```
+
+## Restarting all workers
+
+This is the massive version of restart button in case of live update. Same caveat as previous: one or two tasks may be lost during the process, but it should be pretty safe in case of docker based tasks. Non dockerized tasks do not survive a restart.
+
+```sql
+BEGIN;
+INSERT INTO signal (signal_id,worker_id,signal) SELECT worker_id,worker_id,-2 FROM worker;
+COMMIT;
+```
+
+Naturally, you could add a WHERE clause just after the `FROM worker` to select workers (`WHERE name IN ('node1','node2',...)`).
+
+Here is an extract of `scitq.constants`:
+
+```python
+SIGNAL_CLEAN=-1
+SIGNAL_RESTART=-2
+SIGNAL_RESET_RESOURCES=-3
+```
+
+So you can send this 3 different signals using a direct SQL command:
+
+- The SIGNAL_CLEAN (-1) is the equivalent of clicking the clean button on the UI, it removes all unused folders in /scratch folder on workers,
+- The SIGNAL_RESTART (-2) is to restart scitq.client on workers (for a live update),
+- The SIGNAL_RESET_RESOURCES (-3) is used only when resources (in the meaning of `resource` option when launching a scitq task) unintentially overlapped and are corrupted: sending this signal will wipe all downloaded resources on worker and force them to redownload. This is rarely used and there is no button to do that, direct SQL is for now the only way to send the signal.
 
