@@ -109,6 +109,7 @@ very easy.
 scitq has been used since 2022 in GMT Science where it began instantly being used in production in the R&D team. Since then, it has been the orchestration tool used for all purposes. Little more than a poor Celery clone with a REST server and a database, it gradually enriched with proper docker integration, then OVH lifecycle, then S3 integration, etc.
 
 Please find here the contributor list:
+- Thomas Moncion provided an important piece of data that is internal to GMT Science but enable large scale usage of scitq, with the integration and stratification of all public data,
 - Rémi Tan was an early contributor to the UI of scitq, and also on the command line manager (scitq-manage).
 - Sibylle de Lahondès, contributed scitq favicon and logo.
 - Baptiste Hennecart contributed as a beta tester and primary user,
