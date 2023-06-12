@@ -236,7 +236,7 @@ az account show
 az logout
 ```
 
-You will need to add the details in `/etc/scitq.conf` as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
+You will need to add the details in `/etc/scitq.conf` as shown in [Azure parameters](parameters.md#azure-provider-specific-variables).
 
 
 #### Other things
