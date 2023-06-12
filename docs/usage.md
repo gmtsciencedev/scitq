@@ -102,7 +102,7 @@ You can specify several time this option so that as to have several input files.
 
 - `ftp://...` : an anonymous FTP link to a file (no recursive folder),
 - `s3://...` : an S3 link which requires that [S3](specific.md#aws-or-others-s3) was properly set up,
-- `azure://...` : an Azure link which requires that [Azure storage](specific.md#azure_storage) was properly set up, (Microsoft standard of using https://... URI for Azure was not followed so as to be similar to S3, which keep the endpoint as a parameter, and because plain https:// file transport maybe added in the future)
+- `azure://...` : an Azure link which requires that [Azure storage](specific.md#azure_storage) was properly set up, (Microsoft standard of using https://... URI for Azure was not followed so as to be similar to S3, which keep the endpoint as a parameter, and because plain https:// file transport maybe added in the future). The standard way of specifying an Azure path is `https://<storageaccount>.blob.core.windows.net/<container>`, which translates in the scitq form as `azure://<container>`.
 - `fasp://...` : an IBM Aspera link, used notably in bioinformatics,
 - `file:///....` : a local file in the worker, thus unlikely to be suitable except in specific contexts where files are brought to the worker by means not provided by scitq.
 
