@@ -500,11 +500,16 @@ class Executor:
             log.warning('Acquiring resources')
             log.warning(f'Resourcedb:  {self.resources_db}')
             for data in resource:
-                data_info = info(data)
+                try:
+                    data_info = info(data)
+                except:
+                    data_info = None
                 if data not in self.resources_db or self.resources_db[data]['status']=='failed' or (
                             self.resources_db[data]['status']=='loaded' and 
+                            ( data_info is None or 
                             ( data_info.modification_date > self.resources_db[data]['date'] or
                              data_info.size != self.resources_db[data]['size'] )
+                            )
                         ):
                     self.resources_db[data]={'status':'lock'}
                     retry=RETRY_DOWNLOAD
@@ -514,9 +519,14 @@ class Executor:
                             log.warning(f'Downloading resource {data}...')
                             get(data, self.resource_dir)
                             log.warning(f'Modification date is {repr(data_info.modification_date)}')
-                            self.resources_db[data]={'status':'loaded',
-                                            'date':data_info.modification_date,
-                                            'size':data_info.size}
+                            if data_info is not None:
+                                self.resources_db[data]={'status':'loaded',
+                                                'date':data_info.modification_date,
+                                                'size':data_info.size}
+                            else:
+                                self.resources_db[data]={'status':'loaded',
+                                                'date':None,
+                                                'size':None}
                             resource_to_json(self.resources_db)
                             log.warning(f'... resource {data} downloaded')
                             break

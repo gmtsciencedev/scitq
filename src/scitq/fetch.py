@@ -39,6 +39,8 @@ FTP_DIR_DAY_POSITION = 6
 FTP_DIR_YEAR_POSITION = 7
 FTP_DIR_NAME_POSITION = 8
 
+HTTP_CHUNK_SIZE = 81920
+
 # name of Azure variables
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
@@ -120,6 +122,11 @@ def untar(filepath):
         subprocess.run(f'pigz -dc "{basename}"|tar x', cwd=path, shell=True, check=True)
     else:
         subprocess.run(['tar','xf',basename], cwd=path, check=True)
+    os.remove(filepath)
+
+def unzip(filepath):
+    """Stupid unzipper with unzip (and delete the archive like gunzip does)"""
+    subprocess.run(['unzip',filepath], check=True)
     os.remove(filepath)
 
 # AWS S3 
@@ -844,6 +851,22 @@ def file_delete(uri):
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
+@retry_if_it_fails(PUBLIC_RETRY_TIME)
+def http_get(url, destination):
+    """HTTP downloader: download source expressed as http(s)://host/path_to_file 
+    to destination - a local file path"""
+    destination=complete_if_ends_with_slash(url, destination)
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with open(destination, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=HTTP_CHUNK_SIZE): 
+                # If you have chunk encoded response uncomment if
+                # and set chunk_size parameter to None.
+                #if chunk: 
+                f.write(chunk)
+
+
+
 # generic wrapper
 
 GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
@@ -881,6 +904,8 @@ def get(uri, destination):
             fastq_run_get(source, destination)       
         elif m['proto']=='run+submitted':
             submitted_run_get(source, destination)
+        elif m['proto'] in ['http','https']:
+            http_get(source, destination)
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
         
@@ -888,6 +913,8 @@ def get(uri, destination):
             gunzip(complete_destination)
         elif m['action']=='untar':
             untar(complete_destination)
+        elif m['action']=='unzip':
+            unzip(complete_destination)
         elif m['action'] not in ['',None]:
             raise FetchError(f"Unsupported action: {m['action']}")
     else:
@@ -946,7 +973,7 @@ def check_uri(uri):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
-        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted']:
+        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https']:
             raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchError(f"Malformed URI : {uri}")
