@@ -574,9 +574,8 @@ def fasp_get(source, destination):
         destination, target_filename = os.path.split(destination)
     
     uri_match = ASPERA_REGEXP.match(source).groupdict()
-    subprocess.run(f'docker run --rm -v {destination}:/output ibmcom/aspera-cli \
-ascp -T --policy=high -l 300m -P33001 -m 30m -v \
--i /home/aspera/.aspera/cli/etc/asperaweb_id_dsa.openssh \
+    subprocess.run(f'docker run --rm -v {destination}:/output --entrypoint .aspera/sdk/ascp \
+martinlaurent/ascli -i .aspera/sdk/aspera_bypass_dsa.pem -P 33001 -T --policy=high -l 300m \
 {uri_match["url"]} /output/', shell=True, check=True)
     
     # if the target filename is really different 
@@ -671,7 +670,7 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
     if 'fastq_ftp' or 'fastq_aspera' in run:
         ftp_md5s = run['fastq_md5'].split(';')
 
-        for method in ['fastq_ftp', 'sra', 'fastq_aspera']:
+        for method in ['fastq_aspera', 'fastq_ftp', 'sra']:
             if method == 'sra':
                 return fastq_sra_get(uri_match['run_accession'], destination, 
                     __retry_number__=1)
@@ -732,7 +731,7 @@ submitted_ftp&format=json&download=true&limit=0", timeout=30)
     if 'submitted_ftp' or 'submitted_aspera' in run:
         ftp_md5s = run['submitted_md5'].split(';')
 
-        for method in ['submitted_ftp', 'submitted_aspera']:
+        for method in ['submitted_aspera', 'submitted_ftp']:
             if method in run:
                 if method in ['submitted_aspera'] and not docker_available:
                     continue
