@@ -493,7 +493,7 @@ class Executor:
                 if retry>0:
                     continue
                 else:
-                    raise RuntimeError('Cannot download these data {failed_input}')
+                    raise RuntimeError(f'Cannot download these data {failed_input}')
             else:
                 break
         if resource:
