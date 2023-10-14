@@ -47,6 +47,8 @@ AZURE_KEY='SCITQ_AZURE_KEY'
 MAX_PARALLEL_AZURE = 5
 AZURE_CHUNK_SIZE = 50*1024**2
 
+ASPERA_DOCKER = 'martinlaurent/ascli:4.14.0'
+
 MAX_PARALLEL_SYNC = 10
 
 class FetchError(Exception):
@@ -551,7 +553,7 @@ def docker_available():
 
 # aspera
 
-ASPERA_REGEXP=re.compile(r'^fasp://(?P<url>.*)$')
+ASPERA_REGEXP=re.compile(r'^fasp://(?P<username>.*)@(?P<server>.*):/?(?P<url>.*)$')
 
 @retry_if_it_fails(RETRY_TIME)
 def fasp_get(source, destination):
@@ -574,9 +576,10 @@ def fasp_get(source, destination):
         destination, target_filename = os.path.split(destination)
     
     uri_match = ASPERA_REGEXP.match(source).groupdict()
-    subprocess.run(f'docker run --rm -v {destination}:/output --entrypoint .aspera/sdk/ascp \
-martinlaurent/ascli -i .aspera/sdk/aspera_bypass_dsa.pem -P 33001 -T --policy=high -l 300m \
-{uri_match["url"]} /output/', shell=True, check=True)
+    subprocess.run(f'''docker run --rm -v {destination}:/output \
+        {ASPERA_DOCKER} --url=ssh://{uri_match["server"]}:33001 --username={uri_match["username"]} \
+        --ssh-keys=@ruby:Fasp::Installation.instance.bypass_keys.first --ts=@json:'{{"target_rate_kbps":300000}}' \
+        server download {uri_match["url"]} --to-folder=/output/''', shell=True, check=True)
     
     # if the target filename is really different 
     if target_filename is not None:
@@ -671,14 +674,13 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
         ftp_md5s = run['fastq_md5'].split(';')
 
         for method in ['fastq_aspera', 'fastq_ftp', 'sra']:
+            if method in ['fastq_aspera','sra'] and not docker_available:
+                continue
             if method == 'sra':
                 return fastq_sra_get(uri_match['run_accession'], destination, 
                     __retry_number__=1)
             elif method in run:
-                if method in ['fastq_aspera','sra'] and not docker_available:
-                    continue
                 urls =  run[method].split(';')
-
                 # preparing to download and check all fastqs
                 download_threads = []
                 for url,md5 in zip(urls, ftp_md5s):
@@ -691,6 +693,7 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
                 try:
                     for download_thread in download_threads:
                         download_thread.join()
+                    log.info(f'Download method {method} succeeded')
                     return None
                 except:
                     log.exception(f'EBI failed with method {method}')
