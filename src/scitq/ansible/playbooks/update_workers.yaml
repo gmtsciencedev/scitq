@@ -20,6 +20,7 @@
               timeout: 300
           - name: Gather facts
             setup:
+          - include_tasks: add_s3authentication.yaml
           - include_tasks: add_scitq.yaml
 
         
