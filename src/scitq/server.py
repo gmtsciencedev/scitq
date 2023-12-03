@@ -190,9 +190,12 @@ class Worker(db.Model):
     last_contact_date = db.Column(db.DateTime)
     batch = db.Column(db.String,nullable=True)
     idle_callback = db.Column(db.String, nullable=True)
+    flavor = db.Column(db.String, nullable=True)
+    region = db.Column(db.String, nullable=True)
+    provider = db.Column(db.String, nullable=True)
 
     def __init__(self, name, concurrency, prefetch=0, hostname=None, 
-                status='paused', batch=None, idle_callback=None):
+                status='paused', batch=None, idle_callback=None, flavor=None, region=None, provider=None):
         self.name = name
         self.concurrency = concurrency
         self.prefetch = prefetch
@@ -202,6 +205,9 @@ class Worker(db.Model):
         self.hostname = hostname
         self.batch = batch
         self.idle_callback = idle_callback
+        self.region = region
+        self.flavor = flavor
+        self.provider = provider
     
 
 class Execution(db.Model):
@@ -326,6 +332,58 @@ def create_worker_destroy_job(worker, session, commit=True):
     if commit:
         session.commit()
 
+class Requirement(db.Model):
+    __tablename__="requirement"
+    requirement_id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("task.task_id"), nullable=False)
+    task = db.relationship(
+        Task,
+        foreign_keys=[task_id],
+        backref=db.backref('requirements',
+                         uselist=True,
+                         cascade='delete,all'))
+    other_task_id = db.Column(db.Integer, db.ForeignKey("task.task_id"), nullable=False)
+    other_task = db.relationship(
+        Task,
+        foreign_keys=[other_task_id],
+        backref=db.backref('required_in',
+                         uselist=True,
+                         cascade='delete,all'))
+
+    def __init__(self, task_id, other_task_id):
+        self.task_id=task_id
+        self.other_task_id=other_task_id    
+    
+class Recruiter(db.Model):
+    __tablename__="recruiter"
+    batch = db.Column(db.String,nullable=False, primary_key=True)
+    rank = db.Column(db.Integer, nullable=False, primary_key=True)
+    tasks_per_worker = db.Column(db.Integer, nullable=False)
+    worker_flavor = db.Column(db.String, nullable=False)
+    worker_region = db.Column(db.String, nullable=False)
+    worker_provider = db.Column(db.String, nullable=False)
+    worker_concurrency = db.Column(db.String, nullable=False)
+    worker_prefetch = db.Column(db.String, nullable=True)
+    minimum_tasks = db.Column(db.Integer, nullable=True)
+    maximum_workers = db.Column(db.Integer, nullable=True)
+
+    def __init__(self, batch, rank, tasks_per_worker, 
+                 worker_flavor, worker_region, worker_provider, 
+                 worker_concurrency, worker_prefetch = None,
+                 minimum_tasks=None, maximum_workers=None):
+        self.batch = batch
+        self.rank = rank
+        self.tasks_per_worker = tasks_per_worker
+        self.worker_flavor = worker_flavor
+        self.worker_region = worker_region
+        self.worker_provider = worker_provider
+        self.worker_concurrency = worker_concurrency
+        self.worker_prefetch = worker_prefetch
+        self.minimum_tasks = minimum_tasks
+        self.maximum_workers = maximum_workers
+    
+    # NB Session.merge() seems the way to go with this object
+    # cf https://docs.sqlalchemy.org/en/14/orm/session_api.html#sqlalchemy.orm.Session.merge
 
 with app.app_context():
     db.create_all()
@@ -431,7 +489,7 @@ ns = api.namespace('tasks', description='TASK operations')
 
 class TaskDAO(BaseDAO):
     ObjectType = Task
-    authorized_status = ['paused','pending','assigned','accepted','running','failed','succeeded']
+    authorized_status = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
 
     def list(self, **args):
         return super().list(sorting_column='task_id',**args)
@@ -1148,6 +1206,149 @@ class BatchDelete(Resource):
         return {'result':'Ok'}
 
 
+ns = api.namespace('requirement', description='Task requirements management')
+
+class RequirementDAO(BaseDAO):
+    ObjectType = Requirement
+
+    def list(self, **args):
+        return super().list(sorting_column='requirement_id', **args)
+
+requirement_dao = RequirementDAO()
+
+requirement = api.model('Requirement', {
+    'requirement_id': fields.Integer(readonly=True, description='The requirement unique identifier'),
+    'task_id': fields.Integer(required=True, description='The requiring task id'),
+    'other_task_id': fields.Integer(required=True, description='The requirred task id'),
+})
+
+@ns.route('/')
+class RequirementList(Resource):
+    '''Shows a list of all requirements, and lets you POST to add new requirements'''
+    @ns.doc('list_requirement')
+    @ns.marshal_list_with(requirement)
+    def get(self):
+        '''List all requirements'''
+        return requirement_dao.list()
+
+    @ns.doc('create_requirement')
+    @ns.expect(requirement)
+    @ns.marshal_with(requirement, code=201)
+    def post(self):
+        '''Create a new requirement'''
+        return requirement_dao.create(api.payload), 201
+
+@ns.route("/<id>")
+@ns.param("id", "The requirement identifier")
+@ns.response(404, "Requirement not found")
+class RequirementObject(Resource):
+    @ns.doc("delete_requirement")
+    @ns.marshal_with(requirement)
+    def delete(self, id):
+        """Delete a worker"""
+        return requirement_dao.delete(id)
+
+
+
+ns = api.namespace('recruiter', description='Recruiter management')
+
+class RecruiterDAO(BaseDAO):
+    ObjectType = Recruiter
+
+    def get(self, batch, rank):
+        object = Recruiter.query.get({'batch':batch, 'rank':rank})
+        if object is None:
+            api.abort(404, "{} {} doesn't exist".format(
+                    self.ObjectType.__name__,id))
+        return object
+        
+    def create(self, data):
+        object = self.ObjectType(**data)
+        db.session.merge(object)
+        db.session.commit()
+        return object
+
+    def update(self, batch, rank, data):
+        object = self.get(batch, rank)
+        modified = False
+        for attr, value in data.items():
+            if hasattr(object,attr): 
+                if getattr(object,attr)!=value:
+                    setattr(object, attr, value)
+                    modified = True
+            else:
+                api.abort(500,f'Error: {object.__name__} has no attribute {attr}')
+        if modified:
+            db.session.commit()
+        return object
+
+    def delete(self, batch, rank):
+        object = self.get(batch, rank)
+        db.session.delete(object)
+        db.session.commit()
+        return object
+    
+    def list(self, **args):
+        return super().list(sorting_column='rank', **args)
+    
+
+
+recruiter_dao = RecruiterDAO()
+
+recruiter = api.model('Recruiter', {
+    'batch': fields.String(readonly=True, description='The target batch for recruitment'),
+    'rank': fields.Integer(readonly=True, description='The rank of the recruiter for that batch (unique per batch)'),
+    'tasks_per_worker': fields.Integer(required=True, description='Each time this number of pending tasks is there, trigger a recruitment'),
+    'worker_flavor': fields.String(required=True, description='What flavor of worker to recruit'),
+    'worker_provider': fields.String(required=True, description='From what provider the worker should be recruited'),
+    'worker_region': fields.String(required=True, description='From what provider region the worker should be recruited'),
+    'worker_concurrency': fields.Integer(required=True, description='Set worker concurrency to this when recruited'),
+    'worker_prefetch': fields.Integer(required=False, description='Set worker prefetch to this when recruited (0 otherwise)'),
+    'minimum_tasks': fields.Integer(required=False, description='Do not trigger until there is this minimum number of task (should be above tasks_per_worker)'),
+    'maximum_workers': fields.Integer(required=False, description='Stop to trigger when there is this number of worker for the batch'),
+})
+
+@ns.route('/')
+class RecruiterList(Resource):
+    '''Shows a list of all recruiters, and lets you POST to add new recruiters'''
+    @ns.doc('list_recruiters')
+    @ns.marshal_list_with(recruiter)
+    def get(self):
+        '''List all recruiters'''
+        return recruiter_dao.list()
+
+    @ns.doc('create_recruiter')
+    @ns.expect(recruiter)
+    @ns.marshal_with(recruiter)
+    def post(self):
+        '''Create or replace a recruiter'''
+        return requirement_dao.create(api.payload), 201
+
+@ns.route("/<batch>/<rank>")
+@ns.param("batch", "Target batch for the recruiter")
+@ns.param("rank", "Rank of the recruiter")
+@ns.response(404, "Recruiter not found")
+class RecruiterObject(Resource):
+    @ns.doc("get_recruiter")
+    @ns.marshal_with(recruiter)
+    def get(self, batch, rank):
+        """Fetch a execution given its identifier"""
+        return recruiter_dao.get(batch, rank)
+
+    @ns.doc("update_execution")
+    @ns.expect(execution)
+    @ns.marshal_with(recruiter, code=201)
+    def put(self, batch, rank):
+        """Update an execution"""
+        return recruiter_dao.update(batch, rank, api.payload)
+
+    @ns.doc("delete_recruiter")
+    @ns.marshal_with(recruiter)
+    def delete(self, batch, rank):
+        """Delete a worker"""
+        return recruiter_dao.delete(batch, rank)
+    
+
 
 #     # ### 
 #     #  #  
@@ -1204,6 +1405,7 @@ def handle_get():
                 ORDER BY worker.batch,worker.name''')]),
             'totals': next(iter([dict(row) for row in db.session.execute(
                 '''SELECT
+                    (SELECT count(task_id) FROM task WHERE status='waiting') as waiting,
                     (SELECT count(task_id) FROM task WHERE status='pending') as pending,
                     (SELECT count(task_id) FROM task WHERE status IN ('assigned','accepted')) as assigned,
                     (SELECT count(task_id) FROM task WHERE status='running') as running,

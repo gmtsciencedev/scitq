@@ -5,6 +5,7 @@ var current_parameters = {};
 
 function status2class(status) {
     return {
+        'waiting':'warning',
         'succeeded':'success',
         'failed':'danger',
         'running':'primary',

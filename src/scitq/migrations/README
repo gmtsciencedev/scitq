@@ -1,0 +1,16 @@
+Single-database configuration for Flask.
+
+
+# To create migrations
+
+```bash
+cd src/scitq
+FLASK_APP=server flask db migrate -m "Some description of the migration"
+```
+
+# To apply migrations
+
+```bash
+cd src/scitq
+FLASK_APP=server flask db upgrade 
+```
