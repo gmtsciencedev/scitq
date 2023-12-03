@@ -2,6 +2,7 @@ from argparse import Namespace
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from sqlalchemy import func, and_, select, delete, true, event, DDL
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import ProgrammingError
@@ -128,6 +129,8 @@ try:
     uwsgi.post_fork_hook = postfork
 except ImportError:
     pass
+
+migrate = Migrate(app, db)
 
  #######  ######   ######  
  #     #  #     #  #     # 
