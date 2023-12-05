@@ -2184,16 +2184,12 @@ def background():
             candidate_tasks = []
             failed_requirements = []
             for task,status in list(active_requirements):
-                log.warning(f'requirement status is {task},{status}')
                 if status=='succeeded' and task not in candidate_tasks:
-                    log.warning('candidate')
                     candidate_tasks.append(task)
                 if status!='succeeded' and task not in failed_requirements:
-                    log.warning('rejected')
                     failed_requirements.append(task)
             for task in candidate_tasks:
                 if task not in failed_requirements:
-                    log.warning('passed')
                     task.status='pending'
                     session.add(task)
                     change = True
