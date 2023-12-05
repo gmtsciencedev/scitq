@@ -31,6 +31,7 @@ POLLING_TIME = 4
 READ_TIMEOUT = 5
 QUEUE_SIZE_THRESHOLD = 2
 IDLE_TIMEOUT = 600
+WAIT_FOR_FIRST_EXECUTION_TIMEOUT = 3600
 DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
     "/tmp/scitq" if platform.system() in ['Windows','Darwin'] else "/scratch")
@@ -1061,11 +1062,12 @@ class Client:
                             log.info('Waiting for execution to start')
                             execution_started.acquire()
                             log.info('Execution started')
-                    if not(self.executions) and self.has_worked:
+                    if not(self.executions):
                         now = time()
                         if self.idle_time is None:
                             self.idle_time=now
-                        elif now-self.idle_time > IDLE_TIMEOUT:
+                        elif now-self.idle_time > WAIT_FOR_FIRST_EXECUTION_TIMEOUT or \
+                                (now-self.idle_time > IDLE_TIMEOUT and self.has_worked):
                             self.s.worker_callback(self.w.worker_id, message = "idle")
                             self.idle_time = None
                 for signal in self.s.worker_signals(self.w.worker_id):
@@ -1224,7 +1226,7 @@ def main():
     parser.add_argument('-b','--batch', type=str, default=None,
             help=f"Assign the worker to a default batch (default to None, the default batch)")
     parser.add_argument('-a','--autoclean', type=int, default=DEFAULT_AUTOCLEAN,
-            help=f"Clean failures when disk is full up to this % (default to {DEFAULT_AUTOCLEAN})")
+            help=f"Clean failures when disk is full up to this %% (default to {DEFAULT_AUTOCLEAN})")
     args = parser.parse_args()
     
     Client(

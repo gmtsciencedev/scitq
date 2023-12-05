@@ -24,6 +24,8 @@ def converter(x,long):
     elif type(x)==str and not long:
         if len(x)> MAX_LENGTH_STR :
             x=x[:MAX_LENGTH_STR-1] +'...'
+    elif type(x)==list:
+        x=','.join([str(element) for element in x])
     return x
 
 def __list_print(item_list, retained_columns, headers, long=False):
@@ -136,6 +138,7 @@ def main():
     task_update_subparser.add_argument('-O','--option', help='The new docker option for the task', type=str, default=None)
     task_update_subparser.add_argument('-j','--input', help='The new input for the task', type=str, default=None)
     task_update_subparser.add_argument('-o','--output', help='The new output for the task', type=str, default=None)
+    task_update_subparser.add_argument('-R','--requirements', help='A new space separated required task ids', type=str, default=None)
     
     ansible_parser = subparser.add_parser('ansible', help='The following options are to work with ansible subcode')
     subsubparser=ansible_parser.add_subparsers(dest='action')
@@ -260,7 +263,7 @@ def main():
         if args.action == 'list':
             info_task=['task_id','name','status','command','creation_date','modification_date','batch']
             if args.long:
-                info_task+=['container','container_options','input','output','resource']
+                info_task+=['container','container_options','input','output','resource','required_task_ids']
             if not args.no_header:
                 headers = info_task
             else:
@@ -316,10 +319,18 @@ def main():
                     id=task['task_id']
                     break
                 else:
-                    raise RuntimeError(f'No such task {args.name}...')   
+                    raise RuntimeError(f'No such task {args.name}...')  
+            if args.requirements is not None:
+                try:
+                    args.requirements = [int(r) for r in args.requirements.split(' ')]
+                except: 
+                    try:
+                        args.requirements = [int(r) for r in args.requirements.split(',')]
+                    except:
+                        raise RuntimeError(f'requirements should be a space or comma separated list of integer not {args.requirements}') 
             s.task_update(id, name=args.new_name, status=args.status, batch=args.batch,
                 command=args.command, container=args.docker, container_options=args.option,
-                input=args.input, output=args.output)
+                input=args.input, output=args.output, required_task_ids=args.requirements)
         elif args.action == 'delete':
             if args.id is not None:
                 id=args.id

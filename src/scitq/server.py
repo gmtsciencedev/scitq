@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from sqlalchemy import func, and_, select, delete, true, event, DDL
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import ProgrammingError
 from flask_restx import Api, Resource, fields
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17,6 +17,7 @@ import os
 from subprocess import run, Popen, PIPE
 import signal
 import json as json_module
+import math
 from sqlalchemy.dialects import sqlite
 from .util import PropagatingThread, package_path, package_version, check_dir, to_dict, tryupdate
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
@@ -492,7 +493,11 @@ class TaskDAO(BaseDAO):
     authorized_status = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
 
     def list(self, **args):
-        return super().list(sorting_column='task_id',**args)
+        task_list = []
+        for task in super().list(sorting_column='task_id',**args):
+            task.required_task_ids = list([r.other_task_id for r in task.requirements])
+            task_list.append(task)
+        return task_list
 
     def update(self, id, data):
         task = self.get(id)
@@ -521,7 +526,17 @@ class TaskDAO(BaseDAO):
         return task
 
 
+
 task_dao = TaskDAO()
+
+class RequirementDAO(BaseDAO):
+    ObjectType = Requirement
+
+    def list(self, **args):
+        super().list(sorting_column='requirement_id', **args)
+
+requirement_dao = RequirementDAO()
+
 
 task = api.model('Task', {
     'task_id': fields.Integer(readonly=True, description='The task unique identifier'),
@@ -545,6 +560,8 @@ task = api.model('Task', {
         decription="Container (extra) option if needed"),
     'resource': fields.String(required=False,
         decription="Resource data required for task (much like input except it is shared between tasks) (space separated files URL in s3://...)"),
+    'required_task_ids': fields.List(fields.Integer,required=False,
+        description="List of task ids required to do this task")
 })
 
 task_filter = api.model('TaskFilter', {
@@ -570,7 +587,15 @@ class TaskList(Resource):
     @ns.marshal_with(task, code=201)
     def post(self):
         '''Create a new task'''
-        return task_dao.create(api.payload), 201
+        if 'required_task_ids' in api.payload:
+            requirements = api.payload['required_task_ids']
+            del(api.payload['required_task_ids'])
+        else:
+            requirements = []
+        task = task_dao.create(api.payload)
+        for r in requirements:
+            requirement_dao.create({'task_id':task.task_id, 'other_task_id':r})
+        return task, 201
 
 
 @ns.route("/<id>")
@@ -588,6 +613,12 @@ class WorkerObject(Resource):
     @ns.marshal_with(task, code=201)
     def put(self, id):
         """Update a task"""
+        if 'required_task_ids' in api.payload:
+            requirements = api.payload['required_task_ids']
+            del(api.payload['required_task_ids'])
+            db.session.execute(delete(Requirement).where(Requirement.task_id==id))
+            for r in requirements:
+                requirement_dao.create({'task_id':id, 'other_task_id':r})
         return task_dao.update(id, api.payload)
 
     @ns.doc("delete_task")
@@ -1208,13 +1239,6 @@ class BatchDelete(Resource):
 
 ns = api.namespace('requirement', description='Task requirements management')
 
-class RequirementDAO(BaseDAO):
-    ObjectType = Requirement
-
-    def list(self, **args):
-        return super().list(sorting_column='requirement_id', **args)
-
-requirement_dao = RequirementDAO()
 
 requirement = api.model('Requirement', {
     'requirement_id': fields.Integer(readonly=True, description='The requirement unique identifier'),
@@ -1869,6 +1893,17 @@ def background():
     while True:
         log.warning('Starting main loop')
         try:
+
+            # ########    ###     ######  ##    ##    ########  ########   #######   ######  ########  ######   ######  #### ##    ##  ######   
+            #    ##      ## ##   ##    ## ##   ##     ##     ## ##     ## ##     ## ##    ## ##       ##    ## ##    ##  ##  ###   ## ##    ##  
+            #    ##     ##   ##  ##       ##  ##      ##     ## ##     ## ##     ## ##       ##       ##       ##        ##  ####  ## ##        
+            #    ##    ##     ##  ######  #####       ########  ########  ##     ## ##       ######    ######   ######   ##  ## ## ## ##   #### 
+            #    ##    #########       ## ##  ##      ##        ##   ##   ##     ## ##       ##             ##       ##  ##  ##  #### ##    ##  
+            #    ##    ##     ## ##    ## ##   ##     ##        ##    ##  ##     ## ##    ## ##       ##    ## ##    ##  ##  ##   ### ##    ##  
+            #    ##    ##     ##  ######  ##    ##    ##        ##     ##  #######   ######  ########  ######   ######  #### ##    ##  ######  
+
+
+
             task_list = list(session.query(Task).filter(
                     Task.status=='pending').with_entities(Task.task_id, Task.batch))
             if task_list:
@@ -1924,6 +1959,15 @@ def background():
                 if change:
                     session.commit()
             
+
+            #        ##  #######  ########     ########  ########   #######   ######  ########  ######   ######  #### ##    ##  ######   
+            #        ## ##     ## ##     ##    ##     ## ##     ## ##     ## ##    ## ##       ##    ## ##    ##  ##  ###   ## ##    ##  
+            #        ## ##     ## ##     ##    ##     ## ##     ## ##     ## ##       ##       ##       ##        ##  ####  ## ##        
+            #        ## ##     ## ########     ########  ########  ##     ## ##       ######    ######   ######   ##  ## ## ## ##   #### 
+            #  ##    ## ##     ## ##     ##    ##        ##   ##   ##     ## ##       ##             ##       ##  ##  ##  #### ##    ##  
+            #  ##    ## ##     ## ##     ##    ##        ##    ##  ##     ## ##    ## ##       ##    ## ##    ##  ##  ##   ### ##    ##  
+            #   ######   #######  ########     ##        ##     ##  #######   ######  ########  ######   ######  #### ##    ##  ######     
+
             change = False
             for job in list(session.query(Job).filter(Job.status == 'pending')):
 
@@ -1957,7 +2001,7 @@ def background():
                         if real_worker is not None:
                             change = True
                             session.delete(real_worker)
-                            job.status='succeeded'
+                            job.status='succeeded'            
                 
                 if job.action == 'worker_create':
                     change = True
@@ -2067,9 +2111,95 @@ def background():
                     log.exception(f'Job {process_name} failed: {e}')
                     other_process_queue.remove((process_name, process))
 
-                    
+                                
+            ########  ########  ######  ########  ##     ## #### ######## ######## ########   ######  
+            ##     ## ##       ##    ## ##     ## ##     ##  ##     ##    ##       ##     ## ##    ## 
+            ##     ## ##       ##       ##     ## ##     ##  ##     ##    ##       ##     ## ##       
+            ########  ######   ##       ########  ##     ##  ##     ##    ######   ########   ######  
+            ##   ##   ##       ##       ##   ##   ##     ##  ##     ##    ##       ##   ##         ## 
+            ##    ##  ##       ##    ## ##    ##  ##     ##  ##     ##    ##       ##    ##  ##    ## 
+            ##     ## ########  ######  ##     ##  #######  ####    ##    ######## ##     ##  ######  
+                        
+            change = False
+            active_recruiters = session.query(Recruiter,func.count(Task.task_id),func.count(Worker.worker_id)).\
+                    join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
+                    outerjoin(Worker,Worker.batch==Recruiter.batch).\
+                    group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank)
+            recyclable_workers = session.query(Worker,func.count(Task.task_id)).join(Worker.executions).join(Execution.task).\
+                    filter(Execution.status.in_(['assigned','running'])).group_by(Worker)
+            for recruiter,pending_tasks,workers in list(active_recruiters):
+                if recruiter.minimum_tasks and recruiter.minimum_tasks < pending_tasks:
+                    continue
+                if recruiter.maximum_workers and recruiter.maximum_workers >= workers:
+                    continue
+                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker)
+                if recruiter.maximum_workers and recruiter.maximum_workers - workers < nb_workers:
+                    nb_workers = recruiter.maximum_workers - workers
 
-            
+                change = True
+                for worker, count in list(recyclable_workers):  
+                    if worker.batch != recruiter.batch and count==0 and nb_workers>0:
+                        worker.batch = recruiter.batch
+                        worker.prefetch = recruiter.worker_prefetch
+                        worker.concurrency = recruiter.worker_concurrency
+                        session.add(worker)
+                        nb_workers -= 1
+
+                for _ in range(nb_workers):
+                    session.add(
+                        Job(target='', 
+                            action='worker_create', 
+                            args={
+                                'concurrency': recruiter.worker_concurrency, 
+                                'prefetch': recruiter.worker_prefetch or 0,
+                                'flavor': recruiter.worker_flavor,
+                                'region': recruiter.worker_region,
+                                'provider': recruiter.worker_provider,
+                                'batch': recruiter.batch
+                            }
+                        )
+                    )
+            if change:
+                session.commit()
+                
+
+
+
+            ########  ########  #######  ##     ## #### ########  ######## ##     ## ######## ##    ## ########  ######  
+            ##     ## ##       ##     ## ##     ##  ##  ##     ## ##       ###   ### ##       ###   ##    ##    ##    ## 
+            ##     ## ##       ##     ## ##     ##  ##  ##     ## ##       #### #### ##       ####  ##    ##    ##       
+            ########  ######   ##     ## ##     ##  ##  ########  ######   ## ### ## ######   ## ## ##    ##     ######  
+            ##   ##   ##       ##  ## ## ##     ##  ##  ##   ##   ##       ##     ## ##       ##  ####    ##          ## 
+            ##    ##  ##       ##    ##  ##     ##  ##  ##    ##  ##       ##     ## ##       ##   ###    ##    ##    ## 
+            ##     ## ########  ##### ##  #######  #### ##     ## ######## ##     ## ######## ##    ##    ##     ######  
+
+
+
+            change = False
+            task1 = aliased(Task)
+            task2 = aliased(Task)
+            active_requirements = session.query(task1,task2.status).\
+                                    join(task1,Requirement.task).filter(task1.status == 'waiting').\
+                                    join(task2,Requirement.other_task)
+            candidate_tasks = []
+            failed_requirements = []
+            for task,status in list(active_requirements):
+                log.warning(f'requirement status is {task},{status}')
+                if status=='succeeded' and task not in candidate_tasks:
+                    log.warning('candidate')
+                    candidate_tasks.append(task)
+                if status!='succeeded' and task not in failed_requirements:
+                    log.warning('rejected')
+                    failed_requirements.append(task)
+            for task in candidate_tasks:
+                if task not in failed_requirements:
+                    log.warning('passed')
+                    task.status='pending'
+                    session.add(task)
+                    change = True
+            if change:
+                session.commit()
+
 
 
 
