@@ -829,13 +829,14 @@ class Executor:
                         pass
 
 class Client:
-    def __init__(self, server, concurrency, name, batch, autoclean):
+    def __init__(self, server, concurrency, name, batch, autoclean, flavor):
         self.s = Server(server, style='object')
         self.server = server
         self.concurrency = concurrency
         self.prefetch = 0
         self.hostname = socket.gethostname()
         self.batch = batch
+        self.flavor = flavor
         if name is None:
             self.name = self.hostname
         else:
@@ -910,7 +911,7 @@ class Client:
                     break
 
     def run(self, status=DEFAULT_WORKER_STATUS):
-        self.w = self.s.worker_update(self.w.worker_id, status=status)
+        self.w = self.s.worker_update(self.w.worker_id, status=status, flavor=self.flavor)
         cpu_list=[]
         previous_disk = previous_network = None
         previous_time = None
@@ -1227,6 +1228,8 @@ def main():
             help=f"Assign the worker to a default batch (default to None, the default batch)")
     parser.add_argument('-a','--autoclean', type=int, default=DEFAULT_AUTOCLEAN,
             help=f"Clean failures when disk is full up to this %% (default to {DEFAULT_AUTOCLEAN})")
+    parser.add_argument('-f','--flavor', type=str, default=None,
+            help=f"Update the declared flavor of this client to this value (otherwise keep the default value)")
     args = parser.parse_args()
     
     Client(
@@ -1234,7 +1237,8 @@ def main():
         concurrency=args.concurrency, 
         name=args.name,
         batch=args.batch,
-        autoclean=args.autoclean
+        autoclean=args.autoclean,
+        flavor=args.flavor,
     ).run(status=args.status)
     
 

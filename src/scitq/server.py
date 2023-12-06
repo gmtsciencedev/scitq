@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from sqlalchemy import func, and_, select, delete, true, event, DDL
+from sqlalchemy import func, and_, select, delete, true, event, DDL, distinct
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import ProgrammingError
 from flask_restx import Api, Resource, fields
@@ -46,6 +46,7 @@ WORKER_CREATE_RETRY_SLEEP=30
 UI_OUTPUT_TRUNC=100
 UI_MAX_DISPLAYED_ROW = 500
 WORKER_DESTROY_RETRY=2
+DEFAULT_BATCH = 'Default'
 
 if os.environ.get('QUEUE_PROCESS') and os.environ.get('QUEUE_LOG_FILE'):
     check_dir(os.environ.get('QUEUE_LOG_FILE'))
@@ -152,7 +153,7 @@ class Task(db.Model):
     status = db.Column(db.String, nullable=False)
     creation_date = db.Column(db.DateTime, nullable=False)
     modification_date = db.Column(db.DateTime)
-    batch = db.Column(db.String, nullable=True)
+    batch = db.Column(db.String, nullable=False, default=DEFAULT_BATCH)
     input = db.Column(db.String, nullable=True)
     output = db.Column(db.String, nullable=True)
     container = db.Column(db.String, nullable=True)
@@ -181,15 +182,15 @@ class Worker(db.Model):
     name = db.Column(db.String, nullable=False)
     hostname = db.Column(db.String)
     status = db.Column(db.String, nullable=False)
-    concurrency = db.Column(db.Integer)
-    prefetch = db.Column(db.Integer)
+    concurrency = db.Column(db.Integer,nullable=False)
+    prefetch = db.Column(db.Integer,default=0)
     load = db.Column(db.String)
     memory=db.Column(db.String)
     stats=db.Column(db.String)
     creation_date = db.Column(db.DateTime)
     modification_date = db.Column(db.DateTime)
     last_contact_date = db.Column(db.DateTime)
-    batch = db.Column(db.String,nullable=True)
+    batch = db.Column(db.String, nullable=False,default=DEFAULT_BATCH)
     idle_callback = db.Column(db.String, nullable=True)
     flavor = db.Column(db.String, nullable=True)
     region = db.Column(db.String, nullable=True)
@@ -357,20 +358,21 @@ class Requirement(db.Model):
     
 class Recruiter(db.Model):
     __tablename__="recruiter"
-    batch = db.Column(db.String,nullable=False, primary_key=True)
+    batch = db.Column(db.String, default=DEFAULT_BATCH, nullable=False, primary_key=True)
     rank = db.Column(db.Integer, nullable=False, primary_key=True)
     tasks_per_worker = db.Column(db.Integer, nullable=False)
     worker_flavor = db.Column(db.String, nullable=False)
-    worker_region = db.Column(db.String, nullable=False)
-    worker_provider = db.Column(db.String, nullable=False)
-    worker_concurrency = db.Column(db.String, nullable=False)
-    worker_prefetch = db.Column(db.String, nullable=True)
+    worker_region = db.Column(db.String, nullable=True)
+    worker_provider = db.Column(db.String, nullable=True)
+    worker_concurrency = db.Column(db.Integer, nullable=False)
+    worker_prefetch = db.Column(db.Integer, nullable=False, default=0)
     minimum_tasks = db.Column(db.Integer, nullable=True)
     maximum_workers = db.Column(db.Integer, nullable=True)
 
     def __init__(self, batch, rank, tasks_per_worker, 
-                 worker_flavor, worker_region, worker_provider, 
-                 worker_concurrency, worker_prefetch = None,
+                 worker_flavor, worker_concurrency,
+                 worker_region = None, worker_provider = None, 
+                 worker_prefetch = 0,
                  minimum_tasks=None, maximum_workers=None):
         self.batch = batch
         self.rank = rank
@@ -382,6 +384,7 @@ class Recruiter(db.Model):
         self.worker_prefetch = worker_prefetch
         self.minimum_tasks = minimum_tasks
         self.maximum_workers = maximum_workers
+        
     
     # NB Session.merge() seems the way to go with this object
     # cf https://docs.sqlalchemy.org/en/14/orm/session_api.html#sqlalchemy.orm.Session.merge
@@ -658,8 +661,8 @@ class WorkerDAO(BaseDAO):
             session.commit()
             return object
 
-    def list(self):
-        return super().list(sorting_column='worker_id')
+    def list(self, **args):
+        return super().list(sorting_column='worker_id', **args)
 
 worker_dao = WorkerDAO()
 
@@ -685,7 +688,13 @@ worker = api.model('Worker', {
     'batch': fields.String(required=False, 
         description="worker accept only tasks with same batch (null or not)."),
     'idle_callback': fields.String(readonly=True,
-        description="A command to be called on scitq server when the worker load *returns* to zero. Typically used to end cloud instances.")
+        description="A command to be called on scitq server when the worker load *returns* to zero. Typically used to end cloud instances."),
+    'flavor': fields.String(required=False, 
+        description="flavor (cloud type of instance) of the worker."),
+    'region': fields.String(readonly=True, 
+        description="region (cloud regional entity of the instance) of the worker."),
+    'provider': fields.String(readonly=True, 
+        description="provider (cloud provider of the instance) of the worker."),
 })
 
 @ns.route('/')
@@ -695,7 +704,7 @@ class WorkerList(Resource):
     @ns.marshal_list_with(worker)
     def get(self):
         '''List all workers'''
-        return worker_dao.list()
+        return worker_dao.list(**api.payload)
 
     @ns.doc('create_worker')
     @ns.expect(worker)
@@ -1158,27 +1167,16 @@ class BatchStop(Resource):
     @ns.expect(batch_parser)
     def put(self, name):
         """Pause all workers for this batch - and kill current job if force is set"""
-        if name=='Default':
-            for w in Worker.query.filter(Worker.batch.is_(None)):
-                w.status = 'paused'
-        else:
-            for w in Worker.query.filter(Worker.batch==name):
-                w.status = 'paused'
+        for w in Worker.query.filter(Worker.batch==name):
+            w.status = 'paused'
         args = batch_parser.parse_args()
         if args.get('signal',False):
             log.warning(f'Sending signal {args["signal"]} to executions for batch {name}')
-            if name=='Default':
-                for e in db.session.scalars(select(Execution).join(Execution.task).where(
-                                                Execution.status=='running',
-                                                Task.batch.is_(None))):
-                    log.warning(f'Sending signal {args["signal"]} to execution {e.execution_id}')
-                    db.session.add(Signal(e.execution_id, e.worker_id, args['signal']))
-            else:
-                for e in db.session.scalars(select(Execution).join(Execution.task).where(
-                                                Execution.status=='running',
-                                                Task.batch==name)):
-                    log.warning(f'Sending signal {args["signal"]} to execution {e.execution_id}')
-                    db.session.add(Signal(e.execution_id, e.worker_id, args['signal']))
+            for e in db.session.scalars(select(Execution).join(Execution.task).where(
+                                            Execution.status=='running',
+                                            Task.batch==name)):
+                log.warning(f'Sending signal {args["signal"]} to execution {e.execution_id}')
+                db.session.add(Signal(e.execution_id, e.worker_id, args['signal']))
         db.session.commit()
         return {'result':'Ok'}
 
@@ -1190,27 +1188,16 @@ class BatchGo(Resource):
     @ns.expect(batch_parser)
     def put(self, name):
         """(re)set all workers affected to this batch to running"""
-        if name=='Default':
-            for w in Worker.query.filter(Worker.batch.is_(None)):
-                w.status = 'running'
-        else:
-            for w in Worker.query.filter(Worker.batch==name):
-                w.status = 'running'
+        for w in Worker.query.filter(Worker.batch==name):
+            w.status = 'running'
         args = batch_parser.parse_args()
         if args.get('signal',False):
             log.warning(f'Sending signal {args["signal"]} to executions for batch {name}')
-            if name=='Default':
-                for e in db.session.scalars(select(Execution).join(Execution.task).where(
-                                                Execution.status=='running',
-                                                Task.batch.is_(None))):
-                    log.warning(f'Sending signal {args["signal"]} to execution {e.execution_id}')
-                    db.session.add(Signal(e.execution_id, e.worker_id, args['signal']))
-            else:
-                for e in db.session.scalars(select(Execution).join(Execution.task).where(
-                                                Execution.status=='running',
-                                                Task.batch==name)):
-                    log.warning(f'Sending signal {args["signal"]} to execution {e.execution_id}')
-                    db.session.add(Signal(e.execution_id, e.worker_id, args['signal']))
+            for e in db.session.scalars(select(Execution).join(Execution.task).where(
+                                            Execution.status=='running',
+                                            Task.batch==name)):
+                log.warning(f'Sending signal {args["signal"]} to execution {e.execution_id}')
+                db.session.add(Signal(e.execution_id, e.worker_id, args['signal']))
         db.session.commit()
         return {'result':'Ok'}
 
@@ -1221,18 +1208,11 @@ class BatchDelete(Resource):
     @ns.doc("delete_a_batch")
     def delete(self, name):
         """Delete all tasks and executions for this batch"""
-        if name=='Default':
-            log.warning('Deleting default batch')
-            db.session.execute(delete(Execution).where(Execution.task_id.in_(
-                select(Task.task_id).where(Task.batch.is_(None)))), 
-                execution_options={'synchronize_session':False})
-            db.session.execute(delete(Task).where(Task.batch.is_(None)))
-        else:
-            log.warning(f'Deleting batch {name}')
-            db.session.execute(delete(Execution).where(Execution.task_id.in_(
-                select(Task.task_id).where(Task.batch==name))), 
-                execution_options={'synchronize_session':False})
-            db.session.execute(delete(Task).where(Task.batch==name))
+        log.warning(f'Deleting batch {name}')
+        db.session.execute(delete(Execution).where(Execution.task_id.in_(
+            select(Task.task_id).where(Task.batch==name))), 
+            execution_options={'synchronize_session':False})
+        db.session.execute(delete(Task).where(Task.batch==name))
         db.session.commit()
         return {'result':'Ok'}
 
@@ -1307,7 +1287,7 @@ class RecruiterDAO(BaseDAO):
         return object
 
     def delete(self, batch, rank):
-        object = self.get(batch, rank)
+        object = self.get(batch,rank)
         db.session.delete(object)
         db.session.commit()
         return object
@@ -1324,8 +1304,8 @@ recruiter = api.model('Recruiter', {
     'rank': fields.Integer(readonly=True, description='The rank of the recruiter for that batch (unique per batch)'),
     'tasks_per_worker': fields.Integer(required=True, description='Each time this number of pending tasks is there, trigger a recruitment'),
     'worker_flavor': fields.String(required=True, description='What flavor of worker to recruit'),
-    'worker_provider': fields.String(required=True, description='From what provider the worker should be recruited'),
-    'worker_region': fields.String(required=True, description='From what provider region the worker should be recruited'),
+    'worker_provider': fields.String(required=False, description='From what provider the worker should be recruited'),
+    'worker_region': fields.String(required=False, description='From what provider region the worker should be recruited'),
     'worker_concurrency': fields.Integer(required=True, description='Set worker concurrency to this when recruited'),
     'worker_prefetch': fields.Integer(required=False, description='Set worker prefetch to this when recruited (0 otherwise)'),
     'minimum_tasks': fields.Integer(required=False, description='Do not trigger until there is this minimum number of task (should be above tasks_per_worker)'),
@@ -1339,14 +1319,14 @@ class RecruiterList(Resource):
     @ns.marshal_list_with(recruiter)
     def get(self):
         '''List all recruiters'''
-        return recruiter_dao.list()
+        return recruiter_dao.list(**api.payload)
 
     @ns.doc('create_recruiter')
     @ns.expect(recruiter)
     @ns.marshal_with(recruiter)
     def post(self):
         '''Create or replace a recruiter'''
-        return requirement_dao.create(api.payload), 201
+        return recruiter_dao.create(api.payload), 201
 
 @ns.route("/<batch>/<rank>")
 @ns.param("batch", "Target batch for the recruiter")
@@ -1359,8 +1339,8 @@ class RecruiterObject(Resource):
         """Fetch a execution given its identifier"""
         return recruiter_dao.get(batch, rank)
 
-    @ns.doc("update_execution")
-    @ns.expect(execution)
+    @ns.doc("update_recruiter")
+    @ns.expect(recruiter)
     @ns.marshal_with(recruiter, code=201)
     def put(self, batch, rank):
         """Update an execution"""
@@ -1370,8 +1350,8 @@ class RecruiterObject(Resource):
     @ns.marshal_with(recruiter)
     def delete(self, batch, rank):
         """Delete a worker"""
-        return recruiter_dao.delete(batch, rank)
-    
+        object=recruiter_dao.delete(batch, rank)
+        return object 
 
 
 #     # ### 
@@ -1653,8 +1633,6 @@ def handle_batch_action():
     if json['action'] in ['stop','break','pause','simple pause','pause only batch']:
         #Same function as in the API set all workers affected to this batch to running and can also interrupt the running tasks with signal 3 and 9
         name=json['name']
-        if name=='Default':
-            name=None
         for w in Worker.query.filter(Worker.batch==name):
                 w.status = 'paused'
         if json['action']=='break':
@@ -1702,8 +1680,6 @@ def handle_batch_action():
         name=json['name']
         """Delete all tasks and executions for this batch"""
         # execution are deleted by cascade
-        if name=='Default':
-            name=None
         for t in Task.query.filter(Task.batch==name):
             db.session.delete(t)
         db.session.commit()
@@ -1859,7 +1835,8 @@ def create_worker_object(concurrency, flavor, region, provider, batch, prefetch,
     log.info(f'Creating a new worker {hostname}: concurrency:{concurrency}, \
 flavor:{flavor}, region:{region}, provider:{provider}, prefetch:{prefetch}')
     w = Worker(name=hostname, hostname=hostname, concurrency=concurrency, status='offline', 
-            batch=batch, idle_callback=idle_callback, prefetch=prefetch)
+            batch=batch, idle_callback=idle_callback, prefetch=prefetch, 
+            flavor=flavor,region=region, provider=provider)
     db_session.add(w)
     db_session.commit()
     return w
@@ -2121,44 +2098,50 @@ def background():
             ##     ## ########  ######  ##     ##  #######  ####    ##    ######## ##     ##  ######  
                         
             change = False
-            active_recruiters = session.query(Recruiter,func.count(Task.task_id),func.count(Worker.worker_id)).\
+            active_recruiters = session.query(Recruiter,func.count(distinct(Task.task_id)),func.count(distinct(Worker.worker_id))).\
                     join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
-                    outerjoin(Worker,Worker.batch==Recruiter.batch).\
+                    join(Worker,Worker.batch==Recruiter.batch,isouter=True).\
                     group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank)
-            recyclable_workers = session.query(Worker,func.count(Task.task_id)).join(Worker.executions).join(Execution.task).\
-                    filter(Execution.status.in_(['assigned','running'])).group_by(Worker)
+            recyclable_workers = session.query(Worker,func.count(distinct(Task.task_id))).\
+                    join(Execution,and_(Worker.worker_id==Execution.worker_id,Execution.status.in_(['assigned','running'])), isouter=True).\
+                    join(Execution.task,isouter=True).\
+                    group_by(Worker)
             for recruiter,pending_tasks,workers in list(active_recruiters):
                 if recruiter.minimum_tasks and recruiter.minimum_tasks < pending_tasks:
                     continue
                 if recruiter.maximum_workers and recruiter.maximum_workers >= workers:
                     continue
-                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker)
-                if recruiter.maximum_workers and recruiter.maximum_workers - workers < nb_workers:
+                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker) - workers
+                if recruiter.maximum_workers and recruiter.maximum_workers < nb_workers + workers:
                     nb_workers = recruiter.maximum_workers - workers
+                if nb_workers < 0:
+                    continue
 
                 change = True
                 for worker, count in list(recyclable_workers):  
-                    if worker.batch != recruiter.batch and count==0 and nb_workers>0:
+                    if worker.batch != recruiter.batch and worker.flavor == recruiter.worker_flavor and count==0 and nb_workers>0:
                         worker.batch = recruiter.batch
                         worker.prefetch = recruiter.worker_prefetch
                         worker.concurrency = recruiter.worker_concurrency
                         session.add(worker)
                         nb_workers -= 1
-
-                for _ in range(nb_workers):
-                    session.add(
-                        Job(target='', 
-                            action='worker_create', 
-                            args={
-                                'concurrency': recruiter.worker_concurrency, 
-                                'prefetch': recruiter.worker_prefetch or 0,
-                                'flavor': recruiter.worker_flavor,
-                                'region': recruiter.worker_region,
-                                'provider': recruiter.worker_provider,
-                                'batch': recruiter.batch
-                            }
+                
+                if recruiter.worker_provider is not None and recruiter.worker_region is not None:
+                    for _ in range(nb_workers):
+                        session.add(
+                            Job(target='', 
+                                action='worker_create', 
+                                args={
+                                    'concurrency': recruiter.worker_concurrency, 
+                                    'prefetch': recruiter.worker_prefetch,
+                                    'flavor': recruiter.worker_flavor,
+                                    'region': recruiter.worker_region,
+                                    'provider': recruiter.worker_provider,
+                                    'batch': recruiter.batch
+                                }
+                            )
                         )
-                    )
+                
             if change:
                 session.commit()
                 

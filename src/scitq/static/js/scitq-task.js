@@ -83,8 +83,7 @@ async function get_tasks(parameters) {
                 <option value="" ${filter.get('worker')!=''?'':''}>-</option>`;
         select_batch =`<div>
             <label class="form-label" for="filter_by_batch">Batch:</label>
-            <select id="filter_by_batch" name="batch" class="form-select" col-md-3>
-                <option value="" ${filter.get('batch')!=''?'':'selected'}>Default</option>`;
+            <select id="filter_by_batch" name="batch" class="form-select" col-md-3>`;
         sort_by=`<label for="sortby" class="form-label">Sort by:</label>
                 <select id="sortby" name="sortby" class="form-select">
                 <option value="" ${filter.get('sortby')==''?'selected':''}>-</option>
