@@ -76,7 +76,7 @@ def main():
     worker_update_subparser.add_argument('-S','--status', help='The new status of the worker', type=str, default=None)
     worker_update_subparser.add_argument('-b','--batch', help='The new batch of the worker', type=str, default=None)
     worker_update_subparser.add_argument('-C','--concurrency', help='The new concurrency of the worker', type=str, default=None)
-    worker_update_subparser.add_argument('-p','--prefetch',help="Define how many tasks should be prefetched (default to 0)",type=int,default=0)
+    worker_update_subparser.add_argument('-p','--prefetch',help="Define how many tasks should be prefetched",type=int,default=None)
     worker_update_subparser.add_argument('-f','--flavor',help="Define which flavor/model should be ordered",type=str,default=None)
     
 

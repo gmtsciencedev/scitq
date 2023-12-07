@@ -292,13 +292,13 @@ class Server:
 
     def worker_update(self, id, name=None, hostname=None, concurrency=None, 
                     status=None,batch=None, idle_callback=None, prefetch=None,
-                    flavor=None,asynchronous=True):
+                    flavor=None,task_properties=None,asynchronous=True):
         """Update a specific worker with worker_id equal to id
         return the updated worker (or None if the server timeout)"""
         return self.put(f'/workers/{id}', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
             'status':status, 'batch':batch, 'idle_callback':idle_callback,
-            'prefetch':prefetch, 'flavor':flavor}
+            'prefetch':prefetch, 'flavor':flavor, 'task_properties':task_properties}
         ), asynchronous=asynchronous)
 
     def worker_create(self, name, concurrency, hostname=None, status='paused',

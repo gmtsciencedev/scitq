@@ -4,6 +4,7 @@ from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from sqlalchemy import func, and_, select, delete, true, event, DDL, distinct
+from sqlalchemy.sql.expression import label
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import ProgrammingError
 from flask_restx import Api, Resource, fields
@@ -187,6 +188,7 @@ class Worker(db.Model):
     load = db.Column(db.String)
     memory=db.Column(db.String)
     stats=db.Column(db.String)
+    task_properties=db.Column(db.String, default=json_module.dumps({}))
     creation_date = db.Column(db.DateTime)
     modification_date = db.Column(db.DateTime)
     last_contact_date = db.Column(db.DateTime)
@@ -679,6 +681,7 @@ worker = api.model('Worker', {
     'load': fields.String(readonly=True, description='The worker load (in %)'),
     'memory':fields.Float(readonly=True, description='Memory used (in %)'),
     'stats':fields.String(readonly=True,description='Other worker stats'),
+    'task_properties':fields.String(required=False,description='Some task properties for batch transitions'),
     'creation_date': fields.DateTime(readonly=True, 
         description='timestamp of worker creation'),
     'modification_date': fields.DateTime(readonly=True, 
@@ -792,19 +795,22 @@ class WorkerCallback(Resource):
         """Update a worker last contact"""
         message = callback_parser.parse_args().get('message','')
         worker = worker_dao.get(id)
-        if message == 'idle' and worker.idle_callback:
-            if db.session.query(Execution).filter(Execution.status=='running',
-                    Execution.worker_id==worker.worker_id).count()>0:
-                log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
-                return {'result':'still have running tasks'}
-            if db.session.query(Task).filter(and_(Task.status.in_(['pending']),
-                                    Task.batch==worker.batch)).count()>0:
-                log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
-                return {'result':'still some work to do, lazy one!'}
-            log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
-            #worker.destroy()
-            create_worker_destroy_job(worker, db.session, commit=False)
-            #db.session.delete(worker)
+        if message == 'idle': 
+            if worker.idle_callback:
+                if db.session.query(Execution).filter(Execution.status=='running',
+                        Execution.worker_id==worker.worker_id).count()>0:
+                    log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
+                    return {'result':'still have running tasks'}
+                if db.session.query(Task).filter(and_(Task.status.in_(['pending']),
+                                        Task.batch==worker.batch)).count()>0:
+                    log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
+                    return {'result':'still some work to do, lazy one!'}
+                log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
+                #worker.destroy()
+                create_worker_destroy_job(worker, db.session, commit=False)
+                #db.session.delete(worker)
+            else:
+                worker.task_properties = json_module.dumps({})
             db.session.commit()
             return {'result':'ok'}
         else:
@@ -957,17 +963,48 @@ execution = api.model('Execution', {
     'latest': fields.Boolean(readonly=True, description='Latest or current execution for the related task')
 })
 
+execution_plus_batch = api.model('ExecutionPlusBatch', {
+    'execution_id': fields.Integer(readonly=True, description='The execution unique identifier'), 
+    'command': fields.String(required=False, description='The command that was really launched for this execution (it case Task.execution is modified)'),
+    'status': fields.String(readonly=True,
+        description=f'The execution status: {", ".join(ExecutionDAO.authorized_status)}'), 
+    'task_id': fields.Integer(required=True, description='A task unique identifier'),
+    'creation_date': fields.DateTime(readonly=True,
+        description="timestamp of execution creation (on worker)"),
+    'modification_date': fields.DateTime(readonly=True,
+        description="timestamp of execution last modification"),
+    'pid': fields.String(required=False, description='The process id (pid) of the execution'),
+    'output_files': fields.String(readonly=True, description='A list of output files transmitted (if any)'),
+    'latest': fields.Boolean(readonly=True, description='Latest or current execution for the related task'),
+    'batch': fields.String(readonly=True, description='The batch of the underlying task'),
+    'taskstatus': fields.String(readonly=True, description='The status of the underlying task')
+})
+
 
 @ns.route("/<id>/executions")
 @ns.param("id", "The worker identifier")
 @ns.response(404, "Worker not found")
 class WorkerExecutionObject(Resource):
     @ns.doc("get_worker_executions")
-    @ns.marshal_list_with(execution)
+    @ns.marshal_list_with(execution_plus_batch)
     def get(self, id):
         """Fetch a worker executions given the worker identifier"""
         #worker_dao.update_contact(id)
-        return execution_dao.list(worker_id=id, no_output=True)
+        worker_executions = db.session.query(Execution.execution_id,
+                              Execution.command, 
+                              Execution.status,
+                              Execution.task_id,
+                              Execution.creation_date,
+                              Execution.modification_date,
+                              Execution.pid,
+                              Execution.output_files,
+                              Execution.latest,
+                              Task.batch,
+                              label('taskstatus',Task.status)).\
+                        join(Execution.task).\
+                        filter(and_(Execution.worker_id==id,
+                                    Execution.status.not_in(['failed','succeeded','pending'])))
+        return list(worker_executions)
 
 
 @ns.route("/<id>/executions/<status>")
@@ -976,11 +1013,26 @@ class WorkerExecutionObject(Resource):
 @ns.response(404, "Worker not found")
 class WorkerExecutionFilterObject(Resource):
     @ns.doc("get_worker_executions")
-    @ns.marshal_list_with(execution)
+    @ns.marshal_list_with(execution_plus_batch)
     def get(self, id, status):
         """Fetch a worker executions given the worker identifier and the executions status"""
         #worker_dao.update_contact(id)
-        return execution_dao.list(worker_id=id, status=status)
+        #return execution_dao.list(worker_id=id, status=status)
+        worker_executions = db.session.query(Execution.execution_id,
+                              Execution.command, 
+                              Execution.status,
+                              Execution.task_id,
+                              Execution.creation_date,
+                              Execution.modification_date,
+                              Execution.pid,
+                              Execution.output_files,
+                              Execution.latest,
+                              Task.batch,
+                              label('taskstatus',Task.status)).\
+                        join(Execution.task).\
+                        filter(and_(Execution.worker_id==id,
+                                    Execution.status==status))
+        return list(worker_executions)
 
 signal = api.model('Signal', {
     'execution_id': fields.Integer(readonly=True, description='The execution unique identifier'), 
@@ -1890,15 +1942,23 @@ def background():
                 task_attributions = False
                 worker_list = list(session.query(Worker).filter(
                             Worker.status=='running').with_entities(
-                            Worker.worker_id,Worker.batch,Worker.concurrency,Worker.prefetch))
-                execution_per_worker = {worker_id: count for worker_id,count in 
-                                session.query(Execution.worker_id,func.count(Execution.task_id)).filter(and_(
-                                    Execution.worker_id.in_(list([w.worker_id for w in worker_list])),
-                                    Execution.status.in_(['running','pending','accepted']))
-                                ).group_by(
-                                    Execution.worker_id
-                                )
-                }
+                            Worker.worker_id,Worker.batch,Worker.concurrency,Worker.prefetch,Worker.task_properties))
+                execution_per_worker_list = session.query(Execution.worker_id,Task.batch,Execution.status).\
+                                                join(Execution.task).filter(and_(
+                                                Execution.worker_id.in_(list([w.worker_id for w in worker_list])),
+                                                Execution.status.in_(['running','pending','accepted']))
+                                            )
+                worker_properties = {worker.worker_id: json_module.loads(worker.task_properties) for worker in worker_list}
+                execution_per_worker = {}
+                for worker_id,batch,status in execution_per_worker_list:
+                    if worker_id not in execution_per_worker:
+                        execution_per_worker[worker_id] = 0
+                    weight,_ = worker_properties[worker_id].get(batch, (1,0) )
+                    if status=='running':
+                        # only running task have a relative weight
+                        execution_per_worker[worker_id] += weight
+                    else:
+                        execution_per_worker[worker_id] += 1
                 
                 for task in task_list:
                     for worker in worker_list:
@@ -2101,15 +2161,52 @@ def background():
             ##     ## ########  ######  ##     ##  #######  ####    ##    ######## ##     ##  ######  
                         
             change = False
-            active_recruiters = session.query(Recruiter,func.count(distinct(Task.task_id)),func.count(distinct(Worker.worker_id))).\
+            task1 = aliased(Task)
+            task2 = aliased(Task)
+            recyclable_worker_active_tasks = {}
+            recyclable_worker_active_tasks = {}
+            worker_task_properties = {}
+            worker_active_batch = {}
+            recyclable_worker_list = list(session.query(Worker,Task.batch,func.count(distinct(Task.task_id))).\
+                    join(Execution,and_(Worker.worker_id==Execution.worker_id,Execution.status=='running'), isouter=True).\
+                    join(Execution.task,isouter=True).group_by(Worker,Task.batch))
+            worker_batch_task = dict(session.query(Worker,func.count(distinct(Task.task_id))).\
+                                     join(Task, and_(Task.batch==Worker.batch, Task.status=='pending'),isouter=True))
+            log.warning(f'List of recyclable workers is {recyclable_worker_list}')
+            log.warning(f'worker_batch_task is {worker_batch_task}')
+            for worker,batch,worker_tasks in recyclable_worker_list:
+                if worker_batch_task[worker] == 0:
+                    if worker not in recyclable_worker_active_tasks:
+                        log.warning(f'-> Worker {worker} is recyclable')
+                        recyclable_worker_active_tasks[worker]=0
+                        worker_task_properties[worker] = json_module.loads(worker.task_properties)
+                        log.warning(f'-> Task properties are {worker_task_properties[worker]}')
+                        worker_active_batch[worker]=[]
+                    weight,_ = worker_task_properties[worker].get(batch,(1,0))
+                    recyclable_worker_active_tasks[worker] += weight * worker_tasks
+            
+                    if worker_tasks == 0:
+                        if batch in worker_task_properties[worker]:
+                            log.warning(f'Cleaning batch {batch} from worker {worker} task properties 1')
+                            change=True
+                            del worker_task_properties[worker][batch] 
+                            worker.task_properties=json_module.dumps(worker_task_properties[worker])
+                    else:
+                        worker_active_batch[worker].append(batch)
+            for worker,task_properties in worker_task_properties.items():
+                for batch in list(task_properties.keys()):
+                    if batch not in worker_active_batch[worker]:
+                        log.warning(f'Cleaning batch {batch} from worker {worker} task properties 2')
+                        change=True
+                        del worker_task_properties[worker][batch]
+                        worker.task_properties=json_module.dumps(worker_task_properties[worker])
+            if recyclable_worker_active_tasks:
+                log.warning(f'-> recyclable_worker_active_tasks {recyclable_worker_active_tasks}')
+            active_recruiters = list(session.query(Recruiter,func.count(distinct(Task.task_id)),func.count(distinct(Worker.worker_id))).\
                     join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
                     join(Worker,Worker.batch==Recruiter.batch,isouter=True).\
-                    group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank)
-            recyclable_workers = session.query(Worker,func.count(distinct(Task.task_id))).\
-                    join(Execution,and_(Worker.worker_id==Execution.worker_id,Execution.status.in_(['assigned','running'])), isouter=True).\
-                    join(Execution.task,isouter=True).\
-                    group_by(Worker)
-            for recruiter,pending_tasks,workers in list(active_recruiters):
+                    group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))       
+            for recruiter,pending_tasks,workers in active_recruiters:
                 if recruiter.minimum_tasks and recruiter.minimum_tasks < pending_tasks:
                     continue
                 if recruiter.maximum_workers and recruiter.maximum_workers >= workers:
@@ -2120,12 +2217,28 @@ def background():
                 if nb_workers < 0:
                     continue
 
-                change = True
-                for worker, count in list(recyclable_workers):  
-                    if worker.batch != recruiter.batch and worker.flavor == recruiter.worker_flavor and count==0 and nb_workers>0:
+                for worker, active_tasks  in recyclable_worker_active_tasks.items():  
+                    if worker.batch != recruiter.batch and worker.flavor == recruiter.worker_flavor \
+                            and active_tasks<worker.concurrency and nb_workers>0:
+                        previous_batch = worker.batch
+                        previous_concurrency = worker.concurrency
+                        previous_task_properties = worker_task_properties[worker]
+
+                        task_ratio = recruiter.worker_concurrency / previous_concurrency
+                        task_properties = dict([(batch, ( max(ratio*task_ratio,recruiter.worker_concurrency) , prio+1 )) 
+                                                for batch,(ratio,prio) in previous_task_properties.items()])
+                        task_properties[previous_batch] = (task_ratio,1)
+
+                        if recruiter.batch in task_properties:
+                            log.warning(f'-> Recruiter {recruiter} tried to recycle {worker} but some task of the same batch from a previous recycling round are present, giving up')
+                            continue
+                        
+                        log.warning(f'-> Recruiting worker {worker}')
+                        change = True
                         worker.batch = recruiter.batch
                         worker.prefetch = recruiter.worker_prefetch
                         worker.concurrency = recruiter.worker_concurrency
+                        worker.task_properties = json_module.dumps(task_properties)
                         session.add(worker)
                         nb_workers -= 1
                 
@@ -2144,6 +2257,7 @@ def background():
                                 }
                             )
                         )
+                        change = True
                 
             if change:
                 session.commit()
