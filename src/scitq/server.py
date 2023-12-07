@@ -1201,6 +1201,16 @@ class BatchGo(Resource):
         db.session.commit()
         return {'result':'Ok'}
 
+def delete_batch(name, session, commit=True):
+    """Delete a batch (all tasks, executions and recruiters associated to that batch), either in API context or in UI context"""
+    session.execute(delete(Execution).where(Execution.task_id.in_(
+             select(Task.task_id).where(Task.batch==name))),
+             execution_options={'synchronize_session':False})
+    session.execute(delete(Task).where(Task.batch==name))
+    session.execute(delete(Recruiter).where(Recruiter.batch==name))
+    if commit:
+        session.commit()
+
 @ns.route("/<name>")
 @ns.param("name", "The batch name")
 @ns.response(404, "Batch not found")
@@ -1209,11 +1219,7 @@ class BatchDelete(Resource):
     def delete(self, name):
         """Delete all tasks and executions for this batch"""
         log.warning(f'Deleting batch {name}')
-        db.session.execute(delete(Execution).where(Execution.task_id.in_(
-            select(Task.task_id).where(Task.batch==name))), 
-            execution_options={'synchronize_session':False})
-        db.session.execute(delete(Task).where(Task.batch==name))
-        db.session.commit()
+        delete_batch(name, session=db.session)
         return {'result':'Ok'}
 
 
@@ -1676,13 +1682,10 @@ def handle_batch_action():
         db.session.commit()
         log.warning('result go : Ok')
     elif json['action']=='clear':
-        #Same function as in the API clear() Delete all tasks and executions for this batch
+        #Same function as in the API clear() Delete all tasks and executions and recruiters for this batch
         name=json['name']
         """Delete all tasks and executions for this batch"""
-        # execution are deleted by cascade
-        for t in Task.query.filter(Task.batch==name):
-            db.session.delete(t)
-        db.session.commit()
+        delete_batch(name, session=db.session)
         log.warning(f'result clear batch {name}: Ok ')
     return '"ok"'
 

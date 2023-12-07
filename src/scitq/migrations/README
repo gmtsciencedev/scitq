@@ -12,5 +12,5 @@ SCITQ_PRODUCTION=1 FLASK_APP=server flask db migrate -m "Some description of the
 
 ```bash
 cd src/scitq
-FLASK_APP=server flask db upgrade 
+SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade 
 ```
