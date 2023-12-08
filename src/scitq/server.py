@@ -2170,24 +2170,21 @@ def background():
             recyclable_worker_list = list(session.query(Worker,Task.batch,func.count(distinct(Task.task_id))).\
                     join(Execution,and_(Worker.worker_id==Execution.worker_id,Execution.status=='running'), isouter=True).\
                     join(Execution.task,isouter=True).group_by(Worker,Task.batch))
-            worker_batch_task = dict(session.query(Worker,func.count(distinct(Task.task_id))).\
-                                     join(Task, and_(Task.batch==Worker.batch, Task.status=='pending'),isouter=True))
-            log.warning(f'List of recyclable workers is {recyclable_worker_list}')
-            log.warning(f'worker_batch_task is {worker_batch_task}')
+            worker_batch_task = dict(session.query(Worker,func.count(Task.task_id)).\
+                                     join(Task, and_(Task.batch==Worker.batch, Task.status=='pending'),isouter=True).\
+                                     group_by(Worker))
             for worker,batch,worker_tasks in recyclable_worker_list:
-                if worker_batch_task[worker] == 0:
+                if worker not in worker_batch_task or worker_batch_task[worker] == 0:
                     if worker not in recyclable_worker_active_tasks:
-                        log.warning(f'-> Worker {worker} is recyclable')
                         recyclable_worker_active_tasks[worker]=0
                         worker_task_properties[worker] = json_module.loads(worker.task_properties)
-                        log.warning(f'-> Task properties are {worker_task_properties[worker]}')
                         worker_active_batch[worker]=[]
                     weight,_ = worker_task_properties[worker].get(batch,(1,0))
                     recyclable_worker_active_tasks[worker] += weight * worker_tasks
             
                     if worker_tasks == 0:
                         if batch in worker_task_properties[worker]:
-                            log.warning(f'Cleaning batch {batch} from worker {worker} task properties 1')
+                            log.warning(f'-> Cleaning batch {batch} from worker {worker} task properties 1')
                             change=True
                             del worker_task_properties[worker][batch] 
                             worker.task_properties=json_module.dumps(worker_task_properties[worker])
@@ -2196,16 +2193,15 @@ def background():
             for worker,task_properties in worker_task_properties.items():
                 for batch in list(task_properties.keys()):
                     if batch not in worker_active_batch[worker]:
-                        log.warning(f'Cleaning batch {batch} from worker {worker} task properties 2')
+                        log.warning(f'-> Cleaning batch {batch} from worker {worker} task properties 2 : {worker_task_properties}')
                         change=True
                         del worker_task_properties[worker][batch]
                         worker.task_properties=json_module.dumps(worker_task_properties[worker])
-            if recyclable_worker_active_tasks:
-                log.warning(f'-> recyclable_worker_active_tasks {recyclable_worker_active_tasks}')
             active_recruiters = list(session.query(Recruiter,func.count(distinct(Task.task_id)),func.count(distinct(Worker.worker_id))).\
                     join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
                     join(Worker,Worker.batch==Recruiter.batch,isouter=True).\
-                    group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))       
+                    group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))    
+            newly_recruited_workers = []   
             for recruiter,pending_tasks,workers in active_recruiters:
                 if recruiter.minimum_tasks and recruiter.minimum_tasks < pending_tasks:
                     continue
@@ -2219,7 +2215,7 @@ def background():
 
                 for worker, active_tasks  in recyclable_worker_active_tasks.items():  
                     if worker.batch != recruiter.batch and worker.flavor == recruiter.worker_flavor \
-                            and active_tasks<worker.concurrency and nb_workers>0:
+                            and active_tasks<worker.concurrency and nb_workers>0 and worker not in newly_recruited_workers:
                         previous_batch = worker.batch
                         previous_concurrency = worker.concurrency
                         previous_task_properties = worker_task_properties[worker]
@@ -2233,7 +2229,8 @@ def background():
                             log.warning(f'-> Recruiter {recruiter} tried to recycle {worker} but some task of the same batch from a previous recycling round are present, giving up')
                             continue
                         
-                        log.warning(f'-> Recruiting worker {worker}')
+                        log.warning(f'-> Recruiting worker {worker} from batch {previous_batch} to {recruiter.batch}')
+                        newly_recruited_workers.append(worker)
                         change = True
                         worker.batch = recruiter.batch
                         worker.prefetch = recruiter.worker_prefetch

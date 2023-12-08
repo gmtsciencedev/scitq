@@ -199,7 +199,10 @@ class Server:
             return self._wrap(requests.get(
                 self.url+url, timeout=self.get_timeout, json=args
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                raise
             log.warning(f'Exception when trying to get: {e}')
             sleep(self.get_timeout)
             return self.get(url, **args)
@@ -218,7 +221,11 @@ class Server:
             return self._wrap(requests.put(
                 self.url+url, json=data, timeout=timeout
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                timeout = self.get_timeout
+                raise
             if asynchronous:
                 if not self.query_thread.is_alive():
                     self.query_thread.start()
@@ -245,7 +252,11 @@ class Server:
             return self._wrap(requests.post(
                 url=self.url+url, json=data, timeout=self.put_timeout
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                timeout = self.get_timeout
+                raise
             if asynchronous:
                 if not self.query_thread.is_alive():
                     self.query_thread.start()
@@ -272,7 +283,11 @@ class Server:
             return self._wrap(requests.delete(
                 self.url+url, timeout=timeout
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                timeout = self.get_timeout
+                raise
             if asynchronous:
                 if not self.query_thread.is_alive():
                     self.query_thread.start()
