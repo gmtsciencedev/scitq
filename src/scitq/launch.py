@@ -21,7 +21,8 @@ def check_unique(variable, value, default_value=None):
 
 
 def launch(docker, docker_option, uid, gid, 
-            command, server, test, name, batch, input, output, resource, required_task_ids):
+            command, server, test, name, batch, input, output, resource, 
+            required_task_ids, retry):
     """A launching function for scitq tasks
     """
 
@@ -43,7 +44,7 @@ def launch(docker, docker_option, uid, gid,
     else:
         task=s.task_create(command, name=name, batch=batch, container=docker,
             container_options=docker_option, input=input, output=output,
-            resource=resource, required_task_ids=required_task_ids)
+            resource=resource, required_task_ids=required_task_ids,retry=retry)
         print(f'Task queued with task id: {task["task_id"]}')
 
 def command_join(command_list):
@@ -67,6 +68,7 @@ def main():
     output = None
     resource = ''
     required_task_ids = []
+    retry = None
     try:
         while True:
             if len(argv)==0 or argv[0] in ['-h','--help']:
@@ -150,6 +152,11 @@ def main():
                 else:
                     req=[int(req)]
                 required_task_ids.extend(req)
+            elif argv[0]=='--retry':
+                option = argv.pop(0)
+                if len(argv)==0:
+                    raise SyntaxError(f'{option} requires at least one argument: OUTPUT a unique directory URI')
+                retry = int(argv.pop(0))
             elif argv[0]=='--':
                 argv.pop(0)
                 command = command_join(argv)
@@ -168,7 +175,8 @@ def main():
                     raise SyntaxError(f'Defect in {category}: {e.args[0]}')
         launch(docker=docker, docker_option=docker_option, uid=uid, gid=gid,
             command=command, server=server, test=test, name=name, batch=batch,
-            input=input, output=output, resource=resource, required_task_ids=required_task_ids)
+            input=input, output=output, resource=resource, 
+            required_task_ids=required_task_ids, retry=retry)
     except SyntaxError as e:
         if e.args[0]!='help':
             print('Syntax error : {}'.format(e.args[0]), file=sys.stderr)
@@ -178,6 +186,7 @@ scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROP
                 [(-u|--uid) UID] [(-g|--gid) GID] [(-s|--server) SERVER] [(-t|--test)] 
                 [(-n|--name) NAME] [(-b|--batch) BATCH] [(-i|--input) INPUT] 
                 [(-o|--output) OUTPUT] [(-r|--resource) OUTPUT] [(-R|--requirements) REQUIREMENTS] 
+                [--retry RETRY]
                 [--] COMMAND
     Add a task in scitq with :
     -h,--help       display this help message
@@ -225,6 +234,7 @@ scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROP
                     to required task ids, the task will not be launched until 
                     those previous tasks have succeeded.
                     NB requirements can be specified several times
+    --retry         retry the task this number of times if it fails
     --              the last argument, COMMAND, may be constituted of several
                     words. Usually this list of words starts with a non-dashed 
                     word like sh or bash, in which case there is no possible 

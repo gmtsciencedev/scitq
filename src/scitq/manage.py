@@ -301,7 +301,7 @@ def main():
         if args.action == 'list':
             info_task=['task_id','name','status','command','creation_date','modification_date','batch']
             if args.long:
-                info_task+=['container','container_options','input','output','resource','required_task_ids']
+                info_task+=['container','container_options','input','output','resource','required_task_ids','retry']
             if not args.no_header:
                 headers = info_task
             else:

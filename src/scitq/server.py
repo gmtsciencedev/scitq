@@ -160,10 +160,12 @@ class Task(db.Model):
     container = db.Column(db.String, nullable=True)
     container_options = db.Column(db.String, nullable=True)
     resource = db.Column(db.String, nullable=True)
+    retry = db.Column(db.Integer, nullable=False, default=0)
 
     def __init__(self, command, name=None, status='pending', batch=None, 
                     input=None, output=None, container=None, 
-                    container_options=None, resource=None):
+                    container_options=None, resource=None,
+                    retry=None):
         self.name = name
         self.command = command
         self.status = status
@@ -175,6 +177,7 @@ class Task(db.Model):
         self.container = container
         self.container_options = container_options
         self.resource = resource
+        self.retry = retry
 
 
 class Worker(db.Model):
@@ -520,6 +523,15 @@ class TaskDAO(BaseDAO):
                                 db.session.add(Signal(execution.execution_id, execution.worker_id, 9))
                                 execution.status='failed'
                                 execution.modification_date = datetime.utcnow()
+                        if value=='failed':
+                            if 'retry' in data:
+                                if data['retry']>0:
+                                    value='pending'
+                                    data['retry'] -= 1
+                            elif task.retry>0:
+                                value='pending'
+                                task.retry -= 1
+                        
                     setattr(task, attr, value)
                     modified = True
             else:
@@ -566,7 +578,9 @@ task = api.model('Task', {
     'resource': fields.String(required=False,
         decription="Resource data required for task (much like input except it is shared between tasks) (space separated files URL in s3://...)"),
     'required_task_ids': fields.List(fields.Integer,required=False,
-        description="List of task ids required to do this task")
+        description="List of task ids required to do this task"),
+    'retry': fields.Integer(required=False,
+        description="If set, retry the task this number of time if it fails until it succeeds")
 })
 
 task_filter = api.model('TaskFilter', {
@@ -909,11 +923,16 @@ class ExecutionDAO(BaseDAO):
                             if value in ['succeeded', 'failed']:
                                 task.status=value
                                 task.modification_date = datetime.utcnow()
+                                if value=='failed' and task.retry>0:
+                                    log.warning(f'Failure of execution {execution.execution_id} trigger task {task.task_id} retry ({task.retry-1} retries left)')
+                                    task.retry -= 1
+                                    task.status = 'pending'
                             else:
                                 log.exception(f"An execution cannot change status from running to {value}")
                                 api.abort(500, f"An execution cannot change status from running to {value}")
                         else:
                             api.abort(500, f"An execution cannot change status from {execution.status} (only from pending, running or accepted)")
+
                     setattr(execution, attr, value)
                     modified = True
             else:
