@@ -1,8 +1,8 @@
 """Modifying defaults and adding detail in workers
 
-Revision ID: aff13e566140
+Revision ID: 97001e715ee1
 Revises: 
-Create Date: 2023-12-07 09:04:12.580597
+Create Date: 2023-12-08 08:06:29.466135
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'aff13e566140'
+revision = '97001e715ee1'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -24,6 +24,7 @@ def upgrade():
                nullable=False)
 
     with op.batch_alter_table('worker', schema=None) as batch_op:
+        batch_op.add_column(sa.Column('task_properties', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('flavor', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('region', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('provider', sa.String(), nullable=True))
@@ -49,6 +50,7 @@ def downgrade():
         batch_op.drop_column('provider')
         batch_op.drop_column('region')
         batch_op.drop_column('flavor')
+        batch_op.drop_column('task_properties')
 
     with op.batch_alter_table('task', schema=None) as batch_op:
         batch_op.alter_column('batch',
