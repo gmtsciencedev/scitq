@@ -200,6 +200,10 @@ def main():
     recruiter_delete_parser.add_argument('-n','--rank',type=int,help='rank in which recruiter is tried (unique per batch), default to 1',default=1)
     
 
+    db_parser = subparser.add_parser('db', help='The following options are to work with scitq database')
+    subsubparser=db_parser.add_subparsers(dest='action')
+    db_upgrade_parser=subsubparser.add_parser('upgrade',help='Migrate the database to the current version of scitq')
+
     args=parser.parse_args()
 
     if args.version:
@@ -465,6 +469,13 @@ def main():
 
         elif args.action =='delete' :
             s.recruiter_delete(batch=args.batch, rank=args.rank)
+
+    elif args.object=='db':
+
+        if args.action=='upgrade':
+            run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade', shell=True, 
+                cwd=package_path(), check=True)
+            print('DB migrated')
 
 
 if __name__=="__main__":
