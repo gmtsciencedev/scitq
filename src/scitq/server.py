@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from sqlalchemy import func, and_, select, delete, true, event, DDL, distinct
+from sqlalchemy import func, and_, or_, select, delete, true, event, DDL, distinct
 from sqlalchemy.sql.expression import label
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import ProgrammingError
@@ -1274,14 +1274,17 @@ class BatchGo(Resource):
 
 def delete_batch(name, session, commit=True):
     """Delete a batch (all tasks, executions and recruiters associated to that batch), either in API context or in UI context"""
-    session.execute(delete(Requirement).where(Requirement.task_id.in_(
-        select(Task.task_id).where(Task.batch==name))),
+    session.execute(delete(Requirement).where(or_(
+        Requirement.task_id.in_(select(Task.task_id).where(Task.batch==name)),
+        Requirement.other_task_id.in_(select(Task.task_id).where(Task.batch==name)))),
         execution_options={'synchronize_session':False})
     session.execute(delete(Execution).where(Execution.task_id.in_(
              select(Task.task_id).where(Task.batch==name))),
              execution_options={'synchronize_session':False})    
-    session.execute(delete(Task).where(Task.batch==name))
-    session.execute(delete(Recruiter).where(Recruiter.batch==name))
+    session.execute(delete(Task).where(Task.batch==name),
+             execution_options={'synchronize_session':False})
+    session.execute(delete(Recruiter).where(Recruiter.batch==name),
+             execution_options={'synchronize_session':False})
     if commit:
         session.commit()
 
