@@ -218,7 +218,7 @@ class Workflow:
                 print(f'\x1b[{lines}A',end='')
             print(f"{b.lightgrey}{f.black}{'BATCH':^20}{b.black}{f.white}{'TASKS':^40}{b.blue}{f.black}{'WORKERS':^20}")
             print(f"{b.lightgrey}{f.black}{self.name[:20]:^20}\
-{b.black}{f.yellow} PSE {f.white} WAI {f.lightblue} PEN {f.cyan} ASN {f.lightcyan} ACC {f.green} RUN {f.red} FAI {f.lightgreen} SCS \
+{b.black}{f.yellow} PAU {f.white} WAI {f.lightblue} PEN {f.cyan} ASN {f.lightcyan} ACC {f.green} RUN {f.red} FAI {f.lightgreen} SCS \
 {b.blue}{f.yellow} PAU {f.black} OFF {f.lightgreen} RUN {f.red} FAI {c.reset}")
             
             lines=2
