@@ -1275,7 +1275,8 @@ class BatchGo(Resource):
 def delete_batch(name, session, commit=True):
     """Delete a batch (all tasks, executions and recruiters associated to that batch), either in API context or in UI context"""
     session.execute(delete(Requirement).where(Requirement.task_id.in_(
-        select(Task.task_id).where(Task.batch==name))))
+        select(Task.task_id).where(Task.batch==name))),
+        execution_options={'synchronize_session':False})
     session.execute(delete(Execution).where(Execution.task_id.in_(
              select(Task.task_id).where(Task.batch==name))),
              execution_options={'synchronize_session':False})    
