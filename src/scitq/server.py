@@ -1274,12 +1274,11 @@ class BatchGo(Resource):
 
 def delete_batch(name, session, commit=True):
     """Delete a batch (all tasks, executions and recruiters associated to that batch), either in API context or in UI context"""
+    session.execute(delete(Requirement).where(Requirement.task_id.in_(
+        select(Task.task_id).where(Task.batch==name))))
     session.execute(delete(Execution).where(Execution.task_id.in_(
              select(Task.task_id).where(Task.batch==name))),
-             execution_options={'synchronize_session':False})
-    session.execute(delete(Requirement).where(Requirement.task_id.in_(
-        select(Task.task_id).where(Task.batch==name))),
-             execution_options={'synchronize_session':False})
+             execution_options={'synchronize_session':False})    
     session.execute(delete(Task).where(Task.batch==name))
     session.execute(delete(Recruiter).where(Recruiter.batch==name))
     if commit:
@@ -2229,7 +2228,7 @@ def background():
                     log.warning(f'  --> not enough tasks, not recruiting ({pending_tasks} is below the minimum of {recruiter.minimum_tasks})')
                     continue
                 if recruiter.maximum_workers and recruiter.maximum_workers <= workers:
-                    log.warning(f'  --> too many workers already, not recruiting ({worker} has reached the maximum of {recruiter.maximum_workers})')
+                    log.warning(f'  --> too many workers already, not recruiting ({recruiter} has reached the maximum of {recruiter.maximum_workers})')
                     continue
                 nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker)
                 log.warning(f'  --> we need {nb_workers} because {pending_tasks} pending tasks ({recruiter.tasks_per_worker} expected per worker)')
