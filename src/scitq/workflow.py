@@ -1,5 +1,5 @@
 from .lib import Server
-from .util import coalesce, colors
+from .util import colors
 from typing import Optional
 from time import sleep
 import os
@@ -8,6 +8,15 @@ DEFAULT_SERVER='127.0.0.1'
 DEFAULT_REFRESH=30
 TASK_STATUS=['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
 WORKER_STATUS=['paused','running','offline','failed']
+
+# this simple mechanism enable to override a value including if the new value is None
+class Unset:
+    pass
+
+def coalesce(a,b):
+    """Return a or default to b if a is Unset (like in SQL)"""
+    return b if a is Unset else a
+
 
 def _(x):
     return x if x else ''
@@ -31,36 +40,76 @@ class Batch:
         self.maximum_workers = maximum_workers
         self.prefetch = prefetch
         self.server = server
-        self.recruiter = self.create_recruiter()
+        self.__recruiter__ = self.create_recruiter()
 
     def create_recruiter(self):
-        return self.server.recruiter_create(batch = self.name, tasks_per_worker=self.tasks_per_worker, 
+        return self.server.recruiter_create(batch = self.name, rank=1, tasks_per_worker=self.tasks_per_worker, 
                             flavor=self.flavor, concurrency=self.concurrency, region=self.region, 
                             provider=self.provider, prefetch=self.prefetch,
                             maximum_workers=self.maximum_workers)
+    
+    def clean(self):
+        self.server.recruiter_delete(self.name, rank=1)
 
 class Step:
     """A step in a workflow, a class mixing scitq Task and Batch concepts to help writing in workflow logic"""
-    __steps__ = {}
+    __memory__ = {}
 
     def __init__(self, task, batch):
-        self.task = task
-        self.batch = batch
-        self.task_id = task.task_id
-        if batch.name not in self.__steps__:
-            self.__steps__[batch.name] = []
-        self.__steps__[batch.name].append(self)
+        self.__task__ = task
+        self.__batch__ = batch
+        if batch.name not in self.__memory__:
+            self.__memory__[batch.name] = []
+        self.__steps__=self.__memory__[batch.name]
+        self.__steps__.append(self)
+        self.map_attributes()
 
-    def gather(self):
+    def map_attributes(self):
+        for k,v in self.__task__.__dict__.items():
+            if not k.startswith('_'):
+                setattr(self,k,v)
+        for k,v in self.__batch__.__dict__.items():
+            if k not in ['name','shortname'] and not k.startswith('_'):
+                setattr(self,k,v)
+
+    def refresh(self):
+        self.__task__ = self.server.task_get(self.__task__.task_id)
+        self.map_attributes()
+
+    def gather(self, attribute='step'):
         """Return all the steps that belongs to this batch"""
-        return self.__steps__[self.batch.name]
+        if attribute == 'step':
+            return self.__steps__
+        elif attribute == 'output':
+            return [s.output for s in self.__steps__]
+    
+    def get_output(self):
+        """Return task output stream if there is one"""
+        executions = self.server.executions(task_id=self.task_id, latest=True)
+        if executions:
+            return list(executions)[0].output
+        else:
+            return None
+
+    def get_error(self):
+        """Return task error stream if there is one"""
+        executions = self.server.executions(task_id=self.task_id, latest=True)
+        if executions:
+            return list(executions)[0].error
+        else:
+            return None
+        
+    def clean(self):
+        """Clean the underlying task"""
+        self.server.task_delete(self.task_id)
+
 
 class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
     def __init__(self, name: str, server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
                  provider: Optional[str] =None, region: Optional[str] =None,
                  flavor: Optional[str] =None, shell=False, maximum_workers=None, retry=None, rounds=None,
-                 prefetch = None, container_options=''):
+                 prefetch = None, container=None, container_options=''):
         self.name = name
         self.server = Server(server, style='object')
         self.provider = provider
@@ -72,13 +121,14 @@ class Workflow:
         self.prefetch = prefetch
         self.container_options = container_options
         self.retry = retry
-        self.__tasks__ = []
+        self.container = container
+        self.__steps__ = []
         self.__batch__ = {}
         self.__input__ = None
     
-    def step(self, batch, command, concurrency=None, prefetch=None, provider=None, region=None, flavor=None, name=None, 
-             tasks_per_worker=None, rounds=None, shell=None, maximum_workers=None, input=None, output=None, resource=None,
-             requires=None, container=None, docker=None, container_options=None, retry=None):
+    def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
+             tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
+             required_tasks=None, container=Unset, container_options=Unset, retry=Unset):
         """Add a step to workflow
         - batch: batch for this step (all the different tasks and workers for this step will be grouped into that batch)
                 NB batch is mandatory and is defined by at least concurrency and flavor (either at workflow or step level) 
@@ -115,7 +165,8 @@ class Workflow:
                                           flavor=flavor, concurrency=concurrency, prefetch=prefetch,
                                           provider=provider, region=region,                                          
                                           tasks_per_worker=tasks_per_worker,
-                                          server=self.server)
+                                          server=self.server,
+                                          maximum_workers=maximum_workers)
                 
         # task part
         task = self.server.task_create(
@@ -124,12 +175,14 @@ class Workflow:
             batch = self.__batch__[batch].name,
             input = input,
             output = output,
-            container = coalesce(container, docker),
+            container = coalesce(container, self.container),
             container_options = coalesce(container_options, self.container_options),
             resource = resource,
             shell=coalesce(shell, self.shell),
             retry=coalesce(retry, self.retry),
-            required_task_ids = None if requires is None else [t if type(t)==int else t.task_id for t in requires],
+            required_task_ids = None if required_tasks is None \
+                else [t if type(t)==int else t.task_id for t in required_tasks] if type(required_tasks)==list \
+                else [required_tasks] if type(required_tasks)==int else [required_tasks.task_id],
         )
 
 
@@ -146,9 +199,9 @@ class Workflow:
         c=colors
         first_time=True
         while True:
-            batches = list([batch.name for batch in self.__batch__])
-            short_batches = list([batch.short_name for batch in self.__batch__])
-            tasks = self.server.tasks(batch=batches)
+            batches = list([batch.name for batch in self.__batch__.values()])
+            short_batches = list([batch.shortname for batch in self.__batch__.values()])
+            tasks = self.server.tasks(task_id=[s.task_id for s in self.__steps__])
             workers = self.server.workers(batch=batches)
 
             task_stats = {}
@@ -163,8 +216,8 @@ class Workflow:
 
             if not first_time:
                 print(f'\x1b[{lines}A',end='')
-            print(f"{b.lightgrey}{f.black}{'':^20}{b.black}{f.white}{'TASKS':^40}{b.blue}{f.black}{'WORKERS':^20}")
-            print(f"{b.lightgrey}{f.black}{'BATCH':^20}\
+            print(f"{b.lightgrey}{f.black}{'BATCH':^20}{b.black}{f.white}{'TASKS':^40}{b.blue}{f.black}{'WORKERS':^20}")
+            print(f"{b.lightgrey}{f.black}{self.name[:20]:^20}\
 {b.black}{f.yellow} PSE {f.white} WAI {f.lightblue} PEN {f.cyan} ASG {f.lightcyan} ACC {f.green} RUN {f.red} FAI {f.lightgreen} SUC \
 {b.blue}{f.yellow} PAU {f.black} OFF {f.lightgreen} RUN {f.red} FAI {c.reset}")
             
@@ -173,17 +226,26 @@ class Workflow:
             for short,batch in zip(short_batches,batches):
                 ts = dmap(_,task_stats[batch])
                 ws = dmap(_,worker_stats[batch])
-                print(f"{b.lightgrey}{f.black}{short:<20}\
-{b.black}{f.yellow}{ts['paused']:>5}{f.white}{ts['wait']:>5}{f.lightblue}{ts['pending']:>5}{f.cyan}{ts['assigned']:>5}\
-{f.lightcyan}{ts['accepted']:>5}{f.green}{ts['running']:>5}{f.red}{ts['failed']:>5}{f.lightgreen}{ts['succeeded']:>5}\
-{b.blue}{f.yellow}{ws['paused']:>5}{f.black}{ws['offline']:>5}{f.lightgreen}{ws['running']:>5}{f.red}{ws['running']:>5}{c.reset}")
+                print(f"{b.lightgrey}{f.black}{short[:20]:^20}\
+{b.black}{f.yellow}{ts['paused']:^5}{f.white}{ts['waiting']:^5}{f.lightblue}{ts['pending']:^5}{f.cyan}{ts['assigned']:^5}\
+{f.lightcyan}{ts['accepted']:^5}{f.green}{ts['running']:^5}{f.red}{ts['failed']:>5}{f.lightgreen}{ts['succeeded']:^5}\
+{b.blue}{f.yellow}{ws['paused']:^5}{f.black}{ws['offline']:^5}{f.lightgreen}{ws['running']:^5}{f.red}{ws['failed']:^5}{c.reset}")
                 lines+=1
-                remaining_tasks+=sum([ts[s] for s in TASK_STATUS if s not in ['failed','succeeded']])
+                remaining_tasks+=sum([ts[s] or 0 for s in TASK_STATUS if s not in ['failed','succeeded']])
             
             if remaining_tasks == 0:
                 break
             sleep(refresh)
             first_time = False
 
+    def clean(self, force=False):
+        """Clean all, except failed tasks if force is not set to True"""
+        for batch in self.__batch__.values():
+            batch.clean()
+        for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
+            if task.status == 'succeeded' or force:
+                self.server.task_delete(task.task_id)
+
+            
 
 

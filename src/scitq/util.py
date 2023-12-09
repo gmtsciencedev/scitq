@@ -41,12 +41,6 @@ def package_version():
     import pkg_resources
     return pkg_resources.get_distribution(__package__).version
 
-def coalesce(a,b):
-    """Return a or default to b if a is None (like in SQL)"""
-    return b if a is None else a
-
-
-
 
 class xboto3:
     # this is an ugly hack to bypass the fact boto3 does not read all info

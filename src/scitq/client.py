@@ -1208,6 +1208,10 @@ class Client:
                         if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_RUNNING:
                             log.warning(f'Execution {execution_id} is still running but is no more assigned to us (or likely was deleted), sending SIGTERM signal')
                             self.executions[execution_id][1].put(SIGTERM)
+                        if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_WAITING:
+                            log.warning(f'Execution {execution_id} is waiting but is no more assigned to us (or likely was deleted), releasing it to its death')
+                            self.executions_go[execution_id].release()
+
                 #self.run_slots_semaphore.release()
                 #self.has_run_slots_semaphore=False
                 #else:

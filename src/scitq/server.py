@@ -1277,6 +1277,9 @@ def delete_batch(name, session, commit=True):
     session.execute(delete(Execution).where(Execution.task_id.in_(
              select(Task.task_id).where(Task.batch==name))),
              execution_options={'synchronize_session':False})
+    session.execute(delete(Requirement).where(Requirement.task_id.in_(
+        select(Task.task_id).where(Task.batch==name))),
+             execution_options={'synchronize_session':False})
     session.execute(delete(Task).where(Task.batch==name))
     session.execute(delete(Recruiter).where(Recruiter.batch==name))
     if commit:
@@ -2183,7 +2186,6 @@ def background():
             task1 = aliased(Task)
             task2 = aliased(Task)
             recyclable_worker_active_tasks = {}
-            recyclable_worker_active_tasks = {}
             worker_task_properties = {}
             worker_active_batch = {}
             recyclable_worker_list = list(session.query(Worker,Task.batch,func.count(distinct(Task.task_id))).\
@@ -2222,16 +2224,24 @@ def background():
                     group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))    
             newly_recruited_workers = []   
             for recruiter,pending_tasks,workers in active_recruiters:
-                if recruiter.minimum_tasks and recruiter.minimum_tasks < pending_tasks:
+                log.warning(f'-> recruiting for recruiter {recruiter} with {pending_tasks} pending tasks and {workers} current workers')
+                if recruiter.minimum_tasks and recruiter.minimum_tasks > pending_tasks:
+                    log.warning(f'  --> not enough tasks, not recruiting ({pending_tasks} is below the minimum of {recruiter.minimum_tasks})')
                     continue
-                if recruiter.maximum_workers and recruiter.maximum_workers >= workers:
+                if recruiter.maximum_workers and recruiter.maximum_workers <= workers:
+                    log.warning(f'  --> too many workers already, not recruiting ({worker} has reached the maximum of {recruiter.maximum_workers})')
                     continue
-                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker) - workers
+                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker)
+                log.warning(f'  --> we need {nb_workers} because {pending_tasks} pending tasks ({recruiter.tasks_per_worker} expected per worker)')
                 if recruiter.maximum_workers and recruiter.maximum_workers < nb_workers + workers:
                     nb_workers = recruiter.maximum_workers - workers
-                if nb_workers < 0:
+                    log.warning(f'  --> adjusting to {nb_workers} because maximum is {recruiter.maximum_workers}')
+                if nb_workers <= 0:
+                    log.warning(f'  --> giving up')
                     continue
-
+                
+                if len(recyclable_worker_active_tasks.items())==0:
+                    log.warning(f'  --> No recyclable workers {recyclable_worker_active_tasks}')
                 for worker, active_tasks  in recyclable_worker_active_tasks.items():  
                     if worker.batch != recruiter.batch and worker.flavor == recruiter.worker_flavor \
                             and active_tasks<worker.concurrency and nb_workers>0 and worker not in newly_recruited_workers:
@@ -2257,9 +2267,24 @@ def background():
                         worker.task_properties = json_module.dumps(task_properties)
                         session.add(worker)
                         nb_workers -= 1
+                    else:
+                        if worker.batch == recruiter.batch:
+                            reason = 'already recruited'
+                        elif worker.flavor != recruiter.worker_flavor:
+                            reason = 'not the right flavor'
+                        elif active_tasks>=worker.concurrency:
+                            reason = f'too busy {active_tasks}>={worker.concurrency}'
+                        elif nb_workers <= 0:
+                            reason = f'no more workers needed'
+                        elif worker in newly_recruited_workers:
+                            reason = f'it was recently recruited by another recruiter'
+                        else:
+                            reason = f'something mysterious that should never occur'
+                        log.warning(f'  --> {worker} not suitable because {reason} ')
                 
-                if recruiter.worker_provider is not None and recruiter.worker_region is not None:
+                if recruiter.worker_provider is not None and recruiter.worker_region is not None and nb_workers>0:
                     for _ in range(nb_workers):
+                        log.warning(f'-> Deploying one worker from {recruiter.worker_provider}')
                         session.add(
                             Job(target='', 
                                 action='worker_create', 

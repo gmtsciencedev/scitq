@@ -426,6 +426,8 @@ class Server:
             status = 'waiting' if required_task_ids else 'pending'
         if shell:
             shell='sh' if shell is True else shell
+            if "'" in command:
+                log.warning(f'''This command ({command}) contains quote(s) (') and is unlikely to work''')
             command = f"{shell} -c '{command}'"
         return self.post('/tasks/', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
