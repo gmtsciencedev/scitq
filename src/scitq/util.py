@@ -159,6 +159,7 @@ class colors:
     reverse = '\033[07m'
     strikethrough = '\033[09m'
     invisible = '\033[08m'
+    blinking = '\033[05m'
     
     class fg:
         black = '\033[30m'

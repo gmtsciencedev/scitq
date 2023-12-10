@@ -1345,8 +1345,8 @@ class RecruiterDAO(BaseDAO):
     def get(self, batch, rank):
         object = Recruiter.query.get({'batch':batch, 'rank':rank})
         if object is None:
-            api.abort(404, "{} {} doesn't exist".format(
-                    self.ObjectType.__name__,id))
+            api.abort(404, "{} batch {} rank {} doesn't exist".format(
+                    self.ObjectType.__name__,batch,rank))
         return object
         
     def create(self, data):

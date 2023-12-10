@@ -3,6 +3,10 @@ from .util import colors
 from typing import Optional
 from time import sleep
 import os
+from pynput import keyboard
+from signal import SIGTSTP, SIGCONT
+from threading import Event
+from queue import Queue
 
 DEFAULT_SERVER='127.0.0.1'
 DEFAULT_REFRESH=30
@@ -50,6 +54,14 @@ class Batch:
     
     def clean(self):
         self.server.recruiter_delete(self.name, rank=1)
+        
+
+    def pause(self, signal=0):
+        self.server.batch_stop(self.name, signal=signal)
+
+    def unpause(self, signal=0):
+        self.server.batch_go(self.name, signal=signal)
+
 
 class Step:
     """A step in a workflow, a class mixing scitq Task and Batch concepts to help writing in workflow logic"""
@@ -86,9 +98,9 @@ class Step:
     def get_output(self):
         """Return task output stream if there is one"""
         executions = self.server.executions(task_id=self.task_id, latest=True)
-        if executions:
+        try:
             return list(executions)[0].output
-        else:
+        except IndexError:
             return None
 
     def get_error(self):
@@ -125,6 +137,9 @@ class Workflow:
         self.__steps__ = []
         self.__batch__ = {}
         self.__input__ = None
+        self.__quit__ = False
+        self.__is_paused__ = False
+        self.__clean__ = False
     
     def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
              tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
@@ -192,13 +207,15 @@ class Workflow:
     
 
     
-    def run(self, refresh=DEFAULT_REFRESH):
+    def run(self, refresh=DEFAULT_REFRESH, hotkeys=True):
         """This is a monitoring function that display some info and run up to the point all tasks are done"""
         b=colors.bg
         f=colors.fg
         c=colors
+        self.__exit_sleep__ = Event()
         first_time=True
         while True:
+            self.__exit_sleep__.clear()
             batches = list([batch.name for batch in self.__batch__.values()])
             short_batches = list([batch.shortname for batch in self.__batch__.values()])
             tasks = self.server.tasks(task_id=[s.task_id for s in self.__steps__])
@@ -232,20 +249,90 @@ class Workflow:
 {b.blue}{f.yellow}{ws['paused']:^5}{f.black}{ws['offline']:^5}{f.lightgreen}{ws['running']:^5}{f.red}{ws['failed']:^5}{c.reset}")
                 lines+=1
                 remaining_tasks+=sum([ts[s] or 0 for s in TASK_STATUS if s not in ['failed','succeeded']])
-            
-            if remaining_tasks == 0:
+
+            if hotkeys:
+                if first_time:
+                    self.__listener__= keyboard.Listener(on_press=self.keypressed, suppress=True)
+                    self.__listener__.start()
+                if self.__listener__.is_alive():
+                    if self.__is_paused__:
+                        print(f" {f.black}{b.purple}{c.blinking}{'(R)EFRESY':^10}{c.reset} {f.black}{b.purple}{c.blinking}{'(U)NPAUSE':^26}{c.reset} \
+{f.black}{b.purple}{'(Q)UIT':^10}{c.reset} {f.black}{b.purple}{'(D)ESTROY':^10}{c.reset} {f.black}{b.purple}{'(H)QUIT HOTKEYS':^10}{c.reset} ")
+                    else:
+                        print(f" {f.black}{b.purple}{c.blinking}{'(R)EFRESY':^10}{c.reset} {f.black}{b.purple}{'(P)AUSE':^10}{c.reset} {f.black}{b.purple}{'(S)USPEND ALL':^15}{c.reset} \
+{f.black}{b.purple}{'(Q)UIT':^10}{c.reset} {f.black}{b.purple}{'(D)ESTROY':^10}{c.reset} {f.black}{b.purple}{'(H)QUIT HOTKEYS':^10}{c.reset} ")
+                else:
+                    print(f'                                                                            ')
+                lines+=1
+
+                    
+
+            if remaining_tasks == 0 or self.__quit__:
                 break
-            sleep(refresh)
+            self.__exit_sleep__.wait(refresh)
             first_time = False
+        if hotkeys:
+            if self.__listener__.is_alive():
+                self.__listener__.stop()
+
+    def print_function_line(self):
+        b=colors.bg
+        f=colors.fg
+        c=colors
+
 
     def clean(self, force=False):
         """Clean all, except failed tasks if force is not set to True"""
-        for batch in self.__batch__.values():
-            batch.clean()
-        for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
-            if task.status == 'succeeded' or force:
-                self.server.task_delete(task.task_id)
+        if not self.__clean__:
+            for batch in self.__batch__.values():
+                batch.clean()
+            for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
+                if task.status == 'succeeded' or force:
+                    self.server.task_delete(task.task_id)
+            self.__clean__ = True
 
-            
+    def quit(self):
+        """Quit immediatly without waiting that all tasks are done"""
+        self.__quit__=True
 
+    def pause(self, suspend=False):
+        """Put all worker to pause"""
+        if not self.__is_paused__:
+            signal = SIGTSTP if suspend else 0
+            self.__is_paused__ = SIGTSTP if suspend else True
+            for batch in self.__batch__.values():
+                batch.pause(signal)
 
+    def unpause(self):
+        """Restore running """
+        if self.__is_paused__:
+            signal = SIGCONT if self.__is_paused__==SIGTSTP else 0
+            for batch in self.__batch__.values():
+                batch.unpause(signal)
+            self.__is_paused__ = False
+    
+    def keypressed(self, key):
+        other_key = False
+        if hasattr(key,'char'):
+            if key.char=='q':
+                self.quit()
+            elif key.char=='p':
+                self.pause()
+            elif key.char=='s':
+                self.pause(suspend=True)
+            elif key.char=='u':
+                self.unpause()
+            elif key.char=='d':
+                self.clean(force=True)
+                self.quit()
+            elif key.char=='h':
+                self.__listener__.stop()
+            elif key.char=='r':
+                pass
+            else:
+                other_key = True
+        else:
+            other_key = True
+        if not other_key:
+            self.__exit_sleep__.set()
+        
