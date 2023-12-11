@@ -256,7 +256,7 @@ class Workflow:
         for batch in list([batch.shortname for batch in self.__batch__.values()]):
             cells[batch] = { 'task':{}, 'worker':{} }
             line = [cell(batch,20,'inverted')]
-            for status,style in [('paused','y'),('waiting','b'),('pending','c'),('assigned','dc'),
+            for status,style in [('paused','y'),('waiting','b'),('pending','db'),('assigned','dc'),
                                  ('accepted','c'),('running','dg'),('failed','r'),('succeeded','g')]:
                 c = cell('',5,style)
                 line.append(c)
@@ -271,10 +271,10 @@ class Workflow:
                                       cell('(S)USPEND ALL',15,'purpleb'), cell('(Q)UIT',10,'purpleb'),
                                       cell('(U)NPAUSE',10,'purpleb'),
                                       cell('(D)ESTROY',10,'purpleb') ],dividechars=1)
-        command_bar_destroy = urwid.Columns([cell('ARE YOU SURE WANT TO DESTROY EVERYTHING ?',41,'purpley'),cell('(Y)ES',5,'purpley'),cell('(any)NO',5,'purpley')],dividechars=1)
-        command_bar_quit = urwid.Columns([cell('ARE YOU SURE WANT TO QUIT ?',41,'purpley'),cell('(Y)ES',5,'purpley'),cell('(any)NO',5,'purpley')],dividechars=1)
+        command_bar_destroy = urwid.Columns([cell('ARE YOU SURE WANT TO DESTROY EVERYTHING ?',50,'purpley'),cell('(Y)ES',9,'purpley'),cell('(any)NO',9,'purpley')],dividechars=1)
+        command_bar_quit = urwid.Columns([cell('ARE YOU SURE WANT TO QUIT ?',50,'purpley'),cell('(Y)ES',9,'purpley'),cell('(any)NO',9,'purpley')],dividechars=1)
         
-        command_bar = urwid.Padding(command_bar_base,align='center',width=90)
+        command_bar = urwid.Padding(command_bar_base,align='center',width=95)
 
         urwid_table.append(command_bar)
 
@@ -356,12 +356,21 @@ class Workflow:
 
                 loop.draw_screen()
                 if remaining_tasks == 0:
-                    raise urwid.ExitMainLoop()
-                self.__exit_sleep__.wait(refresh)
-                if self.__quit_thread__.is_set() or once:
+                    self.__quit_thread__.set()
                     break
+                self.__exit_sleep__.wait(refresh)
 
+        def check_quit_thread(loop, *args):
+            if self.__quit_thread__.is_set():
+                raise urwid.ExitMainLoop()
+            else:
+                loop.set_alarm_in(
+                    sec=0.5,
+                    callback=check_quit_thread,
+                    )
         
+        loop.set_alarm_in(sec=0.5, callback=check_quit_thread)
+
         query_loop_thread = Thread(target=query_loop)
         query_loop_thread.start()
         loop.run()
