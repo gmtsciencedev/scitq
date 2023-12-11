@@ -33,7 +33,7 @@ dependencies=['Flask < 2.2',
         'boto3 >= 1.24.22',
         'python-dotenv',
         'azure-storage-blob',
-        'pynput'
+        'urwid'
         ]
 
 [project.urls]
