@@ -24,6 +24,7 @@ from .util import PropagatingThread, package_path, package_version, check_dir, t
 from .default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 from .ansible.scitq.sqlite_inventory import scitq_inventory
 from .constants import SIGNAL_CLEAN, SIGNAL_RESTART
+from signal import SIGKILL, SIGQUIT, SIGTSTP, SIGCONT
 
 
 MAIN_THREAD_SLEEP = 5
@@ -1719,9 +1720,9 @@ def handle_batch_action():
         for w in Worker.query.filter(Worker.batch==name):
                 w.status = 'paused'
         if json['action']=='break':
-            signal = 9
+            signal = SIGKILL
         elif json['action']=='stop':
-            signal = 3
+            signal = SIGQUIT
         elif json['action']=='simple pause':
             signal = 0
         elif json['action']=='pause':
@@ -1730,7 +1731,7 @@ def handle_batch_action():
                         Task.batch==name,
                         Task.status.in_(['running','accepted']))):
                 t.status = 'paused'
-            signal = 20
+            signal = SIGTSTP
             db.session.commit()
         log.warning(f'Sending signal {signal} to executions for batch {name}')
         for e in db.session.scalars(select(Execution).join(Execution.task).where(
@@ -1747,7 +1748,7 @@ def handle_batch_action():
         for w in Worker.query.filter(Worker.batch==name):
             w.status = 'running'
         if json['action']=='go':
-            signal=18
+            signal=SIGCONT
             for t in Task.query.filter(Task.batch==name):
                 if t.status == 'paused':
                     t.status='running'
@@ -1779,16 +1780,16 @@ def handle_task_action():
         for t in Task.query.filter(Task.task_id==task):
             if json['action'] == 'break':
                 type='break'
-                signal = 9
+                signal = SIGKILL
             elif json['action'] == 'stop':
-                signal = 3
+                signal = SIGQUIT
                 type='stop'
             elif json['action'] == 'pause':
-                signal = 20
+                signal = SIGTSTP
                 type='pause'
                 t.status='paused'
             elif json['action'] == 'resume':
-                signal = 18
+                signal = SIGCONT
                 type='resume'
                 t.status='running'
             log.warning(f'Sending signal {signal} to executions for task {task}')

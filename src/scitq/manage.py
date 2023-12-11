@@ -11,6 +11,7 @@ import shutil
 import random
 from .debug import Debugger
 from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF
+from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -279,11 +280,11 @@ def main():
             if args.number:
                 signal = args.number
             elif args.term:
-                signal = 3
+                signal = SIGQUIT
             elif args.kill:
-                signal = 9
+                signal = SIGKILL
             elif args.pause:
-                signal = 20
+                signal = SIGTSTP
             for batch in args.name :
                 s.batch_stop(batch,signal)
         
@@ -292,7 +293,7 @@ def main():
             if args.number:
                 signal = args.number
             elif args.cont:
-                signal = 18
+                signal = SIGCONT
             for batch in args.name :
                 s.batch_go(batch, signal)
 
