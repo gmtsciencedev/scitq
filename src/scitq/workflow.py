@@ -3,10 +3,9 @@ from .util import colors
 from typing import Optional
 from time import sleep
 import os
-from pynput import keyboard
 from signal import SIGTSTP, SIGCONT
-from threading import Event
-from queue import Queue
+import urwid
+from threading import Event,Thread
 
 DEFAULT_SERVER='127.0.0.1'
 DEFAULT_REFRESH=30
@@ -115,6 +114,39 @@ class Step:
         """Clean the underlying task"""
         self.server.task_delete(self.task_id)
 
+palette = [
+    ('basic', 'light gray', 'black'),
+    ('inverted', 'black', 'light gray'),
+    ('blueb', 'black', 'dark blue'),
+    ('bluey', 'yellow', 'dark blue'),
+    ('blueg', 'light green', 'dark blue'),
+    ('bluer', 'light red', 'dark blue'),
+    ('y', 'yellow', 'black'),
+    ('w', 'white', 'black'),
+    ('db', 'dark blue', 'black'),
+    ('dc', 'dark cyan', 'black'),
+    ('c', 'light cyan', 'black'),
+    ('dg', 'dark green', 'black'),
+    ('r', 'light red', 'black'),
+    ('g', 'light green', 'black'),
+    ('purpleb', 'black', 'dark magenta'),
+    ('purpley', 'yellow', 'dark magenta'),
+]
+
+def cell(txt, size, style='basic'):
+    """Small wrapper above urwid.Text"""
+    txt = "{{:^{}}}".format(size).format(str(txt)[:size])
+    return (size, urwid.Text((style, txt)))
+
+def cell_update(cell, txt):
+    """Small function to manipulate Cell content"""
+    size,content=cell
+    style = content.attrib[0][0]
+    txt = "{{:^{}}}".format(size).format(str(txt)[:size])
+    content.set_text((style,txt))
+
+def padding_update(padding, widget):
+    padding.original_widget = widget
 
 class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
@@ -212,73 +244,127 @@ class Workflow:
         b=colors.bg
         f=colors.fg
         c=colors
-        self.__exit_sleep__ = Event()
-        first_time=True
-        while True:
-            self.__exit_sleep__.clear()
-            batches = list([batch.name for batch in self.__batch__.values()])
-            short_batches = list([batch.shortname for batch in self.__batch__.values()])
-            tasks = self.server.tasks(task_id=[s.task_id for s in self.__steps__])
-            workers = self.server.workers(batch=batches)
+        
+        # prepare display
+        title_line = urwid.Columns([cell('BATCH',20,'inverted'),cell('TASKS',40,'w'),cell('WORKERS',20,'blueb')])
+        subtitle_line = urwid.Columns([cell(self.name,20,'inverted'),cell('PAU',5,'y'),cell('WAI',5,'b'),cell('PEN',5,'db'),
+                            cell('ASN',5,'dc'),cell('ACC',5,'c'),cell('RUN',5,'dg'),cell('FAI',5,'r'),cell('SCS',5,'g'),
+                            cell('PAU',5,'bluey'),cell('OFF',5,'blueb'),cell('RUN',5,'blueg'),cell('FAI',5,'bluer')])
+        urwid_table = [title_line,subtitle_line]
+        
+        cells = {}
+        for batch in list([batch.shortname for batch in self.__batch__.values()]):
+            cells[batch] = { 'task':{}, 'worker':{} }
+            line = [cell(batch,20,'inverted')]
+            for status,style in [('paused','y'),('waiting','b'),('pending','c'),('assigned','dc'),
+                                 ('accepted','c'),('running','dg'),('failed','r'),('succeeded','g')]:
+                c = cell('',5,style)
+                line.append(c)
+                cells[batch]['task'][status]=c
+            for status,style in [('paused','bluey'),('offline','blueb'),('running','blueg'),('failed','bluer')]:
+                c = cell('',5,style)
+                line.append(c)
+                cells[batch]['worker'][status]=c
+            urwid_table.append(urwid.Columns(line))
+        
+        command_bar_base = urwid.Columns([cell('(R)EFRESH',10,'purpleb'), cell('(P)AUSE',10,'purpleb'),
+                                      cell('(S)USPEND ALL',15,'purpleb'), cell('(Q)UIT',10,'purpleb'),
+                                      cell('(U)NPAUSE',10,'purpleb'),
+                                      cell('(D)ESTROY',10,'purpleb') ],dividechars=1)
+        command_bar_destroy = urwid.Columns([cell('ARE YOU SURE WANT TO DESTROY EVERYTHING ?',41,'purpley'),cell('(Y)ES',5,'purpley'),cell('(any)NO',5,'purpley')],dividechars=1)
+        command_bar_quit = urwid.Columns([cell('ARE YOU SURE WANT TO QUIT ?',41,'purpley'),cell('(Y)ES',5,'purpley'),cell('(any)NO',5,'purpley')],dividechars=1)
+        
+        command_bar = urwid.Padding(command_bar_base,align='center',width=90)
 
-            task_stats = {}
-            worker_stats = {}
-            for batch in batches:
-                task_stats[batch] = {status:0 for status in TASK_STATUS}
-                worker_stats[batch] = {status:0 for status in WORKER_STATUS}
-            for task in tasks:
-                task_stats[task.batch][task.status]+=1
-            for worker in workers:
-                worker_stats[worker.batch][worker.status]+=1
+        urwid_table.append(command_bar)
 
-            if not first_time:
-                print(f'\x1b[{lines}A',end='')
-            print(f"{b.lightgrey}{f.black}{'BATCH':^20}{b.black}{f.white}{'TASKS':^40}{b.blue}{f.black}{'WORKERS':^20}")
-            print(f"{b.lightgrey}{f.black}{self.name[:20]:^20}\
-{b.black}{f.yellow} PAU {f.white} WAI {f.lightblue} PEN {f.cyan} ASN {f.lightcyan} ACC {f.green} RUN {f.red} FAI {f.lightgreen} SCS \
-{b.blue}{f.yellow} PAU {f.black} OFF {f.lightgreen} RUN {f.red} FAI {c.reset}")
-            
-            lines=2
-            remaining_tasks = 0
-            for short,batch in zip(short_batches,batches):
-                ts = dmap(_,task_stats[batch])
-                ws = dmap(_,worker_stats[batch])
-                print(f"{b.lightgrey}{f.black}{short[:20]:^20}\
-{b.black}{f.yellow}{ts['paused']:^5}{f.white}{ts['waiting']:^5}{f.lightblue}{ts['pending']:^5}{f.cyan}{ts['assigned']:^5}\
-{f.lightcyan}{ts['accepted']:^5}{f.green}{ts['running']:^5}{f.red}{ts['failed']:>5}{f.lightgreen}{ts['succeeded']:^5}\
-{b.blue}{f.yellow}{ws['paused']:^5}{f.black}{ws['offline']:^5}{f.lightgreen}{ws['running']:^5}{f.red}{ws['failed']:^5}{c.reset}")
-                lines+=1
-                remaining_tasks+=sum([ts[s] or 0 for s in TASK_STATUS if s not in ['failed','succeeded']])
-
-            if hotkeys:
-                if first_time:
-                    self.__listener__= keyboard.Listener(on_press=self.keypressed, suppress=True)
-                    self.__listener__.start()
-                if self.__listener__.is_alive():
-                    if self.__is_paused__:
-                        print(f" {f.black}{b.purple}{c.blinking}{'(R)EFRESY':^10}{c.reset} {f.black}{b.purple}{c.blinking}{'(U)NPAUSE':^26}{c.reset} \
-{f.black}{b.purple}{'(Q)UIT':^10}{c.reset} {f.black}{b.purple}{'(D)ESTROY':^10}{c.reset} {f.black}{b.purple}{'(H)QUIT HOTKEYS':^10}{c.reset} ")
-                    else:
-                        print(f" {f.black}{b.purple}{c.blinking}{'(R)EFRESY':^10}{c.reset} {f.black}{b.purple}{'(P)AUSE':^10}{c.reset} {f.black}{b.purple}{'(S)USPEND ALL':^15}{c.reset} \
-{f.black}{b.purple}{'(Q)UIT':^10}{c.reset} {f.black}{b.purple}{'(D)ESTROY':^10}{c.reset} {f.black}{b.purple}{'(H)QUIT HOTKEYS':^10}{c.reset} ")
+        table = urwid.Pile(urwid_table)
+        fill = urwid.Filler(table)
+         
+        self.ui_state = 'base'
+        def handle_keys(key):
+            if self.ui_state=='base':
+                if key in ('q', 'Q'):
+                    self.ui_state='quit'
+                    padding_update(command_bar,command_bar_quit)
+                    self.__exit_sleep__.set()                    
+                elif key in ('r','R'):
+                    self.__exit_sleep__.set()
+                elif key in ('d','D'):
+                    self.ui_state='destroy'
+                    padding_update(command_bar,command_bar_destroy)
+                    self.__exit_sleep__.set()
+                elif key in ('p','P'):
+                    self.pause()
+                    self.__exit_sleep__.set()
+                elif key in ('s','S'):
+                    self.pause(suspend=True)
+                    self.__exit_sleep__.set()
+                elif key in ('u','U'):
+                    self.unpause()
+                    self.__exit_sleep__.set()
+            else:
+                if key in ('y','Y'):
+                    if self.ui_state=='destroy':
+                        self.clean(force=True)
+                        self.__quit_thread__.set()
+                        self.__exit_sleep__.set()
+                        raise urwid.ExitMainLoop()
+                    elif self.ui_state=='quit':
+                        self.__quit_thread__.set()
+                        self.__exit_sleep__.set()
+                        raise urwid.ExitMainLoop()
                 else:
-                    print(f'                                                                            ')
-                lines+=1
+                    padding_update(command_bar,command_bar_base)
+                    self.ui_state='base'
 
-                    
+        loop = urwid.MainLoop(fill, palette=palette, unhandled_input=handle_keys)
 
-            if remaining_tasks == 0 or self.__quit__:
-                break
-            self.__exit_sleep__.wait(refresh)
-            first_time = False
-        if hotkeys:
-            if self.__listener__.is_alive():
-                self.__listener__.stop()
 
-    def print_function_line(self):
-        b=colors.bg
-        f=colors.fg
-        c=colors
+        self.__exit_sleep__ = Event()
+        self.__quit_thread__ = Event()
+        def query_loop(once=False):
+            while True:
+                self.__exit_sleep__.clear()
+
+                batches = list([batch.name for batch in self.__batch__.values()])
+                short_batches = list([batch.shortname for batch in self.__batch__.values()])
+                tasks = self.server.tasks(task_id=[s.task_id for s in self.__steps__])
+                workers = self.server.workers(batch=batches)
+
+                task_stats = {}
+                worker_stats = {}
+                for batch in batches:
+                    task_stats[batch] = {status:0 for status in TASK_STATUS}
+                    worker_stats[batch] = {status:0 for status in WORKER_STATUS}
+                for task in tasks:
+                    task_stats[task.batch][task.status]+=1
+                for worker in workers:
+                    worker_stats[worker.batch][worker.status]+=1
+
+                remaining_tasks = 0
+                for short,batch in zip(short_batches,batches):
+                    for status in TASK_STATUS:
+                        cell_update(cells[short]['task'][status],_(task_stats[batch][status]))
+                        #cell_update(cells[short]['task'][status],'X')
+                        pass
+                    for status in WORKER_STATUS:
+                        cell_update(cells[short]['worker'][status],_(worker_stats[batch][status]))
+                        pass
+
+                    remaining_tasks+=sum([task_stats[batch][s] for s in TASK_STATUS if s not in ['failed','succeeded']])
+
+                loop.draw_screen()
+                if remaining_tasks == 0:
+                    raise urwid.ExitMainLoop()
+                self.__exit_sleep__.wait(refresh)
+                if self.__quit_thread__.is_set() or once:
+                    break
+
+        
+        query_loop_thread = Thread(target=query_loop)
+        query_loop_thread.start()
+        loop.run()
 
 
     def clean(self, force=False):
@@ -310,29 +396,9 @@ class Workflow:
             for batch in self.__batch__.values():
                 batch.unpause(signal)
             self.__is_paused__ = False
-    
-    def keypressed(self, key):
-        other_key = False
-        if hasattr(key,'char'):
-            if key.char=='q':
-                self.quit()
-            elif key.char=='p':
-                self.pause()
-            elif key.char=='s':
-                self.pause(suspend=True)
-            elif key.char=='u':
-                self.unpause()
-            elif key.char=='d':
-                self.clean(force=True)
-                self.quit()
-            elif key.char=='h':
-                self.__listener__.stop()
-            elif key.char=='r':
-                pass
-            else:
-                other_key = True
         else:
-            other_key = True
-        if not other_key:
-            self.__exit_sleep__.set()
-        
+            batches=list([batch.name for batch in self.__batch__.values()])
+            workers = self.server.workers(batch=batches, status='paused')
+            for worker in workers:
+                self.server.worker_update(worker.worker_id,status='running')
+
