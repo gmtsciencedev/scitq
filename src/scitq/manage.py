@@ -12,6 +12,7 @@ import random
 from .debug import Debugger
 from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF
 from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
+import dotenv
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -204,6 +205,8 @@ def main():
     db_parser = subparser.add_parser('db', help='The following options are to work with scitq database')
     subsubparser=db_parser.add_subparsers(dest='action')
     db_upgrade_parser=subsubparser.add_parser('upgrade',help='Migrate the database to the current version of scitq')
+    db_upgrade_parser.add_argument('-c','--conf', help=f'Use this environment file to set environment (default to {DEFAULT_SERVER_CONF})', type=str, default=DEFAULT_SERVER_CONF)
+    
 
     args=parser.parse_args()
 
@@ -474,6 +477,7 @@ def main():
     elif args.object=='db':
 
         if args.action=='upgrade':
+            dotenv.load_dotenv(args.conf)
             run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade', shell=True, 
                 cwd=package_path(), check=True)
             print('DB migrated')

@@ -1,4 +1,5 @@
 from .lib import Server
+from .fetch import get
 from .util import colors
 from typing import Optional
 from time import sleep
@@ -114,6 +115,12 @@ class Step:
         """Clean the underlying task"""
         self.server.task_delete(self.task_id)
 
+    def download(self, destination=None):
+        """Download this step output"""
+        if destination is None:
+            destination=os.getcwd()
+        get(self.output,destination)
+
 palette = [
     ('basic', 'light gray', 'black'),
     ('inverted', 'black', 'light gray'),
@@ -216,6 +223,19 @@ class Workflow:
                                           maximum_workers=maximum_workers)
                 
         # task part
+
+        if type(input)==list:
+            input = ' '.join(input)
+
+        if type(resource)==list:
+            resource = ' '.join(resource)
+        
+        if type(output)==list:
+            raise WorkflowException(f'Task {name} error: output must be a single path, not a list')
+
+        if output and not output.endswith('/'):
+            output += '/'
+
         task = self.server.task_create(
             command = command,
             name = name,
@@ -410,4 +430,19 @@ class Workflow:
             workers = self.server.workers(batch=batches, status='paused')
             for worker in workers:
                 self.server.worker_update(worker.worker_id,status='running')
+
+    def download(self, uri_list=None, destination=None):
+        """Download all step output  - or provide some uri in uri_list"""
+        if destination is None:
+            destination=os.getcwd()
+        if uri_list is None:
+            uri_list = []
+            for step in self.__steps__:
+                os.makedirs(os.path.join(destination,step.name))
+                get(step.gather('output'),os.path.join(destination,step.name))
+        else:        
+            if type(uri_list)!=list:
+                uri_list=[uri_list]
+            for uri in uri_list:
+                get(uri,destination)
 
