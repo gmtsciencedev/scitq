@@ -340,7 +340,7 @@ class Executor:
                             'RESOURCE': no_slash(self.resource_dir)},
                         limit=OUTPUT_LIMIT)
                 #self.run_slots.value -= 1
-                self.status = STATUS_RUNNING
+                #self.status = STATUS_RUNNING
                 #self.run_slots_semaphore.release()
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running',
                                         command=self.command)
@@ -367,7 +367,7 @@ class Executor:
                 self.process = await asyncio.create_subprocess_exec(
                         'docker','attach',self.container_id,
                         stdout=PIPE, stderr=PIPE, limit=OUTPUT_LIMIT)
-                self.status = STATUS_RUNNING
+                #self.status = STATUS_RUNNING
                 #self.run_slots.value -= 1
                 #self.run_slots_semaphore.release()
                 if not self.recover:
@@ -475,8 +475,11 @@ class Executor:
 
     def download(self, input=None, resource=None):
         """Do the downloading part, before launching, getting all input URIs into input_dir"""
-        log.warning('Downloading input data...')
-        self.status = STATUS_DOWNLOADING
+        if self.status != STATUS_RUNNING:
+            log.warning('Downloading input data...')
+            self.status = STATUS_DOWNLOADING
+        else:
+            log.warning('Checking previous downloads...')
         if input is None:
             input = self.input.split() if self.input else []
         if resource is None:
@@ -684,6 +687,9 @@ class Executor:
             
             try:
                 self.go.acquire()
+                self.status = STATUS_RUNNING
+                log.warning(f'Execution {self.execution_id} is now running')
+
                 task = self.s.task_get(self.task_id)
 
                 # let check our command
@@ -1195,8 +1201,13 @@ class Client:
                     for _,weight,execution_id in executions_ready_to_go:
                         if self.concurrency - running >= weight:
                             running += weight
+                            log.warning(f'Releasing execution {execution_id}')
                             self.executions_go[execution_id].release()
                             #self.executions_status[execution_id].value=STATUS_RUNNING
+                            while self.executions_status[execution_id].value == STATUS_WAITING:
+                                sleep(0.2)
+                                log.warning('Waiting for execution to start')
+                            log.warning(f'Execution {execution_id} is now {STATUS_TXT[self.executions_status[execution_id].value]}')
                         else:
                             break
                 if waiting>self.prefetch:
