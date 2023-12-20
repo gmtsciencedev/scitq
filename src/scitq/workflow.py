@@ -33,7 +33,8 @@ class WorkflowException(Exception):
 
 class Batch:
     """A class to automate batch allocation"""
-    def __init__(self, name, shortname, flavor, concurrency, provider, region, tasks_per_worker, maximum_workers, prefetch, server):
+    def __init__(self, name, shortname, flavor, concurrency, provider, region, 
+                 tasks_per_worker, maximum_workers, prefetch, server, extra_workers=0):
         self.name = name
         self.shortname = shortname
         self.flavor = flavor
@@ -44,25 +45,50 @@ class Batch:
         self.maximum_workers = maximum_workers
         self.prefetch = prefetch
         self.server = server
-        self.__recruiter__ = self.create_recruiter()
+        self.extra_workers = extra_workers
+        self.__recruiter__ = None
+        self.__extra_recruiter__ = None
+        self.recruit()
 
-    def create_recruiter(self):
-        return self.server.recruiter_create(batch = self.name, rank=1, tasks_per_worker=self.tasks_per_worker, 
-                            flavor=self.flavor, concurrency=self.concurrency, region=self.region, 
-                            provider=self.provider, prefetch=self.prefetch,
-                            maximum_workers=self.maximum_workers)
+    def recruit(self):
+        self.__recruiter__ = self.create_recruiter()
+        if self.extra_workers>0:
+            self.__extra_recruiter__ = self.create_recruiter(rank=2, maximum_workers=self.extra_workers, provider=None, region=None)
+
+    def create_recruiter(self, rank=1, flavor=Unset, region=Unset, provider=Unset, maximum_workers=Unset):
+        maximum_workers = coalesce(maximum_workers,self.maximum_workers)
+        if maximum_workers and maximum_workers>0:
+            return self.server.recruiter_create(batch = self.name, 
+                            rank=rank, 
+                            tasks_per_worker=self.tasks_per_worker, 
+                            flavor=coalesce(flavor,self.flavor), 
+                            concurrency=self.concurrency, 
+                            region=coalesce(region,self.region), 
+                            provider=coalesce(provider,self.provider), 
+                            prefetch=self.prefetch,
+                            maximum_workers=coalesce(maximum_workers,self.maximum_workers))
+        else:
+            return None
     
     def clean(self):
         self.server.recruiter_delete(self.name, rank=1)
-        
+        if self.extra_workers>0:
+            self.server.recruiter_delete(self.name, rank=2)
+    
+    def destroy(self):
+        self.server.batch_delete(batch=self.name)
 
     def pause(self, signal=0):
         self.server.batch_stop(self.name, signal=signal)
+        if self.__recruiter__ is not None:
+            self.server.recruiter_delete(self.name, rank=1)
+        if self.__extra_recruiter__ is not None:
+            self.server.recruiter_delete(self.name, rank=2)
 
     def unpause(self, signal=0):
         self.server.batch_go(self.name, signal=signal)
-
-
+        self.recruit()
+    
 class Step:
     """A step in a workflow, a class mixing scitq Task and Batch concepts to help writing in workflow logic"""
     __memory__ = {}
@@ -159,15 +185,16 @@ class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
     def __init__(self, name: str, server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
                  provider: Optional[str] =None, region: Optional[str] =None,
-                 flavor: Optional[str] =None, shell=False, maximum_workers=None, retry=None, rounds=None,
-                 prefetch = None, container=None, container_options=''):
+                 flavor: Optional[str] =None, shell=False, workers_per_task=None, total_workers=None, 
+                 retry=None, rounds=None, prefetch = None, container=None, container_options='', ):
         self.name = name
         self.server = Server(server, style='object')
         self.provider = provider
         self.region = region
         self.flavor = flavor
         self.shell = shell
-        self.maximum_workers = maximum_workers
+        self.workers_per_task = workers_per_task
+        self.total_workers = total_workers
         self.rounds = rounds
         self.prefetch = prefetch
         self.container_options = container_options
@@ -179,6 +206,7 @@ class Workflow:
         self.__quit__ = False
         self.__is_paused__ = False
         self.__clean__ = False
+        self.__current_workers__=0
     
     def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
              tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
@@ -196,7 +224,10 @@ class Workflow:
         region = coalesce(region, self.region)
         flavor = coalesce(flavor, self.flavor)
         rounds = coalesce(rounds, self.rounds)
-        maximum_workers = coalesce(maximum_workers, self.maximum_workers)
+        maximum_workers = coalesce(maximum_workers, self.workers_per_task)
+        extra_workers=0
+
+
         prefetch = coalesce(prefetch, self.prefetch)
 
         
@@ -213,15 +244,26 @@ class Workflow:
             if concurrency is None:
                 raise WorkflowException(f'A concurrency is mandatory as batch {batch} is not already defined')
             if provider and region and maximum_workers is None:
-                raise WorkflowException(f'A maximum number of worker (maximum_workers) is mandatory at workflow or step level if provider and reagion are set')
+                raise WorkflowException(f'A maximum number of worker is mandatory at workflow or step level if provider and reagion are set')
+            
+            if provider and region:
+                if maximum_workers+self.__current_workers__ > self.total_workers:
+                    target_maximum_workers = maximum_workers
+                    maximum_workers = max(self.total_workers - self.__current_workers__,0)
+                    maximum_workers = min(maximum_workers, target_maximum_workers)
+                    extra_workers = max(target_maximum_workers - maximum_workers,0)
+
+            self.__current_workers__ += maximum_workers
+
             self.__batch__[batch] = Batch(name=f'{self.name}.{batch}',
                                           shortname=batch,
                                           flavor=flavor, concurrency=concurrency, prefetch=prefetch,
                                           provider=provider, region=region,                                          
                                           tasks_per_worker=tasks_per_worker,
                                           server=self.server,
-                                          maximum_workers=maximum_workers)
-                
+                                          maximum_workers=maximum_workers,
+                                          extra_workers=extra_workers)
+                            
         # task part
 
         if type(input)==list:
@@ -399,11 +441,15 @@ class Workflow:
     def clean(self, force=False):
         """Clean all, except failed tasks if force is not set to True"""
         if not self.__clean__:
-            for batch in self.__batch__.values():
-                batch.clean()
-            for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
-                if task.status == 'succeeded' or force:
-                    self.server.task_delete(task.task_id)
+            if force:
+                for batch in self.__batch__.values():
+                    batch.destroy()
+            else:
+                for batch in self.__batch__.values():
+                    batch.clean()
+                for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
+                    if task.status == 'succeeded':
+                        self.server.task_delete(task.task_id)
             self.__clean__ = True
 
     def quit(self):

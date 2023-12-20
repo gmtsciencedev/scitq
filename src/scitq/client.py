@@ -13,7 +13,7 @@ import psutil
 import platform
 import queue
 import tempfile
-from .fetch import get,put,pathjoin, info
+from .fetch import get,put,pathjoin, info, FetchError
 import traceback
 import shutil
 import subprocess
@@ -543,7 +543,7 @@ class Executor:
                     if data_failure:
                         self.resources_db[data]={'status':'failed'}
                         log.warning(f'... resource {data} failed!')
-                        raise
+                        raise FetchError(f'Could not download {data}')
                 else:
                     log.warning(f'Resource {data} is already there')
             while True:
@@ -839,6 +839,10 @@ class Client:
         self.resources_db = self.manager.dict()
         self.working_dirs = self.manager.dict()
         json_to_resource(self.resources_db)
+        for key,item in self.resources_db.items():
+            if item['status']=='lock':
+                log.warning(f'{key} is marked as locked in resource, removing')
+                del self.resources_db[key]
         self.resource_dir = os.path.join(BASE_RESOURCE_DIR, RESOURCE_FILES_SUBDIR)
         if not os.path.exists(self.resource_dir):
             os.makedirs(self.resource_dir)
@@ -1186,7 +1190,7 @@ class Client:
                         log.warning(f'Execution {execution.execution_id} is supposed to be accepted and is not ({STATUS_TXT[status]}).')
                 if running>self.concurrency:
                     log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
-                elif running<self.concurrency:
+                elif running<self.concurrency and self.w.status=='running':
                     executions_ready_to_go.sort(reverse=True)
                     for _,weight,execution_id in executions_ready_to_go:
                         if self.concurrency - running >= weight:
