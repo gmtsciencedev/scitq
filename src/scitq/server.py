@@ -201,6 +201,7 @@ class Worker(db.Model):
     flavor = db.Column(db.String, nullable=True)
     region = db.Column(db.String, nullable=True)
     provider = db.Column(db.String, nullable=True)
+    signals = db.relationship("Signal", cascade="all,delete")
 
     def __init__(self, name, concurrency, prefetch=0, hostname=None, 
                 status='paused', batch=None, idle_callback=None, flavor=None, region=None, provider=None):
