@@ -202,7 +202,8 @@ def s3_get(source, destination):
                 uri_match['path'],destination)
         except botocore.exceptions.ClientError as error:
             if 'Not Found' in error.response.get('Error',{}).get('Message',None):
-                raise FetchError(f'{source} was not found') from error
+                log.warning(f'{source} was not found, trying {source}/')
+                s3_get(source+'/',destination)
             else:
                 raise
 
@@ -285,10 +286,14 @@ def _container_get(container, blob_name, file_name):
                                         blob=blob_name)
     else:
         blob_client = container.get_blob_client(blob=blob_name)
-    with open(file=file_name, mode="wb") as download_file:
-        #download_file.write(container.download_blob(blob_name).readall())
-        download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
-        download_file.write(download_stream.readall())
+    try:
+        with open(file=file_name, mode="wb") as download_file:
+            #download_file.write(container.download_blob(blob_name).readall())
+            download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
+            download_file.write(download_stream.readall())
+    except:
+        os.remove(file_name)
+        raise
         
 
 class AzureClient:
@@ -364,7 +369,8 @@ class AzureClient:
                 container=self.client.get_container_client(uri_match['container'])
                 _container_get(container, uri_match['path'],destination)
             except azure.core.exceptions.ResourceNotFoundError as error:
-                raise FetchError(f'{source} was not found') from error
+                log.warning(f'{source} was not found, trying {source}/')
+                self.get(source+'/', destination)
 
     @retry_if_it_fails(RETRY_TIME)
     def put(self, source, destination):
