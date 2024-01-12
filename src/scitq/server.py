@@ -232,7 +232,7 @@ class Execution(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey("task.task_id"), nullable=False)
     task = db.relationship(
         Task,
-        backref=db.backref('tasks',
+        backref=db.backref('executions',
                          uselist=True,
                          cascade='delete,all'),
                          order_by='Execution.creation_date')
@@ -1280,6 +1280,11 @@ def delete_batch(name, session, commit=True):
         Requirement.task_id.in_(select(Task.task_id).where(Task.batch==name)),
         Requirement.other_task_id.in_(select(Task.task_id).where(Task.batch==name)))),
         execution_options={'synchronize_session':False})
+    session.execute(delete(Signal).where(Signal.execution_id.in_(
+        select(Execution.execution_id).where(Execution.task_id.in_(
+            select(Task.task_id).where(Task.batch==name))
+        ))),
+        execution_options={'synchronize_session':False})
     session.execute(delete(Execution).where(Execution.task_id.in_(
              select(Task.task_id).where(Task.batch==name))),
              execution_options={'synchronize_session':False})    
@@ -1811,7 +1816,11 @@ def handle_task_action():
         #Changing the command for a task in the data base and moving it in the task queue. It doesn't create a new task.
         for t in Task.query.filter(Task.task_id==task):
             t.command =json["modification"]
-            t.status='pending'
+            for e in t.executions:
+                if e.status=='running':
+                    e.status='failed'
+                    db.session.add(Signal(e.execution_id, e.worker_id, SIGKILL))
+            t.status='pending'            
         db.session.commit()
         log.warning('result modify : Ok')
     elif json['action']=='restart': 
