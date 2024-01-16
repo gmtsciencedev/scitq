@@ -7,6 +7,7 @@ import os
 from signal import SIGTSTP, SIGCONT
 import urwid
 from threading import Event,Thread
+import logging as log
 
 DEFAULT_SERVER='127.0.0.1'
 DEFAULT_REFRESH=30
@@ -183,18 +184,27 @@ def padding_update(padding, widget):
 
 class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
-    def __init__(self, name: str, server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
+    def __init__(self, name: str, max_step_workers=None, 
+                 server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
                  provider: Optional[str] =None, region: Optional[str] =None,
-                 flavor: Optional[str] =None, shell=False, workers_per_task=None, total_workers=None, 
+                 flavor: Optional[str] =None, shell=False, max_workflow_workers=None, 
                  retry=None, rounds=None, prefetch = None, container=None, container_options='', ):
+        """Workflow init:
+        Mandatory:
+        - name [str]: name of workflow
+        - maximum_workers [int]: How many workers will be recruited by default for each step (default to 1)
+        - total_workers 
+        """
         self.name = name
         self.server = Server(server, style='object')
         self.provider = provider
         self.region = region
         self.flavor = flavor
         self.shell = shell
-        self.workers_per_task = workers_per_task
-        self.total_workers = total_workers
+        self.max_step_workers = max_step_workers
+        self.max_workflow_workers = max_workflow_workers
+        if max_step_workers and max_workflow_workers and max_step_workers > max_workflow_workers:
+            log.warning(f'Inconsistant settings: max_step_workers ({max_step_workers}) is above max_workflow_workers ({max_workflow_workers})')
         self.rounds = rounds
         self.prefetch = prefetch
         self.container_options = container_options
@@ -207,6 +217,8 @@ class Workflow:
         self.__is_paused__ = False
         self.__clean__ = False
         self.__current_workers__=0
+        if region and provider and not max_workflow_workers:
+            raise WorkflowException('For security, set the "max_workflow_workers" parameter if provider and region are set')
     
     def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
              tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
@@ -224,7 +236,9 @@ class Workflow:
         region = coalesce(region, self.region)
         flavor = coalesce(flavor, self.flavor)
         rounds = coalesce(rounds, self.rounds)
-        maximum_workers = coalesce(maximum_workers, self.workers_per_task)
+        maximum_workers = coalesce(maximum_workers, self.max_step_workers)
+        if maximum_workers is None and batch not in self.__batch__:
+            raise WorkflowException(f'maximum_workers is mandatory if workflow.max_step_workers is unset and batch {batch} is not already defined')
         extra_workers=0
 
 
@@ -243,13 +257,10 @@ class Workflow:
                 raise WorkflowException(f'A flavor is mandatory as batch {batch} is not already defined')
             if concurrency is None:
                 raise WorkflowException(f'A concurrency is mandatory as batch {batch} is not already defined')
-            if provider and region and maximum_workers is None:
-                raise WorkflowException(f'A maximum number of worker is mandatory at workflow or step level if provider and reagion are set')
-            
             if provider and region:
-                if maximum_workers+self.__current_workers__ > self.total_workers:
+                if maximum_workers+self.__current_workers__ > self.max_workflow_workers:
                     target_maximum_workers = maximum_workers
-                    maximum_workers = max(self.total_workers - self.__current_workers__,0)
+                    maximum_workers = max(self.max_workflow_workers - self.__current_workers__,0)
                     maximum_workers = min(maximum_workers, target_maximum_workers)
                     extra_workers = max(target_maximum_workers - maximum_workers,0)
 

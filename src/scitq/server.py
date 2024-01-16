@@ -1816,11 +1816,12 @@ def handle_task_action():
         #Changing the command for a task in the data base and moving it in the task queue. It doesn't create a new task.
         for t in Task.query.filter(Task.task_id==task):
             t.command =json["modification"]
-            for e in t.executions:
-                if e.status=='running':
-                    e.status='failed'
-                    db.session.add(Signal(e.execution_id, e.worker_id, SIGKILL))
-            t.status='pending'            
+            if t.status not in ['pending','assigned','accepted']:
+                for e in t.executions:
+                    if e.status=='running':
+                        e.status='failed'
+                        db.session.add(Signal(e.execution_id, e.worker_id, SIGKILL))
+                t.status='pending'            
         db.session.commit()
         log.warning('result modify : Ok')
     elif json['action']=='restart': 
@@ -2252,9 +2253,9 @@ def background():
                 nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker)
                 nb_workers -= pending_workers[recruiter]*recruiter.tasks_per_worker
                 log.warning(f'  --> we need {nb_workers} because {pending_tasks} pending tasks ({recruiter.tasks_per_worker} expected per worker) and we already have {pending_workers[recruiter]} pending workers.')
-                if recruiter.maximum_workers and recruiter.maximum_workers < nb_workers + workers:
-                    nb_workers = recruiter.maximum_workers - workers
-                    log.warning(f'  --> adjusting to {nb_workers} because maximum is {recruiter.maximum_workers}')
+                if recruiter.maximum_workers and recruiter.maximum_workers < nb_workers + workers + pending_workers[recruiter]:
+                    nb_workers = recruiter.maximum_workers - workers - pending_workers[recruiter]
+                    log.warning(f'  --> adjusting to {nb_workers} because maximum is {recruiter.maximum_workers} and we already have {pending_workers[recruiter]} pending workers')
                 if nb_workers <= 0:
                     log.warning(f'  --> giving up')
                     continue
