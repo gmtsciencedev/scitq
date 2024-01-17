@@ -2237,10 +2237,10 @@ def background():
                     join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
                     join(Worker,Worker.batch==Recruiter.batch,isouter=True).\
                     group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))
-            pending_workers = dict(session.query(Recruiter,func.count(distinct(Worker.worker_id))).\
-                    join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
-                    join(Worker,and_(Worker.batch==Recruiter.batch,Worker.status!='running'),isouter=True).\
-                    group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))
+            #pending_workers = dict(session.query(Recruiter,func.count(distinct(Worker.worker_id))).\
+            #        join(Task,and_(Task.batch==Recruiter.batch,Task.status=='pending')).\
+            #        join(Worker,and_(Worker.batch==Recruiter.batch,Worker.status!='running'),isouter=True).\
+            #        group_by(Recruiter.batch,Recruiter.rank).order_by(Recruiter.batch,Recruiter.rank))
             newly_recruited_workers = []   
             for recruiter,pending_tasks,workers in active_recruiters:
                 log.warning(f'-> recruiting for recruiter {recruiter} with {pending_tasks} pending tasks and {workers} current workers')
@@ -2250,12 +2250,12 @@ def background():
                 if recruiter.maximum_workers and recruiter.maximum_workers <= workers:
                     log.warning(f'  --> too many workers already, not recruiting ({recruiter} has reached the maximum of {recruiter.maximum_workers})')
                     continue
-                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker)
-                nb_workers -= pending_workers[recruiter]*recruiter.tasks_per_worker
-                log.warning(f'  --> we need {nb_workers} because {pending_tasks} pending tasks ({recruiter.tasks_per_worker} expected per worker) and we already have {pending_workers[recruiter]} pending workers.')
-                if recruiter.maximum_workers and recruiter.maximum_workers < nb_workers + workers + pending_workers[recruiter]:
-                    nb_workers = recruiter.maximum_workers - workers - pending_workers[recruiter]
-                    log.warning(f'  --> adjusting to {nb_workers} because maximum is {recruiter.maximum_workers} and we already have {pending_workers[recruiter]} pending workers')
+                nb_workers = math.ceil(pending_tasks/recruiter.tasks_per_worker) - workers
+                log.warning(f'  --> we need {nb_workers} because {pending_tasks} pending tasks ({recruiter.tasks_per_worker} expected per worker) and we already have {workers} workers.')
+                if recruiter.maximum_workers and recruiter.maximum_workers < nb_workers + workers:
+                    nb_workers = recruiter.maximum_workers - workers
+                    log.warning(f'  --> adjusting to {nb_workers} because maximum is {recruiter.maximum_workers} and \
+we already have {workers} workers')
                 if nb_workers <= 0:
                     log.warning(f'  --> giving up')
                     continue
