@@ -449,18 +449,29 @@ class Workflow:
         loop.run()
 
 
-    def clean(self, force=False):
+    def clean(self, force=False, download_output=True):
         """Clean all, except failed tasks if force is not set to True"""
         if not self.__clean__:
             if force:
                 for batch in self.__batch__.values():
                     batch.destroy()
             else:
-                for batch in self.__batch__.values():
-                    batch.clean()
                 for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
+                    if download_output:
+                        executions = self.server.executions(task_id=task.task_id, latest=True)
+                        try:
+                            execution = next(iter(executions))
+                            base_log_name = task.name if task.name else f'task_{task.task_id}'
+                            with open(base_log_name+'_output.log','a+') as f:
+                                f.write(execution.output)
+                            with open(base_log_name+'_error.log','a+') as f:
+                                f.write(execution.error)                        
+                        except StopIteration:
+                            pass
                     if task.status == 'succeeded':
                         self.server.task_delete(task.task_id)
+                for batch in self.__batch__.values():
+                    batch.clean()
             self.__clean__ = True
 
     def quit(self):
