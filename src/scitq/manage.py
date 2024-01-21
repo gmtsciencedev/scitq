@@ -203,10 +203,10 @@ def main():
     
 
     db_parser = subparser.add_parser('db', help='The following options are to work with scitq database')
+    db_parser.add_argument('-c','--conf', help=f'Use this environment file to set environment (default to {DEFAULT_SERVER_CONF})', type=str, default=DEFAULT_SERVER_CONF)
     subsubparser=db_parser.add_subparsers(dest='action')
     db_upgrade_parser=subsubparser.add_parser('upgrade',help='Migrate the database to the current version of scitq')
-    db_upgrade_parser.add_argument('-c','--conf', help=f'Use this environment file to set environment (default to {DEFAULT_SERVER_CONF})', type=str, default=DEFAULT_SERVER_CONF)
-    
+    db_init_parser=subsubparser.add_parser('init',help='Initialize a new database with current version of scitq')
 
     args=parser.parse_args()
 
@@ -475,6 +475,15 @@ def main():
             s.recruiter_delete(batch=args.batch, rank=args.rank)
 
     elif args.object=='db':
+
+        if args.action=='init':
+            dotenv.load_dotenv(args.conf)
+            # return code of flask db init seems to be random, outputing to 1 with no reason or with a good reason...
+            run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db init', shell=True, 
+                cwd=package_path(), check=False)
+            run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db stamp head', shell=True, 
+                cwd=package_path(), check=True)
+            print('DB intialized')
 
         if args.action=='upgrade':
             dotenv.load_dotenv(args.conf)
