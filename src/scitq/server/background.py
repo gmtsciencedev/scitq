@@ -1,6 +1,5 @@
 from sqlalchemy import select, and_, func, distinct
 from sqlalchemy.orm import Session, aliased
-from flask_sqlalchemy import SQLAlchemy
 import logging as log
 import os
 from subprocess import run, Popen, PIPE

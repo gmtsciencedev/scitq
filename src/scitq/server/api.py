@@ -1,14 +1,11 @@
 from flask_restx import Api, Resource, fields
-from flask import current_app
 from datetime import datetime
-from sqlalchemy import and_, delete, select, or_
+from sqlalchemy import and_, delete, select
 from sqlalchemy.sql.expression import label
-from flask_sqlalchemy import SQLAlchemy
 import logging as log
 import json as json_module
 
 from .model import Task, Execution, Signal, Requirement, Worker, create_worker_destroy_job, Job, Recruiter, delete_batch
-#from .app import app
 from .db import db
 from .config import IS_SQLITE
 

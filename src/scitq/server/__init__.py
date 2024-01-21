@@ -18,26 +18,15 @@ def create_app():
     log.info('Starting')
     log.warning(f'WORKER_CREATE is {WORKER_CREATE}')
 
-    #worker_create_queue = queue.Queue()
-
-
     # via https://github.com/pallets/flask-sqlalchemy/blob/main/examples/hello/hello.py
     app = Flask(__name__, instance_relative_config=True)
-    #app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://postgres:postgres@localhost:5432/"
     app.config.from_object('scitq.default_settings')
 
     # via https://flask-restx.readthedocs.io/en/latest/example.html
     app.wsgi_app = ProxyFix(app.wsgi_app)
-    # from .db import init_app
-    # migrate = init_app(app)
     
     from . import model
-
-    if SQLALCHEMY_POOL_SIZE is not None:
-        db.init_app(app,engine_options={'pool_size': int(SQLALCHEMY_POOL_SIZE)})
-    else:
-        db.init_app(app)
-
+    db.init_app(app)
 
     with app.app_context():
         db.create_all()

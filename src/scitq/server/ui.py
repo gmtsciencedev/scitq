@@ -3,16 +3,15 @@ from time import sleep
 import logging as log
 import json as json_module
 from sqlalchemy import select, func, and_, delete
-from flask_sqlalchemy import SQLAlchemy
+from signal import SIGKILL, SIGQUIT, SIGTSTP, SIGCONT
 
 from ..util import package_version, tryupdate, to_dict
-#from .app import app
 from .db import db
 from .config import IS_SQLITE, UI_OUTPUT_TRUNC, UI_MAX_DISPLAYED_ROW
 from ..constants import SIGNAL_CLEAN, SIGNAL_RESTART
 from .model import Worker, Signal, Job, Task, Execution, delete_batch
 from .api import worker_dao
-from signal import SIGKILL, SIGQUIT, SIGTSTP, SIGCONT
+
 
 
 ui = Blueprint('ui', __name__, url_prefix='/ui')
