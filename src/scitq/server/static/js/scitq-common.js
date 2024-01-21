@@ -2,7 +2,7 @@ var function_is_running=false;
 var running_time = 0;
 async function check_online(func) {
     if (!pause_loop && !function_is_running && !document.hidden) {
-        $.getJSON('/live/ping', async function() {
+        $.getJSON('/ui/ping', async function() {
             const begin_date = Date.now();
             console.log('fetching...');
             function_is_running = true;
