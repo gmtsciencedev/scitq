@@ -45,7 +45,7 @@ dependencies=['Flask < 2.2',
 scitq-worker = "scitq.client:main"
 scitq-launch = "scitq.launch:main"
 scitq-manage = "scitq.manage:main"
-scitq-queue = "scitq.server:background"
+scitq-queue = "scitq.server:background_app"
 scitq-fetch = "scitq.fetch:main"
 
 [tool.setuptools.packages.find]

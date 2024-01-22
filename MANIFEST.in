@@ -1,4 +1,4 @@
-recursive-include src/scitq/templates *
-recursive-include src/scitq/static *
+recursive-include src/scitq/server/templates *
+recursive-include src/scitq/server/static *
 recursive-include src/scitq/ansible *
 recursive-include src/scitq/migrations *

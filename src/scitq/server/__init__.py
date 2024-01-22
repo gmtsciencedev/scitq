@@ -4,10 +4,9 @@ import logging as log
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_migrate import Migrate
-from flask_sqlalchemy import SQLAlchemy
 from .db import db
 
-from .config import WORKER_CREATE, SQLALCHEMY_POOL_SIZE
+from .config import WORKER_CREATE
 
 def __background__(*args):
     raise RuntimeError('Not initialized')
@@ -48,8 +47,15 @@ def create_app():
     return app
 
 
-def background():
+def background_app():
     """This is run by scitq-queue service"""
     app=create_app()
     __background__(app)
 
+#def app(*args, **nargs):
+#    """Hack for uwsgi"""
+#    global app
+#    app = create_app()
+#    return app(*args, **nargs)
+    
+app = create_app()
