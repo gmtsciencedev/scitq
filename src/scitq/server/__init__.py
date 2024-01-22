@@ -27,6 +27,22 @@ def create_app():
     from . import model
     db.init_app(app)
 
+    # with uwsgi, the master worker is forking to create the workers which receive a 
+    # non-working connection (because it comes from another process), it must be discarded
+    # so that workers re-open the connection properly
+    # idea from https://stackoverflow.com/questions/39562838/how-to-configure-pyramid-uwsgi-sqlalchemy
+    try:
+        # import uwsgi is only working in uwsgi context. It is normal that is fails
+        # to import in VisualStudioCode or manually
+        import uwsgi # pyright: ignore[reportMissingImports]
+
+        def postfork():
+            with app.app_context():
+                db.engine.dispose()
+        uwsgi.post_fork_hook = postfork
+    except ImportError:
+        pass
+    
     with app.app_context():
         db.create_all()
     migrate.init_app(app, db)
@@ -52,10 +68,4 @@ def background_app():
     app=create_app()
     __background__(app)
 
-#def app(*args, **nargs):
-#    """Hack for uwsgi"""
-#    global app
-#    app = create_app()
-#    return app(*args, **nargs)
-    
 app = create_app()
