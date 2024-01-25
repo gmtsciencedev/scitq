@@ -8,9 +8,10 @@ from datetime import datetime
 from argparse import Namespace
 import math
 from time import sleep
+from signal import SIGKILL
 
-from .model import Worker, Task, Execution, Job, Recruiter, Requirement
-from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY, WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP
+from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal
+from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY, WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE
 from .db import db
 from ..util import PropagatingThread
 from ..ansible.scitq.sqlite_inventory import scitq_inventory
@@ -120,6 +121,28 @@ def background(app):
                 if task_attributions:
                     session.commit()
             now = datetime.utcnow()
+
+            # managing timeouts
+            if IS_SQLITE:
+                status_change_time = '(unixepoch(current_timestamp)-unixepoch(status_date))'
+            else:
+                status_change_time = 'extract(epoch from current_timestamp - status_date)'
+            some_timeouts = False
+            for item in session.execute(f'''SELECT execution.execution_id,execution.worker_id,execution.task_id 
+                        FROM task 
+                        JOIN execution ON execution.task_id=task.task_id AND execution.latest
+                        WHERE 
+                            (task.status='accepted' AND download_timeout IS NOT NULL AND {status_change_time}>download_timeout)
+                            OR
+                            (task.status='running' AND run_timeout IS NOT NULL AND {status_change_time}>run_timeout)'''):
+                log.warning(f'Task {item.task_id} has reached a timeout, sending kill signal.')
+                session.add(Signal(execution_id=item.execution_id, worker_id=item.worker_id, signal=SIGKILL))
+                some_timeouts = True
+            if some_timeouts:
+                session.commit()
+            
+
+
             log.warning('Looking for offline/online workers')
             session.expire_all()
             for worker in session.query(Worker).filter(Worker.status.in_(['offline','running'])):

@@ -419,6 +419,7 @@ class Server:
     def task_create(self, command, name=None, status=None,batch=None, 
             input=None, output=None, container=None, container_options='',
             resource=None, required_task_ids=None, shell=False, retry=None,
+            download_timeout=None, run_timeout=None,
             asynchronous=True):
         """Create a new task, return the newly created task
         """
@@ -433,19 +434,23 @@ class Server:
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
             'container_options':container_options, 'resource':resource, 
-            'required_task_ids': required_task_ids, 'retry': retry
+            'required_task_ids': required_task_ids, 'retry': retry,
+            'download_timeout':download_timeout, 'run_timeout':run_timeout,
         }), asynchronous=asynchronous)
 
     def task_update(self, id, command=None, name=None, status=None, batch=None, 
             input=None, output=None, container=None, container_options=None,
-            resource=None, required_task_ids=None, retry=None, asynchronous=True):
+            resource=None, required_task_ids=None, retry=None, 
+            download_timeout=None, run_timeout=None,
+            asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/tasks/{id}', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
             'container_options':container_options, 'resource':resource, 
-            'required_task_ids': required_task_ids, 'retry': retry
+            'required_task_ids': required_task_ids, 'retry': retry,
+            'download_timeout':download_timeout, 'run_timeout':run_timeout,
         }), asynchronous=asynchronous)
 
     def task_get(self, id):

@@ -188,7 +188,8 @@ class Workflow:
                  server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
                  provider: Optional[str] =None, region: Optional[str] =None,
                  flavor: Optional[str] =None, shell=False, max_workflow_workers=None, 
-                 retry=None, rounds=None, prefetch = None, container=None, container_options='', ):
+                 retry=None, rounds=None, prefetch = None, container=None, container_options='', 
+                 download_timeout=None, run_timeout=None):
         """Workflow init:
         Mandatory:
         - name [str]: name of workflow
@@ -210,6 +211,8 @@ class Workflow:
         self.container_options = container_options
         self.retry = retry
         self.container = container
+        self.download_timeout = download_timeout
+        self.run_timeout = run_timeout
         self.__steps__ = []
         self.__batch__ = {}
         self.__input__ = None
@@ -222,7 +225,8 @@ class Workflow:
     
     def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
              tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
-             required_tasks=None, container=Unset, container_options=Unset, retry=Unset):
+             required_tasks=None, container=Unset, container_options=Unset, retry=Unset,
+             download_timeout=Unset, run_timeout=Unset):
         """Add a step to workflow
         - batch: batch for this step (all the different tasks and workers for this step will be grouped into that batch)
                 NB batch is mandatory and is defined by at least concurrency and flavor (either at workflow or step level) 
@@ -300,6 +304,8 @@ class Workflow:
             resource = resource,
             shell=coalesce(shell, self.shell),
             retry=coalesce(retry, self.retry),
+            download_timeout=coalesce(download_timeout, self.download_timeout),
+            run_timeout=coalesce(run_timeout, self.run_timeout),
             required_task_ids = None if required_tasks is None \
                 else [t if type(t)==int else t.task_id for t in required_tasks] if type(required_tasks)==list \
                 else [required_tasks] if type(required_tasks)==int else [required_tasks.task_id],

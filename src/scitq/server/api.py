@@ -112,6 +112,7 @@ class TaskDAO(BaseDAO):
     def update(self, id, data):
         task = self.get(id)
         modified = False
+        status_changed = False
         for attr, value in data.items():
             if hasattr(task,attr): 
                 if getattr(task,attr)!=value:
@@ -133,6 +134,7 @@ class TaskDAO(BaseDAO):
                             elif task.retry>0:
                                 value='pending'
                                 task.retry -= 1
+                        status_changed = True
                         
                     setattr(task, attr, value)
                     modified = True
@@ -141,6 +143,8 @@ class TaskDAO(BaseDAO):
                     task.__name__, attr))
         if modified:
             task.modification_date = datetime.utcnow()
+            if status_changed:
+                task.status_date = datetime.utcnow()
             db.session.commit()
         return task
 
@@ -167,6 +171,8 @@ task = api.model('Task', {
         description='timestamp of task creation in server'),
     'modification_date': fields.DateTime(readonly=True,
         description='timestamp of task last modification'),
+    'status_date': fields.DateTime(readonly=True,
+        description='timestamp of task last change of status'),
     'batch': fields.String(required=False, 
         description="only workers with the same batch (null or not) will accept the task."),
     'input': fields.String(required=False,
@@ -182,7 +188,11 @@ task = api.model('Task', {
     'required_task_ids': fields.List(fields.Integer,required=False,
         description="List of task ids required to do this task"),
     'retry': fields.Integer(required=False,
-        description="If set, retry the task this number of time if it fails until it succeeds")
+        description="If set, retry the task this number of time if it fails until it succeeds"),
+    'download_timeout': fields.Integer(required=False,
+        description="If set, the task will timeout and fail if the download time exceeds this number in seconds"),
+    'run_timeout': fields.Integer(required=False,
+        description="If set, the task will timeout and fail if the run time exceeds this number in seconds"),
 })
 
 task_filter = api.model('TaskFilter', {
@@ -499,32 +509,39 @@ class ExecutionDAO(BaseDAO):
                             api.abort(500,
                                 f"Status {value} is not possible (only {' '.join(self.authorized_status)})")
                         task=task_dao.get(execution.task_id)
+                        now = datetime.utcnow()
                         if execution.status=='pending':
                             if value=='running':
                                 task.status = 'running'
-                                task.modification_date = datetime.utcnow()
+                                task.modification_date = now
+                                task.status_date = now
                             elif value=='accepted':
                                 task.status = 'accepted'
-                                task.modification_date = datetime.utcnow()
+                                task.modification_date = now
+                                task.status_date = now
                             elif value in ['refused','failed']:
                                 task.status = 'pending'
-                                task.modification_date = datetime.utcnow()
+                                task.modification_date = now
+                                task.status_date = now
                             elif value=='succeeded':
                                 task.status = 'succeeded'
-                                task.modification_date = datetime.utcnow()
+                                task.modification_date = now
+                                task.status_date = now
                             else:
                                 api.abort(500, f"An execution cannot change status from pending to {value}")
                         elif execution.status=='accepted':
                             if value in ['running','failed','succeeded','pending']:
                                 task.status = value
-                                task.modification_date = datetime.utcnow()
+                                task.modification_date = now
+                                task.status_date = now
                             else:
                                 log.exception(f"An execution cannot change status from accepted to {value}")
                                 api.abort(500, f"An execution cannot change status from accepted to {value}")
                         elif execution.status=='running':
                             if value in ['succeeded', 'failed']:
                                 task.status=value
-                                task.modification_date = datetime.utcnow()
+                                task.modification_date = now
+                                task.status_date = now
                                 if value=='failed' and task.retry>0:
                                     log.warning(f'Failure of execution {execution.execution_id} trigger task {task.task_id} retry ({task.retry-1} retries left)')
                                     task.retry -= 1

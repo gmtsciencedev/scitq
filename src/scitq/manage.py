@@ -143,6 +143,8 @@ def main():
     task_update_subparser.add_argument('-j','--input', help='The new input for the task', type=str, default=None)
     task_update_subparser.add_argument('-o','--output', help='The new output for the task', type=str, default=None)
     task_update_subparser.add_argument('-R','--requirements', help='A new space separated required task ids', type=str, default=None)
+    task_update_subparser.add_argument('--run-timeout', help='Change the run timeout (in seconds) for this task', type=int, default=None)
+    task_update_subparser.add_argument('--download-timeout', help='Change the download timeout (in seconds) for this task', type=int, default=None)
     
     ansible_parser = subparser.add_parser('ansible', help='The following options are to work with ansible subcode')
     subsubparser=ansible_parser.add_subparsers(dest='action')
@@ -307,9 +309,9 @@ def main():
         
     elif args.object == 'task':  
         if args.action == 'list':
-            info_task=['task_id','name','status','command','creation_date','modification_date','batch']
+            info_task=['task_id','name','status','command','creation_date','modification_date','status_date','batch']
             if args.long:
-                info_task+=['container','container_options','input','output','resource','required_task_ids','retry']
+                info_task+=['container','container_options','input','output','resource','required_task_ids','retry','run_timeout','download_timeout']
             if not args.no_header:
                 headers = info_task
             else:
@@ -376,7 +378,8 @@ def main():
                         raise RuntimeError(f'requirements should be a space or comma separated list of integer not {args.requirements}') 
             s.task_update(id, name=args.new_name, status=args.status, batch=args.batch,
                 command=args.command, container=args.docker, container_options=args.option,
-                input=args.input, output=args.output, required_task_ids=args.requirements)
+                input=args.input, output=args.output, required_task_ids=args.requirements, 
+                run_timeout=args.run_timeout, download_timeout=args.download_timeout)
         elif args.action == 'delete':
             if args.id is not None:
                 id=args.id

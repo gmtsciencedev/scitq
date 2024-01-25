@@ -4,6 +4,7 @@ import logging as log
 import json as json_module
 from sqlalchemy import select, func, and_, delete, distinct
 from signal import SIGKILL, SIGQUIT, SIGTSTP, SIGCONT
+from datetime import datetime
 
 from ..util import package_version, tryupdate, to_dict, flat_list
 from .db import db
@@ -400,6 +401,7 @@ def handle_task_action():
         log.warning('result delete: Ok')
     elif json['action']=='modify': 
         #Changing the command for a task in the data base and moving it in the task queue. It doesn't create a new task.
+        now = datetime.utcnow()
         for t in Task.query.filter(Task.task_id==task):
             t.command =json["modification"]
             if t.status not in ['pending','assigned','accepted']:
@@ -407,13 +409,17 @@ def handle_task_action():
                     if e.status=='running':
                         e.status='failed'
                         db.session.add(Signal(e.execution_id, e.worker_id, SIGKILL))
-                t.status='pending'            
+                t.status='pending' 
+                t.status_date=now
+                t.modification_date=now          
         db.session.commit()
         log.warning('result modify : Ok')
     elif json['action']=='restart': 
         #Relaunching the execution of a task.
         for t in Task.query.filter(Task.task_id==task):
             t.status='pending'
+            t.status_date=now
+            t.modification_date=now  
         db.session.commit()
         log.warning('result restart : Ok')
     return '"ok"'

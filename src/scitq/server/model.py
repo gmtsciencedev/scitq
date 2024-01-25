@@ -21,16 +21,21 @@ class Task(db.Model):
     container_options = db.Column(db.String, nullable=True)
     resource = db.Column(db.String, nullable=True)
     retry = db.Column(db.Integer, nullable=False, default=0)
+    status_date = db.Column(db.DateTime)
+    download_timeout = db.Column(db.Integer, nullable=True)
+    run_timeout = db.Column(db.Integer, nullable=True)
 
     def __init__(self, command, name=None, status='pending', batch=None, 
                     input=None, output=None, container=None, 
                     container_options=None, resource=None,
+                    download_timeout=None, run_timeout=None,
                     retry=None):
         self.name = name
         self.command = command
         self.status = status
         self.creation_date = datetime.utcnow()
         self.modification_date = self.creation_date
+        self.status_date = self.creation_date
         self.batch = batch
         self.input = input
         self.output = output
@@ -38,6 +43,8 @@ class Task(db.Model):
         self.container_options = container_options
         self.resource = resource
         self.retry = retry
+        self.download_timeout = download_timeout
+        self.run_timeout = run_timeout
 
 
 class Worker(db.Model):
