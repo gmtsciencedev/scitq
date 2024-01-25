@@ -11,7 +11,7 @@ from time import sleep
 from signal import SIGKILL
 
 from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal
-from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY, WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE
+from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY, WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME
 from .db import db
 from ..util import PropagatingThread
 from ..ansible.scitq.sqlite_inventory import scitq_inventory
@@ -21,9 +21,9 @@ def get_nodename(session):
         session.execute(select(Worker.name))))
     log.warning(f'Worker names: {worker_names}')
     i=1
-    while f'node{i}' in worker_names:
+    while f'{SCITQ_SHORTNAME}-node{i}' in worker_names:
         i+=1
-    return f'node{i}'
+    return f'{SCITQ_SHORTNAME}-node{i}'
 
 
 def create_worker_object(concurrency, flavor, region, provider, batch, prefetch, db_session):
@@ -79,7 +79,6 @@ def background(app):
             #    ##    ##     ##  ######  ##    ##    ##        ##     ##  #######   ######  ########  ######   ######  #### ##    ##  ######  
 
 
-
             task_list = list(session.query(Task).filter(
                     Task.status=='pending').with_entities(Task.task_id, Task.batch))
             if task_list:
@@ -124,17 +123,21 @@ def background(app):
 
             # managing timeouts
             if IS_SQLITE:
-                status_change_time = '(unixepoch(current_timestamp)-unixepoch(status_date))'
+                status_change_time = '(unixepoch(:now)-unixepoch(status_date))'
             else:
-                status_change_time = 'extract(epoch from current_timestamp - status_date)'
+                # initially this was done with current_timestamp
+                # but then SQLAlchemy with PostgreSQL issues the same answer for minutes (when it's supposed to change each second)
+                # anyway, it works this way
+                status_change_time = 'extract(epoch from :now - status_date)'
             some_timeouts = False
+            log.warning(f'Looking for task timouts...')
             for item in session.execute(f'''SELECT execution.execution_id,execution.worker_id,execution.task_id 
                         FROM task 
                         JOIN execution ON execution.task_id=task.task_id AND execution.latest
                         WHERE 
                             (task.status='accepted' AND download_timeout IS NOT NULL AND {status_change_time}>download_timeout)
                             OR
-                            (task.status='running' AND run_timeout IS NOT NULL AND {status_change_time}>run_timeout)'''):
+                            (task.status='running' AND run_timeout IS NOT NULL AND {status_change_time}>run_timeout)''',params={'now':now}):
                 log.warning(f'Task {item.task_id} has reached a timeout, sending kill signal.')
                 session.add(Signal(execution_id=item.execution_id, worker_id=item.worker_id, signal=SIGKILL))
                 some_timeouts = True

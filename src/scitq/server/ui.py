@@ -416,6 +416,7 @@ def handle_task_action():
         log.warning('result modify : Ok')
     elif json['action']=='restart': 
         #Relaunching the execution of a task.
+        now = datetime.utcnow()
         for t in Task.query.filter(Task.task_id==task):
             t.status='pending'
             t.status_date=now

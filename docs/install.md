@@ -197,7 +197,7 @@ Just type in those two lines to add some required ansible collections and roles 
 
 ```bash
 ansible-galaxy install rolehippie.mdadm
-ansible-galaxy collection install openstack.cloud
+ansible-galaxy collection install openstack.cloud:1.8.0
 ```
 
 #### Azure ansible collection

@@ -1,4 +1,5 @@
 import os
+from socket import gethostname
 from ..util import check_dir, package_path
 from logging.config import dictConfig
 from ..default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
@@ -14,6 +15,9 @@ region={{region}} provider={{provider}}"'
 
 if SCITQ_SERVER is not None:
     WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'
+    SCITQ_SHORTNAME = SCITQ_SERVER.split('.')[0]
+else:
+    SCITQ_SHORTNAME = gethostname().split('.')[0]
 WORKER_DELETE = os.environ.get('WORKER_DELETE',
     f'cd {package_path("ansible","playbooks")} && ansible-playbook destroy_vm.yaml --extra-vars "nodename={{hostname}}"')
 SERVER_CRASH_WORKER_RECOVERY = os.environ.get('SERVER_CRASH_WORKER_RECOVERY',
