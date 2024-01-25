@@ -188,3 +188,7 @@ class colors:
         purple = '\033[45m'
         cyan = '\033[46m'
         lightgrey = '\033[47m'
+
+def flat_list(l):
+    """Return a list of value from a list of one-uplet containing the value"""
+    return list([item[0] for item in l])

@@ -2,10 +2,10 @@ from flask import render_template, request, jsonify, current_app, Blueprint
 from time import sleep
 import logging as log
 import json as json_module
-from sqlalchemy import select, func, and_, delete
+from sqlalchemy import select, func, and_, delete, distinct
 from signal import SIGKILL, SIGQUIT, SIGTSTP, SIGCONT
 
-from ..util import package_version, tryupdate, to_dict
+from ..util import package_version, tryupdate, to_dict, flat_list
 from .db import db
 from .config import IS_SQLITE, UI_OUTPUT_TRUNC, UI_MAX_DISPLAYED_ROW
 from ..constants import SIGNAL_CLEAN, SIGNAL_RESTART
@@ -21,9 +21,33 @@ package_version = package_version()
 def index(name=None):
     return render_template('ui.html', name=name, package_version=package_version)
 
-@ui.route('/task/')
+@ui.route('/task/', methods=('GET', 'POST'))
 def task():
-    return render_template('task.html',package_version=package_version)
+    if request.method=='POST':
+        sortby=request.form.get('sortby','task')
+        batch_filter=request.form.get('batch_filter','-')
+        worker_filter=request.form.get('worker_filter','-')
+        status_filter=request.form.get('status_filter','all')
+    else:
+        sortby='task'
+        batch_filter='-'
+        worker_filter='-'
+        status_filter='all'
+    batch_list = flat_list(db.session.query(
+        distinct(Task.batch)
+    ))
+    worker_list = flat_list(db.session.query(
+        distinct(Worker.name)
+    ))
+    
+    #print('batch_list',repr(batch_list))
+    return render_template('task.html',package_version=package_version,
+                           sortby=sortby,
+                           batch_filter=batch_filter,
+                           worker_filter=worker_filter,
+                           status_filter=status_filter,
+                           batch_list=batch_list,
+                           worker_list=worker_list)
 
 @ui.route('/batch/')
 def batch():
@@ -61,45 +85,36 @@ def handle_get():
                     stats
                 FROM worker
                 ORDER BY worker.batch,worker.name''')]),
-            'totals': next(iter([dict(row) for row in db.session.execute(
-                '''SELECT
-                    (SELECT count(task_id) FROM task WHERE status='waiting') as waiting,
-                    (SELECT count(task_id) FROM task WHERE status='pending') as pending,
-                    (SELECT count(task_id) FROM task WHERE status IN ('assigned','accepted')) as assigned,
-                    (SELECT count(task_id) FROM task WHERE status='running') as running,
-                    (SELECT count(task_id) FROM task WHERE status='failed') as failed,
-                    (SELECT count(task_id) FROM task WHERE status='succeeded') as succeeded
-                '''
-            )])) })
+            'tasks_per_status': dict([row for row in db.session.execute(
+                '''SELECT status,count(task_id) as count FROM task GROUP BY status'''
+            )]) })
 
     elif json['object']=='tasks':
-        order_by = json.get('order_by', None)
-        filter_by = json.get('filter_by', None)
+        sortby = json.get('sortby', None)
+        status = json.get('status', None)
         worker = json.get('worker', None)
+        batch = json.get('batch',None)
 
-        log.warning(f"sending task ordered by {order_by} filtered by {filter_by} for worker {worker}")
+        log.warning(f"sending task ordered by {sortby} filtered by status {status} for worker {worker}")
 
 
-        if order_by=='worker':
+        if sortby=='worker':
             sort_clause='ORDER BY worker.name, task.task_id DESC'
-        elif order_by=='batch':
+        elif sortby=='batch':
             sort_clause='ORDER BY task.batch, task.task_id DESC'
         else:
             sort_clause='ORDER BY task.task_id DESC'
         
         where_clauses = []
 
-        if filter_by=='terminated':
-            where_clauses.append("execution.status IN ('succeeded','failed')")
-        elif filter_by:
-            where_clauses.append(f"execution.status='{filter_by}'")
+        if status is not None:
+            where_clauses.append(f"task.status='{status}'")
 
-        if worker==0 or worker:
-            try:
-                worker=int(worker)
-                where_clauses.append(f"execution.worker_id={worker}")
-            except:
-                log.error(f'task filtering with worker is not possible: {worker} is not a valid id')
+        if worker is not None:
+            where_clauses.append(f"worker.name='{worker}'")
+
+        if batch is not None:
+            where_clauses.append(f"task.batch='{batch}'")
 
         where_clause = f'''WHERE {' AND '.join(where_clauses)}''' if where_clauses else ''
 
@@ -147,7 +162,14 @@ def handle_get():
                         task['error']=detailed_task['error']
                         break
 
-        return jsonify({'tasks':task_list})
+        batch_list = flat_list(db.session.query(
+            distinct(Task.batch)
+        ))
+        worker_list = flat_list(db.session.query(
+            distinct(Worker.name)
+        ))
+
+        return jsonify({'tasks':task_list, 'batch_list':batch_list, 'worker_list':worker_list})
         
     elif json['object'] == 'batch':
         log.info('sending batch')

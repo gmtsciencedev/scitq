@@ -2,7 +2,16 @@
 function batch_line(current_batch, workers_by_batch, 
         status_running, status_failed, status_succeeded, status_pending, total,
         stat_details) {
-    json_batch = current_batch.replace(' ','+')
+    json_batch = current_batch.replace(' ','+');
+    
+    function task_button(task_status, task_count) {
+        return `<form target="_blank" method="post" action='/ui/task/'>
+            <input type="hidden" name="status_filter" value="${task_status}">
+            <input type="hidden" name="batch_filter" value="${current_batch}">
+            <input type="submit" class="btn btn-outline-dark border-0" value=${task_count}>
+        </form>`
+    }
+
     return `
     <tr>
         <td>
@@ -37,39 +46,21 @@ function batch_line(current_batch, workers_by_batch,
                 </div>
             </div>
         </td>
-            <td width ="10%" style="padding-top: 14px;">
-            ${status_pending}
+
+        <td width ="10%" style="padding-top: 14px;">
+            ${task_button('pending',status_pending)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0" 
-                    target="_blank" href="/ui/task/?sortby=&worker=&batch=${json_batch}&show=running">
-                ${status_running}
-            </a>
+            ${task_button('running',status_running)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0" 
-                    target="_blank" 
-                    href="/ui/task/?sortby=&worker=&batch=${json_batch}&show=succeeded">
-                ${status_succeeded}
-            </a>
+            ${task_button('succeeded',status_succeeded)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0" 
-                    target="_blank" 
-                    href="/ui/task/?sortby=&worker=&batch=${json_batch}&show=failed">
-                ${status_failed}
-            </a>
+            ${task_button('failed',status_failed)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0"
-                    target="_blank" 
-                    href="/ui/task/?sortby=&worker=&batch=${json_batch}">
-                ${total}
-            </a>
+            ${task_button('all',total)}
         </td>
         <td>
             ${stat_details}

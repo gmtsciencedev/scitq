@@ -4,6 +4,16 @@
 <head>
     <link rel="icon" type="image/png" href={{ url_for("static", filename="favicon.png") }}>
     <link href={{ url_for("static", filename="css/bootstrap.v5.0.2/bootstrap.min.css") }} rel="stylesheet">
+    <link href={{ url_for("static", filename="css/ui.css") }} rel="stylesheet">
+    
+    <script>
+        var batch_filter="{{ batch_filter }}";
+        var sortby="{{ sortby }}";
+        var worker_filter="{{ worker_filter }}";
+        var status_filter="{{ status_filter }}";
+        var batch_list={{ batch_list | tojson }};
+        var worker_list={{ worker_list | tojson }};
+    </script>
     <script src={{ url_for("static", filename="js/bootstrap.v5.0.2/bootstrap.min.js") }}></script>
     <script src={{ url_for("static", filename="js/FileSaver.v2.0.4/FileSaver.min.js") }}></script>
     <script src={{ url_for("static", filename="js/jszip.min.v3.10.0.js") }}></script>
@@ -31,7 +41,7 @@
                     <p class="col-md-2 p-2" id="filter_by_batch"></p>
 
                     <div class="align-self-center p-2 col-md-2" style="margin-top: 23px;">
-                      <button class="btn btn-primary " type="submit">Apply</button>
+                      <button class="btn btn-primary" id="refresh" type="button" onclick="get_tasks();">Refresh</button>
                     </div>
                   </form> 
                 </div>
@@ -52,42 +62,29 @@
 
 <br/>
 <ul class="nav nav-tabs">
-    <li class="nav-item">
-        <input  class="nav-link bg-dark text-white" href="#" id="nav_all" type="button" onclick="show_tasks('all')" id ="all_tasks" value="All">
+    {% for status in ['all','paused','waiting','pending','assigned','accepted','running','failed','succeeded'] %}
+    <li class="nav-item status-{{ status }}-bg">
+        <input  class="nav-link" href="#" id="nav_all" type="button" onclick="set_status_filter('{{ status }}')" id ="{{ status }}_tasks" value="{{ status|capitalize }} tasks">
     </li>
-    <li class="nav-item">
-        <input  class="nav-link bg-secondary text-white" href="#" id="nav_all" type="button" onclick="show_tasks('pending')" id ="pending_tasks" value="Pending tasks">
-    </li>   
-    <li class="nav-item">
-    <input  class="nav-link bg-primary text-white" href="#" id="nav_running" type="button" onclick="show_tasks('running')" id ="running_tasks" value="Running tasks">
-    </li>  
-    <li class="nav-item">  
-    <input class="nav-link bg-info text-dark" href="#"  id="nav_terminated" type="button" onclick="show_tasks('terminated')" id ="terminated_tasks" value="Terminated tasks">
-    </li>
-    <li class="nav-item">
-    <input class="nav-link bg-success text-dark" href="#" id="nav_succeeded" type="button" onclick="show_tasks('succeeded')" id="succeeded_tasks" value="Succeeded tasks">
-    </li>
-    <li class="nav-item"> 
-    <input class="nav-link bg-danger text-dark" href="#" id="nav_failed" type="button" onclick="show_tasks('failed')" id="failed_tasks" value="Failed tasks">
-    </li>
+    {% endfor %}
 </ul>
 <div class="col-md-12">
     <div class="panel panel-default">
         <span id="tasks"> 
             <table class="table table-responsive table-hover table-striped">
-                <thead id="task_head" class="text-center table-${color_table}">
+                <thead id="task_head" class="text-center status-{{ status_filter }}-bg status-bg">
                     <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th>Command</th>
-                        <th><div onclick="">Worker</div></th>
-                        <th>Batch</th>
-                        <th>Status</th>
-                        <th>Start</th>
-                        <th>Runtime</th>
-                        <th>Output</th>
-                        <th>Error</th>
-                        <th style="width:15em">Actions</th>
+                        <th width="3%">#</th>
+                        <th width="8%">Name</th>
+                        <th width="12%">Command</th>
+                        <th width="10%"><div onclick="">Worker</div></th>
+                        <th width="8%">Batch</th>
+                        <th width="3%">Status</th>
+                        <th width="6%">Start</th>
+                        <th width="6%">Runtime</th>
+                        <th width="15%">Output</th>
+                        <th width="15%">Error</th>
+                        <th wifth="14%">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tasks-table-body">

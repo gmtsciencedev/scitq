@@ -41,16 +41,13 @@ async function get_workers() {
             }, async function(data) {
 
         workers = data.workers;
-        totals = data.totals;
+        tasks_per_status = data.tasks_per_status;
         console.log('Received workers ',workers);
-        console.log('Received totals ',totals);
+        console.log('Received tasks per status ',tasks_per_status);
 
-        document.getElementById("pending-tasks").innerHTML = `Pending: ${totals.pending}`;
-        document.getElementById("assigned-tasks").innerHTML = `Assigned: ${totals.assigned}`;
-        document.getElementById("running-tasks").innerHTML = `Running: ${totals.running}`;
-        document.getElementById("failed-tasks").innerHTML = `Failed: ${totals.failed}`;
-        document.getElementById("succeeded-tasks").innerHTML = `Succeeded: ${totals.succeeded}`;
-
+        for (task_status of ['pending','assigned','accepted','running','failed','succeeded']) {
+            document.getElementById(`${task_status}-tasks`).value = `${capitalize(task_status)}: ${tasks_per_status[task_status]||0}`;
+        }
         
         
         worker_table = '';

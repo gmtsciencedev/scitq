@@ -474,7 +474,7 @@ we already have {workers} workers')
                 try:
                     log.warning('Trying to reconnect...')
                     with app.app_context():
-                        session = Session(get_db().engine)
+                        session = Session(db.engine)
                     break
                 except Exception:
                     pass

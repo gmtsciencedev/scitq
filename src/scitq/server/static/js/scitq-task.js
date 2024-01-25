@@ -3,21 +3,6 @@ MAX_DISPLAYED_ROW = 500;
   
 var current_parameters = {};
 
-function status2class(status) {
-    return {
-        'waiting':'warning',
-        'succeeded':'success',
-        'failed':'danger',
-        'running':'primary',
-        'paused':'warning',
-        'pending':'secondary',
-        'assigned':'secondary',
-        'accepted':'secondary',
-        'terminated':'info'
-        }[status]||'dark'; 
-}
-
-//var socket = io();
 //getting param for the filter
 url = new URL(window.location.href); 
 var filter = new Map();
@@ -25,35 +10,28 @@ var windows_open=new Map();
 var paused_task=new Map();
 var commands = new Map();
 var detailed_tasks = [];
-color_table='secondary';
-filter.set('sortby',url.searchParams.get('sortby'));
-filter.set('worker',url.searchParams.get('worker'));
+
 filter.set('status',url.searchParams.get('status'));
 filter.set('batch',url.searchParams.get('batch'));
 filter.set('show',url.searchParams.get('show'));
 
-if (!filter.get('sortby')) { 
-    order_by='task';
+function set_sortby(value) {
+    sortby=value;
+    get_tasks();
 }
-else if(filter.get('sortby')==='worker'){
-    order_by='worker';
-}
-else if (filter.get('sortby')==='batch'){
-    order_by='batch';
-}
-else {
-    order_by='default'
-}
-//Keeping the right color of thead associated with the current tab
-color_table = status2class(filter.get('show'));
 
-//socket.on('connect', function() {
-//    console.log('connecting');
-//    socket.emit('get', {object: 'task', order_by: order_by, filter_by: filter.get('show'), detailed_tasks: detailed_tasks});
-//    });
+function set_worker_filter(value) {
+    worker_filter=value;
+    get_tasks();
+}
+
+function set_batch_filter(value) {
+    batch_filter=value;
+    get_tasks();
+}
+
 
 async function get_tasks(parameters) {
-    //socket.on('task', async function(data){
 
     //some action such as modifying a action needs time to be done so the update of the page can be set on true 
     if (parameters===undefined) {
@@ -66,12 +44,18 @@ async function get_tasks(parameters) {
         parameters.object='tasks';
     }
     
-    if (order_by!=undefined) {
-        parameters.order_by=order_by
+
+    parameters.sortby=sortby;
+    if (worker_filter!='-') {
+        parameters.worker=worker_filter;
     }
-    if (filter.get('worker')!=undefined) {
-        parameters.worker=filter.get('worker')
+    if (batch_filter!='-') {
+        parameters.batch=batch_filter;
     }
+    if (status_filter!='all') {
+        parameters.status=status_filter;
+    }
+    
 
     await $.getJSON('/ui/get/', parameters, function(data) {
     
@@ -79,50 +63,35 @@ async function get_tasks(parameters) {
         console.log('Received tasks', tasks);
         select_worker =`<div>
             <label class="form-label" for="filter_by_worker">Worker:</label>
-            <select id="filter_by_worker" name="worker" class="form-select col-md-3">
-                <option value="" ${filter.get('worker')!=''?'':''}>-</option>`;
+            <select id="filter_by_worker" name="worker" class="form-select col-md-3" onchange="set_worker_filter(this.options[this.selectedIndex].value)">
+                <option value="-" ${worker_filter=='-'?'selected':''}>-</option>`;
+        for (worker of worker_list) {
+            select_worker += `<option value="${worker}" ${worker_filter==worker?'selected':''}>${worker}</option>`;
+        }
+        select_worker += `</select></div>`;
         select_batch =`<div>
             <label class="form-label" for="filter_by_batch">Batch:</label>
-            <select id="filter_by_batch" name="batch" class="form-select" col-md-3>`;
+            <select id="filter_by_batch" name="batch" class="form-select col-md-3" onchange="set_batch_filter(this.options[this.selectedIndex].value)">
+                <option value="-" ${batch_filter=='-'?'selected':''}>-</option>`;
+        for (batch of batch_list) {
+            select_batch += `<option value="${batch}" ${batch_filter==batch?'selected':''}>${batch}</option>`;
+        }
+        select_batch += `</select></div>`;
         sort_by=`<label for="sortby" class="form-label">Sort by:</label>
-                <select id="sortby" name="sortby" class="form-select">
-                <option value="" ${filter.get('sortby')==''?'selected':''}>-</option>
-                <option value="worker" ${filter.get('sortby')=='worker'?'selected':''}>worker</option>
-                <option value="batch" ${filter.get('sortby')=='batch'?'selected':''}> batch</option></select>`;
-        var list_worker = [];
-        var list_batch = [];
+                <select id="sortby" name="sortby" class="form-select" onchange="set_sortby(this.options[this.selectedIndex].value)">
+                    <option value="task" ${sortby=='task'?'selected':''}>task</option>
+                    <option value="worker" ${sortby=='worker'?'selected':''}>worker</option>
+                    <option value="batch" ${sortby=='batch'?'selected':''}>batch</option>
+                </select>`;
+        //var list_worker = [];
+        //var list_batch = [];
         running_table='';
         succeeded_table='';
         failed_table='';
         all_table='';
 
-        // complete workers and batches filters
-        tasks.forEach(task => {
-            // complete worker select with workers present in task list
-            if (task['worker_id']!==null) {
-                if (!list_worker.includes(task['worker_id'])) {
-                    list_worker.push(task['worker_id']);
-                    select_worker += `<option value="${task['worker_id']}" 
-                                            ${filter.get('worker')==task['worker_id'].toString()?'selected':''}>
-                                        ${task['worker_name']}
-                                    </option>`;
-                }
-            }
-            // complete batch select with batches included in task list
-            if (!list_batch.includes(task['batch']) && task['batch']!=null) {
-                list_batch.push(task['batch']);
-                select_batch += `<option value="${task['batch']}"
-                                    ${filter.get('batch')==task['batch']?'selected':''}>
-                                    ${task['batch']}
-                                </option>`;
-            }
-        });
-        
         //According to the argument 'show' in the url that others views use, to open the right tab from another view
-        task_table = create_table(filter.get('show'));
-
-        select_worker +='</select>\n</div>';
-        select_batch +='</select>\n</div>'
+        task_table = create_table(status_filter);
         
         document.getElementById("tasks-table-body").innerHTML=task_table;
         document.getElementById("filter_by_worker").innerHTML=select_worker;
@@ -133,7 +102,10 @@ async function get_tasks(parameters) {
             element.scrollTop=999999;
         }
         console.log('detailed_tasks: '+detailed_tasks);
+        batch_list = data.batch_list;
+        worker_list = data.worker_list;
     });
+    document.getElementById("refresh").blur();
 }
 
 
@@ -211,45 +183,30 @@ function displayMax(output) {
 }
 
 //create a table same structure as in ui according to the type of task
-function create_table(type_task){
+function create_table(status_filter){
     table='';
-    all=false;
-    if (type_task === 'terminated'){
-        type_task = ['failed','succeeded'];
-    }
-    else if (type_task==='running'){
-        type_task=['running','paused'];
-    }
-    else if (type_task==='pending'){
-        type_task=['pending','assigned','accepted']
-    }
-    else if (['failed','succeeded'].includes(type_task)) {
-        type_task =[type_task];
-    }
-    else {
-        all=true
-    }
+    all= status_filter == 'all';
+    
     displayed_rows = 0; //count the number of row not to exceed an maximum of row (currently set at 50)
 
 
     // the information go through a filter settled by the arguments in the url that doesn't let it pass if it has not the exact information defined by the filter
     tasks.forEach((task,i) => {
-        if (displayed_rows<MAX_DISPLAYED_ROW && (all || type_task.includes(task.status)) ) {
-            if ( (!filter.get('worker') || task.worker_id==filter.get('worker')) &&
-                 (!filter.get('batch')  || task.batch==filter.get('batch')) ) {
+        if (displayed_rows<MAX_DISPLAYED_ROW && (all || status_filter==task.status)) {
+            if ( (worker_filter=='-' || task.worker_name==worker_filter) &&
+                 (batch_filter=='-'  || task.batch==batch_filter) ) {
                 displayed_rows++;
-                var date_started = new Date(task['creation_date']+"+00");
-                var date_end = new Date(task['modification_date']+"+00");
+                var date_started = new Date(task.creation_date+"+00");
+                var date_end = new Date(task.modification_date+"+00");
                 var diff_in_second= Math.round((date_end.getTime()- date_started.getTime())/(1000));
                     
                 //Change the color of the status' circle according to the task's status
-                task_status = status2class(task['status']);
+                //status_class = status2class(task.status);
 
                 table+=`<tr>
                     <td>
-                        <h6 class="d-flex col-md-12"><h6>t:${task.task_id}</h6>
-                            <h6> e:${task.execution_id||''}
-                        </h6>
+                        t:${task.task_id} <br/>
+                        e:${task.execution_id||''}
                     </td>
                     <td width ="5%" class="text-center">
                         ${task.name||''}
@@ -284,7 +241,7 @@ function create_table(type_task){
                     <td class="text-center">
                         ${task.batch||''}
                     </td>
-                    <td class="text-center text-${task_status}" 
+                    <td class="text-center status-${task.status}-fg" 
                         title="${task.status}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg>
                     </td>
@@ -477,13 +434,15 @@ function downloadAll(type){
 }
     
 //Allows to switch betwween the different tabs and change the color of the thead
-function show_tasks(type_task){
-    document.getElementById("tasks-table-body").innerHTML=create_table(type_task);
-    document.getElementById("downloadall").onclick=function() {downloadAll(type_task)};
+function set_status_filter(status){
+    document.getElementById("tasks-table-body").innerHTML=create_table(status);
+    document.getElementById("downloadall").onclick=function() {downloadAll(status)};
     windows_open.clear();
-    filter.set('show',type_task);
-    color_table = status2class(type_task);
-    document.getElementById("task_head").className ="text-center table-"+color_table+"";
+    //filter.set('show',type_task);
+    //color_table = status2class(type_task);
+    document.getElementById("task_head").className =`text-center status-${status}-bg status-bg`;
+    status_filter=status;
+    get_tasks();
 }
 
 //Send an action to the server
@@ -541,11 +500,4 @@ function modify_command(task_id,i){
     }
 }
 
-//the function required to be set after the texte area so it can get the value of it
-//function submit_command(execution_id,i){
-//return action_task(tasks[i][0],'modify',document.getElementById('textarea-'+execution_id).value);
-//}
-
 $(document).ready( loop_if_online(get_tasks,5000) );
-
-// $(document).ready( get_tasks( {} ) );
