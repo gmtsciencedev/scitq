@@ -13,6 +13,7 @@ from .debug import Debugger
 from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF
 from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
 import dotenv
+from .server.api import TaskDAO
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -107,7 +108,7 @@ def main():
     task_parser = subparser.add_parser('task', help='The following options will only concern tasks')
     subsubparser=task_parser.add_subparsers(dest='action')
     list_task_parser= subsubparser.add_parser('list',help='List all tasks')
-    list_task_parser.add_argument('-S','--status',help='Give you a list of tasks according to his status',type=str,choices=['','paused','running','failed','succeeded','pending'],default='')
+    list_task_parser.add_argument('-S','--status',help='Give you a list of tasks according to his status',type=str,choices=TaskDAO.authorized_status,default='')
     list_task_parser.add_argument('-b','--batch',help='Give you a list of tasks according to his batch',type=str,default='')
     list_task_parser.add_argument('-H','--no-header',help='Do not print the headers',action='store_true')
     list_task_parser.add_argument('-L','--long',help='Print the entire command',action='store_true')

@@ -68,4 +68,5 @@ def background_app():
     app=create_app()
     __background__(app)
 
-app = create_app()
+if os.environ.get('SCITQ_PRODUCTION'):
+    app = create_app()
