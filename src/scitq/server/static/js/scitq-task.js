@@ -69,6 +69,9 @@ async function get_tasks(parameters) {
             select_worker += `<option value="${worker}" ${worker_filter==worker?'selected':''}>${worker}</option>`;
         }
         select_worker += `</select></div>`;
+        if (!batch_list.includes(batch_filter)) {
+            batch_filter='-';
+        }
         select_batch =`<div>
             <label class="form-label" for="filter_by_batch">Batch:</label>
             <select id="filter_by_batch" name="batch" class="form-select col-md-3" onchange="set_batch_filter(this.options[this.selectedIndex].value)">

@@ -56,15 +56,16 @@ async function get_workers() {
             worker_table += `
     <tr class="" >
         <td>
-            <a type="button" class="btn btn-outline-dark border-0" target="_blank" href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch="">
-                ${workers[i].name}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="worker_filter" value="${workers[i].name}">
+                <input type="submit" id="worker-${i}-tasks" value="${workers[i].name}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td class="" id="batch-name-${workers[i].worker_id}" style="padding:0">
-            <a target="_blank" href="/ui/task/?sortby=&worker=&batch=${(workers[i].batch==null?'':workers[i].batch).replace(' ','+')}" 
-                    type="button" class="btn btn-outline-dark border-0">
-                ${(workers[i].batch==null?'':workers[i].batch)}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="batch_filter" value="${(workers[i].batch==null?'-':workers[i].batch)}">
+                <input type="submit" id="worker-${i}-batch" value="${(workers[i].batch==null?'':workers[i].batch)}" class="btn btn-outline-dark border-0">
+            </form>
             <button type="button" onclick="ChangeBatch('${workers[i].worker_id}','${i}'); pause()" class="btn btn-sm" style="margin-top:0.5em;">
                 ${svg_edit}
             </button>
@@ -105,28 +106,32 @@ async function get_workers() {
             </div>
         </td>
         <td>
-            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
-                    href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=accepted">
-                ${workers[i].accepted}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="worker_filter" value="${workers[i].name}">
+                <input type="hidden" name="status_filter" value="accepted">
+                <input type="submit" id="worker-${i}-accepted" value="${workers[i].accepted}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td>
-            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
-                    href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=running">
-                ${workers[i].running}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="worker_filter" value="${workers[i].name}">
+                <input type="hidden" name="status_filter" value="running">
+                <input type="submit" id="worker-${i}-accepted" value="${workers[i].running}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td>
-            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
-                        href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=succeeded">
-                ${workers[i].succeeded}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="worker_filter" value="${workers[i].name}">
+                <input type="hidden" name="status_filter" value="succeeded">
+                <input type="submit" id="worker-${i}-accepted" value="${workers[i].succeeded}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td>
-            <a type="button" class="btn btn-outline-dark border-0" target="_blank" 
-                        href="/ui/task/?sortby=&worker=${workers[i].worker_id}&batch=&show=failed">
-                ${workers[i].failed}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="worker_filter" value="${workers[i].name}">
+                <input type="hidden" name="status_filter" value="failed">
+                <input type="submit" id="worker-${i}-accepted" value="${workers[i].failed}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td>
             <small>${workers[i].load==null?'':workers[i].load}</small>
@@ -266,13 +271,14 @@ function ChangeBatch(id_worker,i){
             new_batch = document.getElementById('batch-name-input-'+id_worker).value;
             $.ajax({url: '/ui/change_batch', 
                 data: {batch_name : new_batch,worker_id:id_worker} });
-            document.getElementById('batch-name-'+id_worker).innerHTML=`<a target="_blank" href="/ui/task/?sortby=&worker=&batch=${(workers[i].batch==null?'':workers[i].batch).replace(' ','+')}" 
-            type="button" class="btn btn-outline-dark border-0">
-        ${(new_batch==null?'':new_batch)}
-    </a>
-    <button type="button" onclick="ChangeBatch('${id_worker}','${i}'); pause()" class="btn btn-sm" style="margin-top:0.5em;">
-        ${svg_edit}
-    </button>`;
+            document.getElementById('batch-name-'+id_worker).innerHTML=`
+                <form target="_blank" method="post" action='/ui/task/'>
+                    <input type="hidden" name="batch_filter" value="${(new_batch==null?'-':new_batch)}">
+                    <input type="submit" id="worker-${i}-batch" value="${(new_batch==null?'':new_batch)}" class="btn btn-outline-dark border-0">
+                </form>
+                <button type="button" onclick="ChangeBatch('${id_worker}','${i}'); pause()" class="btn btn-sm" style="margin-top:0.5em;">
+                    ${svg_edit}
+                </button>`;
             //pause=false;
             unpause();
         }

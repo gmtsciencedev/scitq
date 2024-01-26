@@ -2,7 +2,7 @@
 function batch_line(current_batch, workers_by_batch, 
         status_running, status_failed, status_succeeded, status_pending, total,
         stat_details) {
-    json_batch = current_batch.replace(' ','+');
+    //json_batch = current_batch.replace(' ','+');
     
     function task_button(task_status, task_count) {
         return `<form target="_blank" method="post" action='/ui/task/'>
@@ -17,11 +17,10 @@ function batch_line(current_batch, workers_by_batch,
         <td>
         </td>
         <td width ="5%">
-            <a type="button" class="btn btn-outline-dark border-0" 
-                target="_blank" 
-                href="/ui/task/?sortby=&worker=&batch=${json_batch}">
-                    ${current_batch}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="batch_filter" value="${current_batch}">
+                <input type="submit" id="batch-tasks" value="${current_batch}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td>
             ${workers_by_batch.get(current_batch)}
