@@ -2,7 +2,7 @@ from flask import render_template, request, jsonify, current_app, Blueprint
 from time import sleep
 import logging as log
 import json as json_module
-from sqlalchemy import select, func, and_, delete, distinct
+from sqlalchemy import select, func, and_, delete, distinct, union, alias
 from signal import SIGKILL, SIGQUIT, SIGTSTP, SIGCONT
 from datetime import datetime
 
@@ -34,8 +34,8 @@ def task():
         batch_filter='-'
         worker_filter='-'
         status_filter='all'
-    batch_list = flat_list(db.session.query(
-        distinct(Task.batch)
+    batch_list = flat_list(db.session.execute(
+        select(distinct(alias(union(select(Task.batch),select(Worker.batch)),'batch').table_valued())).order_by('batch')
     ))
     worker_list = flat_list(db.session.query(
         distinct(Worker.name)
@@ -163,8 +163,8 @@ def handle_get():
                         task['error']=detailed_task['error']
                         break
 
-        batch_list = flat_list(db.session.query(
-            distinct(Task.batch)
+        batch_list = flat_list(db.session.execute(
+            select(distinct(alias(union(select(Task.batch),select(Worker.batch)),'batch').table_valued())).order_by('batch')
         ))
         worker_list = flat_list(db.session.query(
             distinct(Worker.name)
