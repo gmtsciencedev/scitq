@@ -455,7 +455,7 @@ class Workflow:
         loop.run()
 
 
-    def clean(self, force=False, download_output=True):
+    def clean(self, force=False, download_logs=True):
         """Clean all, except failed tasks if force is not set to True"""
         if not self.__clean__:
             if force:
@@ -463,7 +463,7 @@ class Workflow:
                     batch.destroy()
             else:
                 for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
-                    if download_output:
+                    if download_logs:
                         executions = self.server.executions(task_id=task.task_id, latest=True)
                         try:
                             execution = next(iter(executions))
