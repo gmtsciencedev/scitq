@@ -455,19 +455,26 @@ class Workflow:
         loop.run()
 
 
-    def clean(self, force=False, download_logs=True):
+    def clean(self, force=False, download_logs=True, log_destination=Unset):
         """Clean all, except failed tasks if force is not set to True"""
+        if log_destination is Unset:
+            log_destination=self.name
         if not self.__clean__:
             if force:
                 for batch in self.__batch__.values():
                     batch.destroy()
             else:
                 for task in self.server.tasks(task_id=[s.task_id for s in self.__steps__]):
-                    if download_logs:
+                    if download_logs and log_destination is not None:
+                        if not os.path.exists(log_destination):
+                            os.makedirs(log_destination)
                         executions = self.server.executions(task_id=task.task_id, latest=True)
                         try:
                             execution = next(iter(executions))
-                            base_log_name = task.name if task.name else f'task_{task.task_id}'
+                            base_log_name = os.path.join(
+                                    log_destination,
+                                    task.name if task.name else f'task_{task.task_id}'
+                            )
                             if execution.output is not None:
                                 with open(base_log_name+'_output.log','a+') as f:
                                     f.write(execution.output)
