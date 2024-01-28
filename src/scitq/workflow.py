@@ -468,10 +468,12 @@ class Workflow:
                         try:
                             execution = next(iter(executions))
                             base_log_name = task.name if task.name else f'task_{task.task_id}'
-                            with open(base_log_name+'_output.log','a+') as f:
-                                f.write(execution.output)
-                            with open(base_log_name+'_error.log','a+') as f:
-                                f.write(execution.error)                        
+                            if execution.output is not None:
+                                with open(base_log_name+'_output.log','a+') as f:
+                                    f.write(execution.output)
+                            if execution.error is not None:
+                                with open(base_log_name+'_error.log','a+') as f:
+                                    f.write(execution.error)                        
                         except StopIteration:
                             pass
                     if task.status == 'succeeded':
