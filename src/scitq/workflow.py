@@ -1,6 +1,5 @@
 from .lib import Server
 from .fetch import get
-from .util import colors
 from typing import Optional
 from time import sleep
 import os
@@ -318,12 +317,8 @@ class Workflow:
     
 
     
-    def run(self, refresh=DEFAULT_REFRESH, hotkeys=True):
+    def run(self, refresh=DEFAULT_REFRESH):
         """This is a monitoring function that display some info and run up to the point all tasks are done"""
-        b=colors.bg
-        f=colors.fg
-        c=colors
-        
         # prepare display
         title_line = urwid.Columns([cell('BATCH',20,'inverted'),cell('TASKS',40,'w'),cell('WORKERS',20,'blueb')])
         subtitle_line = urwid.Columns([cell(self.name,20,'inverted'),cell('PAU',5,'y'),cell('WAI',5,'b'),cell('PEN',5,'db'),
@@ -453,6 +448,9 @@ class Workflow:
         query_loop_thread = Thread(target=query_loop)
         query_loop_thread.start()
         loop.run()
+
+        if self.ui_state in ['quit','destroy']:
+            raise RuntimeError(f'Workflow.run() was interrupted because of app was in {self.ui_state} state')
 
 
     def clean(self, force=False, download_logs=True, log_destination=Unset):
