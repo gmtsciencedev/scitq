@@ -1,0 +1,194 @@
+.worker {
+    font-family: "Courrier-New";
+    border-width: 1px;
+    width: 100%;
+}
+.worker td {
+    border: 1px solid darkblue;
+    box-sizing:content-box;
+    padding-left: 10px;
+}
+.odd {background-color: lightblue;}
+.worker-offline {background-color: red; 
+    border-radius: 3px;
+    padding:3px;
+    color: white;}
+.worker-paused {background-color: orange; 
+    border-radius: 3px;
+    padding:3px;
+    color: white;}
+.worker-running {background-color: green; 
+    border-radius: 3px;
+    padding:3px;
+    color: white;}
+
+.worker-concurrency button {
+    padding:1px;
+}
+
+.total-div a {
+    width: 15%;
+    float:left;
+    color: black;
+    text-align:center;
+    text-decoration: none;
+    border: 1px solid;
+    padding:10px;
+    margin-bottom: 20px;
+    background-image: -webkit-linear-gradient(top, #ffffff, #e6e6e6);
+}
+
+.awf-input  {
+    width: 50px;
+    margin: 0px 10px 0px 0px;
+}
+
+.awf-input-large  {
+    width: 100px;
+    margin: 0px 10px 0px 0px;
+}
+
+.awf-input-larger  {
+    width: 150px;
+    margin: 0px 10px 0px 0px;
+}
+
+.awf-input-largest  {
+    width: 200px;
+    margin: 0px 10px 0px 0px;
+}
+
+
+.awf-label {
+    margin: 0px 0px 0px 10px;
+}
+
+.awf-button {
+    margin: 2px;
+}
+
+/* ['paused','waiting','pending','assigned','accepted','running','failed','succeeded'] */
+
+.status-bg th {
+    font-weight: normal;
+}
+
+.status-paused-bg {
+    background-color: gold;
+    color: black;
+}
+.status-paused-bg .nav-link {
+    color: black;
+    font-weight: normal ;
+}
+.status-paused-fg {
+    color: gold;
+}
+
+.status-waiting-bg {
+    background-color: darkgray;
+    color: white;
+}
+.status-waiting-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-waiting-fg {
+    color: darkgrey;
+}
+
+.status-pending-bg {
+    background-color: #ccccff;
+    color: white;
+}
+.status-pending-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-pending-fg {
+    color: #ccccff;
+}
+
+.status-assigned-bg {
+    background-color: #9999ff;
+    color: white;
+}
+.status-assigned-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-assigned-fg {
+    color: #9999ff;
+}
+
+.status-accepted-bg {
+    color: white;
+    background-color: #6666ff;
+}
+.status-accepted-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-accepted-fg {
+    color: #6666ff;
+}
+
+.status-running-bg {
+    background-color: #0000ff;
+    color: white;
+}
+.status-running-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-running-fg {
+    color: #0000ff;
+}
+
+.status-succeeded-bg {
+    background-color: green;
+    color: white;
+}
+.status-succeeded-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-succeeded-fg {
+    color: green;
+}
+
+.status-failed-bg {
+    background-color: red;
+    color: white;
+    font-weight: normal ;
+}
+.status-failed-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+.status-failed-fg {
+    color: red;
+}
+
+
+.status-all-bg {
+    background-color: black;
+    color: white;
+    font-weight: normal ;
+}
+.status-all-bg .nav-link {
+    color: white;
+    font-weight: normal ;
+}
+
+.total-div input {
+width: 15%;
+  float: left;
+  color: black;
+  text-align: center;
+  text-decoration: none;
+  border: 1px solid;
+  padding: 10px;
+  margin-bottom: 20px;
+  background-image: -webkit-linear-gradient(top, #ffffff, #e6e6e6);
+}

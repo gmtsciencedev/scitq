@@ -21,7 +21,8 @@ def check_unique(variable, value, default_value=None):
 
 
 def launch(docker, docker_option, uid, gid, 
-            command, server, test, name, batch, input, output, resource):
+            command, server, test, name, batch, input, output, resource, 
+            required_task_ids, retry, download_timeout, run_timeout):
     """A launching function for scitq tasks
     """
 
@@ -41,9 +42,11 @@ def launch(docker, docker_option, uid, gid,
     if test:
         print(f'Command that would be sent: {command}')
     else:
-        s.task_create(command, name=name, batch=batch, container=docker,
+        task=s.task_create(command, name=name, batch=batch, container=docker,
             container_options=docker_option, input=input, output=output,
-            resource=resource)
+            resource=resource, required_task_ids=required_task_ids,retry=retry,
+            download_timeout=download_timeout, run_timeout=run_timeout)
+        print(f'Task queued with task id: {task["task_id"]}')
 
 def command_join(command_list):
     """rejoin a shlex.splitted command
@@ -65,6 +68,10 @@ def main():
     input = ''
     output = None
     resource = ''
+    required_task_ids = []
+    retry = None
+    run_timeout = None
+    download_timeout = None
     try:
         while True:
             if len(argv)==0 or argv[0] in ['-h','--help']:
@@ -136,6 +143,33 @@ def main():
                     raise SyntaxError(f'{option} requires at least one argument: OUTPUT a unique directory URI')
                 check_unique('output',output)
                 output = argv.pop(0)
+            elif argv[0] in ['-R', '--requirements']:
+                option = argv.pop(0)
+                if len(argv)==0:
+                    raise SyntaxError(f'{option} requires at least one argument: REQUIREMENTS an task id or list of task id')
+                req = argv.pop(0)
+                if ' ' in req:
+                    req=[int(r) for r in req.split(' ')]
+                elif ',' in req:
+                    req=[int(r) for r in req.split(',')]
+                else:
+                    req=[int(req)]
+                required_task_ids.extend(req)
+            elif argv[0]=='--retry':
+                option = argv.pop(0)
+                if len(argv)==0:
+                    raise SyntaxError(f'{option} requires at least one argument: OUTPUT a unique directory URI')
+                retry = int(argv.pop(0))
+            elif argv[0]=='--run-timeout':
+                option = argv.pop(0)
+                if len(argv)==0:
+                    raise SyntaxError(f'{option} requires one argument: RUNTIMEOUT, an integer in seconds')
+                run_timeout = int(argv.pop(0))
+            elif argv[0]=='--download-timeout':
+                option = argv.pop(0)
+                if len(argv)==0:
+                    raise SyntaxError(f'{option} requires one argument: DOWNLOADTIMEOUT, an integer in seconds')
+                download_timeout = int(argv.pop(0))    
             elif argv[0]=='--':
                 argv.pop(0)
                 command = command_join(argv)
@@ -154,7 +188,9 @@ def main():
                     raise SyntaxError(f'Defect in {category}: {e.args[0]}')
         launch(docker=docker, docker_option=docker_option, uid=uid, gid=gid,
             command=command, server=server, test=test, name=name, batch=batch,
-            input=input, output=output, resource=resource)
+            input=input, output=output, resource=resource, 
+            required_task_ids=required_task_ids, retry=retry,
+            download_timeout=download_timeout, run_timeout=run_timeout)
     except SyntaxError as e:
         if e.args[0]!='help':
             print('Syntax error : {}'.format(e.args[0]), file=sys.stderr)
@@ -163,7 +199,9 @@ def main():
 scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROPTION]] 
                 [(-u|--uid) UID] [(-g|--gid) GID] [(-s|--server) SERVER] [(-t|--test)] 
                 [(-n|--name) NAME] [(-b|--batch) BATCH] [(-i|--input) INPUT] 
-                [(-o|--output) OUTPUT] [(-r|--resource) OUTPUT] [--] COMMAND
+                [(-o|--output) OUTPUT] [(-r|--resource) OUTPUT] [(-R|--requirements) REQUIREMENTS] 
+                [--retry RETRY] [--run-timeout RUNTIMEOUT] [--download-timeout DOWNLOADTIMEOUT]
+                [--] COMMAND
     Add a task in scitq with :
     -h,--help       display this help message
     -d,--docker     execute the task in a docker container (named DOCKERNAME)
@@ -206,6 +244,17 @@ scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROP
                     NB a RESOURCE URI may end with '|gunzip' in which case it
                     will be unzipped (with pigz) upon reception.
                     NB2 resource option can be specified several times
+    -R,--requirements A space or comma separated list of integer corresponding 
+                    to required task ids, the task will not be launched until 
+                    those previous tasks have succeeded.
+                    NB requirements can be specified several times
+    --retry         retry the task this number of times if it fails
+    --run-timeout   add a run maximal time in seconds, above which a KILL signal will 
+                    be sent.
+                    (by default, there is no timeout, a task may run for ever)
+    --download-timeout add an input or resource download maximal time in seconds, 
+                    above which a KILL signal will be sent.
+                    (by default, there is no timeout, a task may download for ever)
     --              the last argument, COMMAND, may be constituted of several
                     words. Usually this list of words starts with a non-dashed 
                     word like sh or bash, in which case there is no possible 

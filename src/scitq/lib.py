@@ -27,8 +27,6 @@ def _parse_date_andco(item):
         for key, value in subitem.items():
             if '_date' in key and value is not None:
                 subitem[key] = datetime.fromisoformat(value)
-            elif key=='batch' and value is None:
-                subitem[key] = 'Default'
         return subitem
     if type(item)==list:
         return list([_sub_parse(subitem) for subitem in item])
@@ -39,9 +37,8 @@ def _parse_date_andco(item):
 
 def _clean(d):
     """filter out null value from a dict as well as key in remove list (default
-    to ['id']) plus a ugly hack for default batch"""
-    return dict([('batch',None) if (k=='batch' and v=='Default') else (k,v)  
-        for k,v in d.items() if v is not None])
+    to ['id'])"""
+    return dict([(k,v) for k,v in d.items() if v is not None])
 
 def _to_obj(d):
     """A simple recursive wrapper to convert JSON like objects in python objects"""
@@ -202,7 +199,10 @@ class Server:
             return self._wrap(requests.get(
                 self.url+url, timeout=self.get_timeout, json=args
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                raise
             log.warning(f'Exception when trying to get: {e}')
             sleep(self.get_timeout)
             return self.get(url, **args)
@@ -221,7 +221,11 @@ class Server:
             return self._wrap(requests.put(
                 self.url+url, json=data, timeout=timeout
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                timeout = self.get_timeout
+                raise
             if asynchronous:
                 if not self.query_thread.is_alive():
                     self.query_thread.start()
@@ -248,7 +252,11 @@ class Server:
             return self._wrap(requests.post(
                 url=self.url+url, json=data, timeout=self.put_timeout
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                timeout = self.get_timeout
+                raise
             if asynchronous:
                 if not self.query_thread.is_alive():
                     self.query_thread.start()
@@ -275,7 +283,11 @@ class Server:
             return self._wrap(requests.delete(
                 self.url+url, timeout=timeout
             ))
-        except (ConnectionError,Timeout) as e:
+        except (ConnectionError,Timeout,HTTPException) as e:
+            if hasattr(e,'status_code') and e.status_code!=403:
+                log.exception(f'Unsustainable server error: {e}')
+                timeout = self.get_timeout
+                raise
             if asynchronous:
                 if not self.query_thread.is_alive():
                     self.query_thread.start()
@@ -289,29 +301,30 @@ class Server:
                 return self.delete(url, asynchronous, timeout)
 
 
-    def workers(self):
+    def workers(self, **args):
         """Get a list of all workers"""
-        return self.get('/workers/')
+        return self.get('/workers/',**args)
 
     def worker_update(self, id, name=None, hostname=None, concurrency=None, 
                     status=None,batch=None, idle_callback=None, prefetch=None,
-                    asynchronous=True):
+                    flavor=None,task_properties=None,asynchronous=True):
         """Update a specific worker with worker_id equal to id
         return the updated worker (or None if the server timeout)"""
         return self.put(f'/workers/{id}', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
             'status':status, 'batch':batch, 'idle_callback':idle_callback,
-            'prefetch':prefetch}
+            'prefetch':prefetch, 'flavor':flavor, 'task_properties':task_properties}
         ), asynchronous=asynchronous)
 
     def worker_create(self, name, concurrency, hostname=None, status='paused',
-                batch=None, idle_callback=None, prefetch=0, asynchronous=True):
+                batch=None, idle_callback=None, prefetch=0, flavor=None,
+                asynchronous=True):
         """Create a new worker
         return the new worker (or None if the server timeout)"""
         return self.post('/workers/', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
             'status':status, 'batch':batch, 'idle_callback':idle_callback,
-            'prefetch':prefetch}
+            'prefetch':prefetch, 'flavor':flavor}
         ), asynchronous=asynchronous)
 
     def worker_get(self, id):
@@ -403,26 +416,41 @@ class Server:
         return the execution"""
         return self.get(f'/executions/{id}')
 
-    def task_create(self, command, name=None, status='pending',batch=None, 
+    def task_create(self, command, name=None, status=None,batch=None, 
             input=None, output=None, container=None, container_options='',
-            resource=None, asynchronous=True):
+            resource=None, required_task_ids=None, shell=False, retry=None,
+            download_timeout=None, run_timeout=None,
+            asynchronous=True):
         """Create a new task, return the newly created task
         """
+        if status is None:
+            status = 'waiting' if required_task_ids else 'pending'
+        if shell:
+            shell='sh' if shell is True else shell
+            if "'" in command:
+                log.warning(f'''This command ({command}) contains quote(s) (') and is unlikely to work''')
+            command = f"{shell} -c '{command}'"
         return self.post('/tasks/', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
-            'container_options':container_options, 'resource':resource
+            'container_options':container_options, 'resource':resource, 
+            'required_task_ids': required_task_ids, 'retry': retry,
+            'download_timeout':download_timeout, 'run_timeout':run_timeout,
         }), asynchronous=asynchronous)
 
     def task_update(self, id, command=None, name=None, status=None, batch=None, 
             input=None, output=None, container=None, container_options=None,
-            resource=None, asynchronous=True):
+            resource=None, required_task_ids=None, retry=None, 
+            download_timeout=None, run_timeout=None,
+            asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/tasks/{id}', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
-            'container_options':container_options, 'resource':resource
+            'container_options':container_options, 'resource':resource, 
+            'required_task_ids': required_task_ids, 'retry': retry,
+            'download_timeout':download_timeout, 'run_timeout':run_timeout,
         }), asynchronous=asynchronous)
 
     def task_get(self, id):
@@ -488,7 +516,35 @@ class Server:
     def batch_delete(self,batch, asynchronous=True):
         """List all batches, their tasks and workers"""
         return self.delete(f'/batch/{batch}', asynchronous=asynchronous)
+    
+    def recruiters(self, **args):
+        """List all recruiters (a recruiter is an automate that deploy workers as needed for a certain batch)
+        - args: some filtering option like batch='Default'"""
+        return list([dict([(k.replace('worker_',''),v) for k,v in r.items()]) 
+                     for r in self.get(f'/recruiter/', **args)])
 
+    def recruiter_create(self, batch, rank, tasks_per_worker, flavor, concurrency, region=None, provider=None,  
+                         prefetch=None, minimum_tasks=None, maximum_workers=None,asynchronous=True):
+        """Create a new recruiter (or update an existing recruiter of the same rank)"""
+        return self.post(f'/recruiter/', data=_clean({
+            'batch': batch,'rank':rank,'tasks_per_worker':tasks_per_worker,'worker_flavor':flavor,
+            'worker_region':region,'worker_provider':provider,'worker_concurrency':concurrency,
+            'worker_prefetch': prefetch,'minimum_tasks':minimum_tasks,'maximum_workers':maximum_workers
+        }), asynchronous=asynchronous)
+    
+    def recruiter_update(self, batch, rank, tasks_per_worker=None, flavor=None, region=None, provider=None, concurrency=None, 
+                         prefetch=None, minimum_tasks=None, maximum_workers=None,asynchronous=True):
+        """Update an existing recruiter"""
+        return self.put(f'/recruiter/{batch}/{rank}', data=_clean({
+            'tasks_per_worker':tasks_per_worker,'worker_flavor':flavor,
+            'worker_region':region,'worker_provider':provider,'worker_concurrency':concurrency,
+            'worker_prefetch': prefetch,'minimum_tasks':minimum_tasks,'maximum_workers':maximum_workers
+        }), asynchronous=asynchronous)
+    
+    def recruiter_delete(self, batch, rank,asynchronous=True):
+        """Delete an existing recruiter"""
+        return self.delete(f'/recruiter/{batch}/{rank}', asynchronous=asynchronous)
+    
     def join(self, task_list, retry=1, check=False):
         """Wait for a certain list of tasks to succeed. In case of failure, relaunch tasks
         a limited number of time (retry). If check is True, then join will fail if

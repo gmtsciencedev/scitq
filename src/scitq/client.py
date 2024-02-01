@@ -13,7 +13,7 @@ import psutil
 import platform
 import queue
 import tempfile
-from .fetch import get,put,pathjoin, info
+from .fetch import get,put,pathjoin, info, FetchError
 import traceback
 import shutil
 import subprocess
@@ -31,6 +31,7 @@ POLLING_TIME = 4
 READ_TIMEOUT = 5
 QUEUE_SIZE_THRESHOLD = 2
 IDLE_TIMEOUT = 600
+WAIT_FOR_FIRST_EXECUTION_TIMEOUT = 3600
 DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
     "/tmp/scitq" if platform.system() in ['Windows','Darwin'] else "/scratch")
@@ -188,11 +189,11 @@ class Executor:
     It performs now preparation tasks and post operation tasks."""
 
     def __init__(self, server, execution_id, task_id, command, input, output, 
-                container, container_options, execution_started, execution_queue,
-                cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore,
+                container, container_options, execution_queue,
+                cpu, resource_dir, resource, resources_db, #run_slots, #run_slots_semaphore,
                 worker_id, status, working_dirs, client_status,
                 recover=False, input_dir=None, output_dir=None, 
-                temp_dir=None, workdir=None, container_id=None):
+                temp_dir=None, workdir=None, container_id=None, go=None):
         log.warning(f'Starting executor for {execution_id}')
         self.s = Server(server, style='object')
         self.worker_id = worker_id
@@ -205,15 +206,14 @@ class Executor:
         self.output = output
         self.container = container
         self.container_options = container_options
-        self.execution_started = execution_started
         self.execution_queue = execution_queue
         self.resource_dir = final_slash(resource_dir)
         self.recover = recover
         self.cpu=cpu 
         self.resource=resource
         self.resources_db=resources_db
-        self.run_slots=run_slots
-        self.run_slots_semaphore=run_slots_semaphore
+        #self.run_slots=run_slots
+        #self.run_slots_semaphore=run_slots_semaphore
         self.dynamic_read_timeout = READ_TIMEOUT
         self.__status__=status
         self.maximum_parallel_upload = MAXIMUM_PARALLEL_UPLOAD
@@ -221,6 +221,9 @@ class Executor:
         self.working_dirs=working_dirs
         self.client_status=client_status
         self.docker_attach_failed=False
+        self.go = go
+        if self.go is None and not self.recover:
+            raise RuntimeError(f'Execution {execution_id}: go semaphore must be set when not recovering.')
         if not self.recover:
             self.workdir = tempfile.mkdtemp(dir=BASE_WORKDIR)
             self.s.execution_update(execution_id, status='accepted')
@@ -241,8 +244,8 @@ class Executor:
 
     @classmethod
     def from_docker_container(cls, server, execution_id, task_id, input, output, command,
-                container, container_options, execution_started, execution_queue,
-                cpu, resource_dir, resource, resources_db, run_slots, run_slots_semaphore, 
+                container, container_options, execution_queue,
+                cpu, resource_dir, resource, resources_db, #run_slots, #run_slots_semaphore, 
                 worker_id, status, working_dirs,
                 docker_container, client_status ):
         for mount in docker_container['Mounts']:
@@ -258,10 +261,11 @@ class Executor:
         
         return cls(server=server, execution_id=execution_id, task_id=task_id,
             input=input, output=output, command=command, container=container, 
-            container_options=container_options, execution_started=execution_started, 
+            container_options=container_options, 
             execution_queue=execution_queue, cpu=cpu, resource_dir=resource_dir, 
-            resource=resource, resources_db=resources_db, run_slots=run_slots, 
-            run_slots_semaphore=run_slots_semaphore, worker_id=worker_id,
+            resource=resource, resources_db=resources_db, #run_slots=run_slots, 
+            #run_slots_semaphore=run_slots_semaphore,
+            worker_id=worker_id,
             status=status, working_dirs=working_dirs, recover=True, input_dir=input_dir, output_dir=output_dir,
             temp_dir=temp_dir, workdir=workdir, container_id=container_id, client_status=client_status)
 
@@ -315,13 +319,13 @@ class Executor:
     async def execute(self, execution_id):
         # Start child process
         # NOTE: universal_newlines parameter is not supported
-        log.warning(f'Run slots: {self.run_slots.value}')
+        #log.warning(f'Run slots: {self.run_slots.value}')
         #self.run_slots_semaphore.acquire()
-        while self.run_slots.value<=0 and not self.recover:
-            log.warning(f'Overalocation, worker is out of run slot, have to wait...')
-            self.run_slots_semaphore.release()
-            sleep(POLLING_TIME)
-            self.run_slots_semaphore.acquire()
+        #while self.run_slots.value<=0 and not self.recover:
+        #    log.warning(f'Overalocation, worker is out of run slot, have to wait...')
+        #    self.run_slots_semaphore.release()
+        #    sleep(POLLING_TIME)
+        #    self.run_slots_semaphore.acquire()
 
         self.process = None
         if not self.container:
@@ -335,14 +339,14 @@ class Executor:
                             'TEMP': no_slash(self.temp_dir),
                             'RESOURCE': no_slash(self.resource_dir)},
                         limit=OUTPUT_LIMIT)
-                self.run_slots.value -= 1
-                self.status = STATUS_RUNNING
-                self.run_slots_semaphore.release()
+                #self.run_slots.value -= 1
+                #self.status = STATUS_RUNNING
+                #self.run_slots_semaphore.release()
                 self.s.execution_update(execution_id, pid=self.process.pid, status='running',
                                         command=self.command)
             except Exception as e:
                 self.status = STATUS_FAILED
-                self.run_slots_semaphore.release()
+                #self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed', command=self.command)
@@ -363,15 +367,15 @@ class Executor:
                 self.process = await asyncio.create_subprocess_exec(
                         'docker','attach',self.container_id,
                         stdout=PIPE, stderr=PIPE, limit=OUTPUT_LIMIT)
-                self.status = STATUS_RUNNING
-                self.run_slots.value -= 1
-                self.run_slots_semaphore.release()
+                #self.status = STATUS_RUNNING
+                #self.run_slots.value -= 1
+                #self.run_slots_semaphore.release()
                 if not self.recover:
                     self.s.execution_update(execution_id, pid=self.container_id, 
                                             command=self.command, status='running')
             except subprocess.CalledProcessError as e:
                 log.warning('Could not attach docker process')
-                self.run_slots_semaphore.release()
+                #self.run_slots_semaphore.release()
 
                 fix_status = False
                 if self.container_id is not None:
@@ -387,7 +391,7 @@ class Executor:
                 log.error('Could not launch docker and attach it for some reason')
                 log.exception(e)
                 self.status = STATUS_FAILED
-                self.run_slots_semaphore.release()
+                #self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
                 self.s.execution_update(execution_id, status='failed', command=self.command)
@@ -471,8 +475,11 @@ class Executor:
 
     def download(self, input=None, resource=None):
         """Do the downloading part, before launching, getting all input URIs into input_dir"""
-        log.warning('Downloading input data...')
-        self.status = STATUS_DOWNLOADING
+        if self.status != STATUS_RUNNING:
+            log.warning('Downloading input data...')
+            self.status = STATUS_DOWNLOADING
+        else:
+            log.warning('Checking previous downloads...')
         if input is None:
             input = self.input.split() if self.input else []
         if resource is None:
@@ -539,7 +546,7 @@ class Executor:
                     if data_failure:
                         self.resources_db[data]={'status':'failed'}
                         log.warning(f'... resource {data} failed!')
-                        raise
+                        raise FetchError(f'Could not download {data}')
                 else:
                     log.warning(f'Resource {data} is already there')
             while True:
@@ -657,7 +664,7 @@ class Executor:
         """Launching part of Executor
         """
         log.warning(f'Running job {self.execution_id}: {self.command}')
-        self.execution_started.release()
+        #self.execution_started.release()
         
         if not self.recover:
             # initialisation is only done if task is not recovered
@@ -674,38 +681,27 @@ class Executor:
                     return_code=returncode, output='')
                 return None
         
-            self.run_slots_semaphore.acquire()
+            #self.run_slots_semaphore.acquire()
             self.status = STATUS_WAITING
             #self.run_slots_semaphore.release()
             
             try:
-                while True:
-                    task = self.s.task_get(self.task_id)
+                self.go.acquire()
+                self.status = STATUS_RUNNING
+                log.warning(f'Execution {self.execution_id} is now running')
 
-                    # let check our command
-                    self.command = task.command
-                    self.output = task.output
-                    self.container = task.container
+                task = self.s.task_get(self.task_id)
 
-                    
-                    if task.status != 'paused' and self.run_slots.value>0 \
-                            and self.client_status.value==CLIENT_STATUS_RUNNING:
-                        break
+                # let check our command
+                self.command = task.command
+                self.output = task.output
+                self.container = task.container
 
-                    if self.run_slots.value<=0:
-                        log.warning(f'Task {self.task_id} has been prefetched and is waiting')
-                    elif task.status == 'paused':
-                        log.warning(f'Task {self.task_id} is paused, waiting...')
-                    else:
-                        log.warning(f'Client is paused, task {self.task_id} is waiting...')
-                    self.run_slots_semaphore.release()
-                    sleep(POLLING_TIME)
-                    self.run_slots_semaphore.acquire()
             except HTTPException:
                 # the task was deleted so we bail out
                 log.error(f'Task {self.task_id} was deleted.')
                 self.clean()
-                self.run_slots_semaphore.release()
+                #self.run_slots_semaphore.release()
                 return None
         
             try:
@@ -714,18 +710,18 @@ class Executor:
                     # the task is no longer for us so we bail out
                     log.error(f'Execution {self.execution_id} was cancelled.')
                     self.clean()
-                    self.run_slots_semaphore.release()
+                    #self.run_slots_semaphore.release()
                     return None
             except HTTPException as http_exception:
                 if http_exception.status_code == HTTP_ERROR_CODE_NOT_FOUND:
                     log.error(f'Execution {self.execution_id} was deleted.')
                     self.clean()
-                    self.run_slots_semaphore.release()
+                    #self.run_slots_semaphore.release()
                     return None
                 else:
                     log.error(f'Unhandled http exception {http_exception}')
                     self.clean()
-                    self.run_slots_semaphore.release()
+                    #self.run_slots_semaphore.release()
                     raise
         
             new_input = []
@@ -755,7 +751,7 @@ class Executor:
             self.download(input=new_input)
             log.warning(f'Launching job {self.execution_id}: {self.command}')
         else:
-            self.run_slots_semaphore.acquire()
+            #self.run_slots_semaphore.acquire()
             log.warning(f'Recovering job {self.execution_id}: {self.command}')
             
         await self.execute(execution_id=self.execution_id)
@@ -772,10 +768,10 @@ class Executor:
                     await self.get_output(self.execution_id)
 
                     log.warning(f'Task {self.execution_id} '+'succeeded' if returncode==0 else 'failed')
-                    self.run_slots_semaphore.acquire()
+                    #self.run_slots_semaphore.acquire()
                     self.__status__.value = STATUS_UPLOADING
-                    self.run_slots.value += 1
-                    self.run_slots_semaphore.release()
+                    #self.run_slots.value += 1
+                    #self.run_slots_semaphore.release()
 
                     try:
                         output_files = self.upload()
@@ -800,7 +796,7 @@ class Executor:
                             log.warning(f'... task succeeded')
                             self.clean()
                             log.warning('Cleaned')
-                    log.warning(f'Run slots: {self.run_slots.value}')
+                    #log.warning(f'Run slots: {self.run_slots.value}')
 
                     break
                 else:
@@ -828,13 +824,14 @@ class Executor:
                         pass
 
 class Client:
-    def __init__(self, server, concurrency, name, batch, autoclean):
+    def __init__(self, server, concurrency, name, batch, autoclean, flavor):
         self.s = Server(server, style='object')
         self.server = server
         self.concurrency = concurrency
         self.prefetch = 0
         self.hostname = socket.gethostname()
         self.batch = batch
+        self.flavor = flavor
         if name is None:
             self.name = self.hostname
         else:
@@ -848,16 +845,21 @@ class Client:
         self.resources_db = self.manager.dict()
         self.working_dirs = self.manager.dict()
         json_to_resource(self.resources_db)
+        for key,item in self.resources_db.items():
+            if item['status']=='lock':
+                log.warning(f'{key} is marked as locked in resource, removing')
+                del self.resources_db[key]
         self.resource_dir = os.path.join(BASE_RESOURCE_DIR, RESOURCE_FILES_SUBDIR)
         if not os.path.exists(self.resource_dir):
             os.makedirs(self.resource_dir)
-        self.run_slots = multiprocessing.Value('i', concurrency)
+        #self.run_slots = multiprocessing.Value('i', concurrency)
         self.shared_status = multiprocessing.Value('i', client_status_code(DEFAULT_WORKER_STATUS))
-        self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
-        self.has_run_slots_semaphore=False
+        #self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
+        #self.has_run_slots_semaphore=False
         self.executions_status = {}
         self.ref_disk = self.ref_network = None
         self.autoclean = autoclean
+        self.executions_go = {}
 
 
     def declare(self):
@@ -909,7 +911,10 @@ class Client:
                     break
 
     def run(self, status=DEFAULT_WORKER_STATUS):
-        self.w = self.s.worker_update(self.w.worker_id, status=status)
+        """Main loop of the client"""
+        self.w = self.s.worker_update(self.w.worker_id, status=status, flavor=self.flavor)
+        self.task_properties = json.loads(self.w.task_properties)
+        log.warning(f'Task properties are {repr(self.task_properties)}')
         cpu_list=[]
         previous_disk = previous_network = None
         previous_time = None
@@ -994,6 +999,7 @@ class Client:
                     log.warning(f'CPU is {cpu_string}')
                     self.w=self.s.worker_ping(self.w.worker_id, cpu_string, memory, 
                                               json.dumps(worker_stats))
+                    self.task_properties = json.loads(self.w.task_properties)
                     if client_status_code(self.w.status)!=self.shared_status.value:
                         log.warning(f'Client status was changed to {self.w.status}')
                         self.shared_status.value = client_status_code(self.w.status)
@@ -1010,12 +1016,13 @@ class Client:
                         self.declare()
                         continue
                 if self.w.concurrency != self.concurrency:
-                    self.run_slots_semaphore.acquire()
-                    self.has_run_slots_semaphore=True
-                    self.run_slots.value += self.w.concurrency-self.concurrency
-                    self.run_slots_semaphore.release()
-                    self.has_run_slots_semaphore=False
-                    log.warning(f'Concurrency changed from {self.concurrency} to {self.w.concurrency}, adjusting run slots: {self.run_slots.value}')
+                    #self.run_slots_semaphore.acquire()
+                    #self.has_run_slots_semaphore=True
+                    #self.run_slots.value += self.w.concurrency-self.concurrency
+                    #self.run_slots_semaphore.release()
+                    #self.has_run_slots_semaphore=False
+                    #log.warning(f'Concurrency changed from {self.concurrency} to {self.w.concurrency}, adjusting run slots: {self.run_slots.value}')
+                    log.warning(f'Concurrency changed from {self.concurrency} to {self.w.concurrency} with task properties {self.task_properties}')
                     self.concurrency = self.w.concurrency
                 if self.prefetch != self.w.prefetch:
                     log.warning(f'Prefetch changed from {self.prefetch} to {self.w.prefetch}')
@@ -1025,7 +1032,8 @@ class Client:
                     for execution in executions:
                         if execution.execution_id not in self.executions:
                             task = self.s.task_get(execution.task_id)
-                            execution_started = multiprocessing.Semaphore(0)
+                            #execution_started = multiprocessing.Semaphore(0)
+                            self.executions_go[execution.execution_id] = multiprocessing.Semaphore(0)
                             execution_queue = multiprocessing.Queue()
                             self.executions_status[execution.execution_id]=self.manager.Value(
                                                     'I', 
@@ -1038,7 +1046,7 @@ class Client:
                                     'command': task.command,
                                     'input': task.input,
                                     'output': task.output,
-                                    'execution_started': execution_started,
+                                    #'execution_started': execution_started,
                                     'execution_queue': execution_queue,
                                     'container': task.container,
                                     'container_options': task.container_options,
@@ -1047,25 +1055,27 @@ class Client:
                                     'resource_dir': self.resource_dir,
                                     'resource': task.resource,
                                     'resources_db': self.resources_db,
-                                    'run_slots': self.run_slots,
-                                    'run_slots_semaphore': self.run_slots_semaphore,
+                                    #'run_slots': self.run_slots,
+                                    #'run_slots_semaphore': self.run_slots_semaphore,
                                     'worker_id': self.w.worker_id,
                                     'status': self.executions_status[execution.execution_id],
                                     'working_dirs': self.working_dirs,
                                     'client_status': self.shared_status,
+                                    'go': self.executions_go[execution.execution_id]
                                 })
                             p.start()
                             self.executions[execution.execution_id]=(p,execution_queue)
                             self.has_worked = True
                             self.idle_time = None
-                            log.info('Waiting for execution to start')
-                            execution_started.acquire()
+                            #log.info('Waiting for execution to start')
+                            #execution_started.acquire()
                             log.info('Execution started')
-                    if not(self.executions) and self.has_worked:
+                    if not(self.executions):
                         now = time()
                         if self.idle_time is None:
                             self.idle_time=now
-                        elif now-self.idle_time > IDLE_TIMEOUT:
+                        elif now-self.idle_time > WAIT_FOR_FIRST_EXECUTION_TIMEOUT or \
+                                (now-self.idle_time > IDLE_TIMEOUT and self.has_worked):
                             self.s.worker_callback(self.w.worker_id, message = "idle")
                             self.idle_time = None
                 for signal in self.s.worker_signals(self.w.worker_id):
@@ -1078,13 +1088,13 @@ class Client:
                             self.clean_all()
                         elif signal.signal == SIGNAL_RESTART:
                             log.warning('Received reloading signal, quitting to reload.')
-                            self.run_slots_semaphore.acquire()
-                            self.has_run_slots_semaphore=True
+                            #self.run_slots_semaphore.acquire()
+                            #self.has_run_slots_semaphore=True
                             while True:
                                 for execution, status in self.executions_status.items():
                                     if status.value == 'UPLOADING':
-                                        self.run_slots_semaphore.release()
-                                        self.has_run_slots_semaphore=False
+                                        #self.run_slots_semaphore.release()
+                                        #self.has_run_slots_semaphore=False
                                         log.warning('This is not a good time to die, somebody is uploading...')
                                         sleep(POLLING_TIME)
                                         break
@@ -1103,109 +1113,131 @@ class Client:
                         del(self.executions_status[execution_id])
                         if execution_id in self.working_dirs:
                             del(self.working_dirs[execution_id])
-                if self.run_slots_semaphore.acquire():
-                    self.has_run_slots_semaphore=True
-                    #running_executions = [ execution_id 
-                    #        for execution_id, execution_status in self.executions_status.items()
-                    #        if execution_status.value==STATUS_RUNNING ]
-                    log.warning(f'Status are { {execution_id:STATUS_TXT[execution_status.value] for execution_id, execution_status in self.executions_status.items()} }')
-                    #if self.concurrency-len(running_executions)!=self.run_slots.value:
-                        #log.warning(f'Race condition detected on process number')
-                        # ok time to look what is really going on
-                        
-                    running = waiting = 0
-                    executions_from_server = list(self.s.worker_executions(self.w.worker_id))
-                    for execution in executions_from_server:
-                        if execution.status in ['failed','succeeded','pending']:
-                            continue
-                        if execution.execution_id not in self.executions_status:
-                            if execution.status=='accepted':
-                                log.error(f'Execution {execution.execution_id} was being downloaded but is gone so I will get it again')
-                                self.s.execution_update(execution.execution_id, status='pending')
-                            elif execution.status=='running':
-                                task = self.s.task_get(execution.task_id)
-                                if task.container:
-                                    container=docker_inspect(execution.pid)
-                                    if container is not None:
-                                        log.warning(f'Execution {execution.execution_id} is still alive')
-                                        execution_started = multiprocessing.Semaphore(0)
-                                        execution_queue = multiprocessing.Queue()
-                                        self.executions_status[execution.execution_id]=self.manager.Value(
-                                                                'I', 
-                                                                value=STATUS_LAUNCHING)
-                                        p=multiprocessing.Process(target=Executor.from_docker_container,
-                                            kwargs={
-                                                'server': self.server,
-                                                'execution_id': execution.execution_id,
-                                                'task_id': task.task_id,
-                                                'command': task.command,
-                                                'input': task.input,
-                                                'output': task.output,
-                                                'execution_started': execution_started,
-                                                'execution_queue': execution_queue,
-                                                'container': task.container,
-                                                'container_options': task.container_options,
-                                                'cpu': psutil.cpu_count()//self.w.concurrency,
-                                                'resource_dir': self.resource_dir,
-                                                'resource': task.resource,
-                                                'resources_db': self.resources_db,
-                                                'run_slots': self.run_slots,
-                                                'run_slots_semaphore': self.run_slots_semaphore,
-                                                'worker_id': self.w.worker_id,
-                                                'status': self.executions_status[execution.execution_id],
-                                                'working_dirs': self.working_dirs,
-                                                'docker_container': container,
-                                                'client_status': self.shared_status
-                                            })
-                                        p.start()
-                                        self.executions[execution.execution_id]=(p,execution_queue)
-                                        self.has_worked = True
-                                        self.idle_time = None
-                                        log.info('Waiting for execution to recover')
-                                        execution_started.acquire()
-                                        log.info('Execution recovered')
-                                    else:
-                                        log.error(f'Execution {execution.execution_id} seems to have gone away...')
-                                        self.s.execution_update(execution.execution_id, status='failed')
+                #if self.run_slots_semaphore.acquire():
+                #    self.has_run_slots_semaphore=True
+                #running_executions = [ execution_id 
+                #        for execution_id, execution_status in self.executions_status.items()
+                #        if execution_status.value==STATUS_RUNNING ]
+                log.warning(f'Status are { {execution_id:STATUS_TXT[execution_status.value] for execution_id, execution_status in self.executions_status.items()} }')
+                #if self.concurrency-len(running_executions)!=self.run_slots.value:
+                    #log.warning(f'Race condition detected on process number')
+                    # ok time to look what is really going on
+                    
+                running = waiting = 0
+                executions_from_server = list(self.s.worker_executions(self.w.worker_id))
+                executions_ready_to_go = []
+                for execution in executions_from_server:
+                    if execution.execution_id not in self.executions_status:
+                        if execution.status=='accepted':
+                            log.error(f'Execution {execution.execution_id} was being downloaded but is gone so I will get it again')
+                            self.s.execution_update(execution.execution_id, status='pending')
+                        elif execution.status=='running':
+                            task = self.s.task_get(execution.task_id)
+                            if task.container:
+                                container=docker_inspect(execution.pid)
+                                if container is not None:
+                                    log.warning(f'Execution {execution.execution_id} is still alive')
+                                    #execution_started = multiprocessing.Semaphore(0)
+                                    execution_queue = multiprocessing.Queue()
+                                    self.executions_status[execution.execution_id]=self.manager.Value(
+                                                            'I', 
+                                                            value=STATUS_RUNNING)
+                                    p=multiprocessing.Process(target=Executor.from_docker_container,
+                                        kwargs={
+                                            'server': self.server,
+                                            'execution_id': execution.execution_id,
+                                            'task_id': task.task_id,
+                                            'command': task.command,
+                                            'input': task.input,
+                                            'output': task.output,
+                                            #'execution_started': execution_started,
+                                            'execution_queue': execution_queue,
+                                            'container': task.container,
+                                            'container_options': task.container_options,
+                                            'cpu': max(1,
+                                               psutil.cpu_count()//self.w.concurrency if self.w.concurrency>0 else psutil.cpu_count()),
+                                            'resource_dir': self.resource_dir,
+                                            'resource': task.resource,
+                                            'resources_db': self.resources_db,
+                                            #'run_slots': self.run_slots,
+                                            #'run_slots_semaphore': self.run_slots_semaphore,
+                                            'worker_id': self.w.worker_id,
+                                            'status': self.executions_status[execution.execution_id],
+                                            'working_dirs': self.working_dirs,
+                                            'docker_container': container,
+                                            'client_status': self.shared_status,
+                                        })
+                                    p.start()
+                                    self.executions[execution.execution_id]=(p,execution_queue)
+                                    self.has_worked = True
+                                    self.idle_time = None
+                                    #log.info('Waiting for execution to recover')
+                                    #execution_started.acquire()
+                                    log.info('Execution recovered')
                                 else:
                                     log.error(f'Execution {execution.execution_id} seems to have gone away...')
                                     self.s.execution_update(execution.execution_id, status='failed')
-                            continue
+                            else:
+                                log.error(f'Execution {execution.execution_id} seems to have gone away...')
+                                self.s.execution_update(execution.execution_id, status='failed')
+                        continue
 
-                        status = self.executions_status[execution.execution_id].value
-                        if status == STATUS_RUNNING:
-                            running += 1
-                        elif status in [STATUS_WAITING, STATUS_LAUNCHING,STATUS_DOWNLOADING]:
-                            waiting += 1
-                        if execution.status=='running' and status not in  [STATUS_RUNNING, STATUS_UPLOADING, STATUS_LAUNCHING]:
-                            log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
-                        elif execution.status=='accepted' and status not in [STATUS_WAITING, STATUS_LAUNCHING, STATUS_DOWNLOADING]:
-                            log.warning(f'Execution {execution.execution_id} is supposed to be accepted and is not ({STATUS_TXT[status]}).')
-                    if running>self.concurrency:
-                        log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
-                    if waiting>self.prefetch:
-                        log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
-                    if len(self.executions)>self.concurrency+self.prefetch:
-                        log.warning(f'Overall we should have at max {self.concurrency+self.prefetch} processes and we have {len(self.executions)}')
-                    if self.run_slots.value != self.concurrency - running:
-                        log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
-                        self.run_slots.value = self.concurrency - running
-                    if self.executions_status:
-                        executions_ids = list([execution.execution_id for execution in executions_from_server])
-                        for execution_id in self.executions_status.keys():
-                            if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_RUNNING:
-                                log.warning(f'Execution {execution_id} is still running but is no more assigned to us (or likely was deleted), sending SIGTERM signal')
-                                self.executions[execution_id][1].put(SIGTERM)
-                    self.run_slots_semaphore.release()
-                    self.has_run_slots_semaphore=False
-                else:
-                    log.warning('Cannot estimate process number, giving up.')
+                    status = self.executions_status[execution.execution_id].value
+                    weight, priority = self.task_properties.get(execution.batch, (1,0) )
+                    if status == STATUS_RUNNING:
+                        # here we count not the number of tasks but the weight of tasks
+                        running += weight
+                    elif status in [STATUS_WAITING, STATUS_LAUNCHING, STATUS_DOWNLOADING]:
+                        waiting += 1
+                        if status == STATUS_WAITING and execution.taskstatus != 'paused':
+                            executions_ready_to_go.append( (priority, weight, execution.execution_id) )
+                    if execution.status=='running' and status not in  [STATUS_RUNNING, STATUS_UPLOADING, STATUS_LAUNCHING]:
+                        log.warning(f'Execution {execution.execution_id} is supposed to be running and is not ({STATUS_TXT[status]}).')
+                    elif execution.status=='accepted' and status not in [STATUS_WAITING, STATUS_LAUNCHING, STATUS_DOWNLOADING]:
+                        log.warning(f'Execution {execution.execution_id} is supposed to be accepted and is not ({STATUS_TXT[status]}).')
+                if running>self.concurrency:
+                    log.warning(f'We are supposed to have {self.concurrency} running processes and we have {running}')
+                elif running<self.concurrency and self.w.status=='running':
+                    executions_ready_to_go.sort(reverse=True)
+                    for _,weight,execution_id in executions_ready_to_go:
+                        if self.concurrency - running >= weight:
+                            running += weight
+                            log.warning(f'Releasing execution {execution_id}')
+                            self.executions_go[execution_id].release()
+                            #self.executions_status[execution_id].value=STATUS_RUNNING
+                            while self.executions_status[execution_id].value == STATUS_WAITING:
+                                sleep(0.2)
+                                log.warning('Waiting for execution to start')
+                            log.warning(f'Execution {execution_id} is now {STATUS_TXT[self.executions_status[execution_id].value]}')
+                        else:
+                            break
+                if waiting>self.prefetch:
+                    log.warning(f'We are supposed to have {self.prefetch} waiting processes and we have {waiting}')    
+                if running+waiting > self.concurrency+self.prefetch:
+                    log.warning(f'Overall we should have at max {self.concurrency+self.prefetch} processes and we have {running+waiting}')
+                #if self.run_slots.value != self.concurrency - running:
+                #    log.warning(f'Run slot derived, reseting from {self.run_slots.value} to {self.concurrency-running}')
+                #    self.run_slots.value = self.concurrency - running
+                if self.executions_status:
+                    executions_ids = list([execution.execution_id for execution in executions_from_server])
+                    for execution_id in self.executions_status.keys():
+                        if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_RUNNING:
+                            log.warning(f'Execution {execution_id} is still running but is no more assigned to us (or likely was deleted), sending SIGTERM signal')
+                            self.executions[execution_id][1].put(SIGTERM)
+                        if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_WAITING:
+                            log.warning(f'Execution {execution_id} is waiting but is no more assigned to us (or likely was deleted), releasing it to its death')
+                            self.executions_go[execution_id].release()
+
+                #self.run_slots_semaphore.release()
+                #self.has_run_slots_semaphore=False
+                #else:
+                #    log.warning('Cannot estimate process number, giving up.')
             except Exception as e:
                 log.exception('An exception occured during worker main loop')
-                if self.has_run_slots_semaphore:
-                    log.warning('Releasing run slots semaphore')
-                    self.run_slots_semaphore.release()
-                    self.has_run_slots_semaphore=False
+                #if self.has_run_slots_semaphore:
+                #    log.warning('Releasing run slots semaphore')
+                #    self.run_slots_semaphore.release()
+                #    self.has_run_slots_semaphore=False
             sleep(POLLING_TIME)
             
                 
@@ -1224,7 +1256,9 @@ def main():
     parser.add_argument('-b','--batch', type=str, default=None,
             help=f"Assign the worker to a default batch (default to None, the default batch)")
     parser.add_argument('-a','--autoclean', type=int, default=DEFAULT_AUTOCLEAN,
-            help=f"Clean failures when disk is full up to this % (default to {DEFAULT_AUTOCLEAN})")
+            help=f"Clean failures when disk is full up to this %% (default to {DEFAULT_AUTOCLEAN})")
+    parser.add_argument('-f','--flavor', type=str, default=None,
+            help=f"Update the declared flavor of this client to this value (otherwise keep the default value)")
     args = parser.parse_args()
     
     Client(
@@ -1232,7 +1266,8 @@ def main():
         concurrency=args.concurrency, 
         name=args.name,
         batch=args.batch,
-        autoclean=args.autoclean
+        autoclean=args.autoclean,
+        flavor=args.flavor,
     ).run(status=args.status)
     
 

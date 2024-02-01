@@ -11,6 +11,9 @@ import shutil
 import random
 from .debug import Debugger
 from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF
+from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
+import dotenv
+from .server.api import TaskDAO
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -24,6 +27,8 @@ def converter(x,long):
     elif type(x)==str and not long:
         if len(x)> MAX_LENGTH_STR :
             x=x[:MAX_LENGTH_STR-1] +'...'
+    elif type(x)==list:
+        x=','.join([str(element) for element in x])
     return x
 
 def __list_print(item_list, retained_columns, headers, long=False):
@@ -74,7 +79,9 @@ def main():
     worker_update_subparser.add_argument('-S','--status', help='The new status of the worker', type=str, default=None)
     worker_update_subparser.add_argument('-b','--batch', help='The new batch of the worker', type=str, default=None)
     worker_update_subparser.add_argument('-C','--concurrency', help='The new concurrency of the worker', type=str, default=None)
-    worker_update_subparser.add_argument('-p','--prefetch',help="Define how many tasks should be prefetched (default to 0)",type=int,default=0)
+    worker_update_subparser.add_argument('-p','--prefetch',help="Define how many tasks should be prefetched",type=int,default=None)
+    worker_update_subparser.add_argument('-f','--flavor',help="Define which flavor/model should be ordered",type=str,default=None)
+    
 
     batch_parser = subparser.add_parser('batch', help='The following options will only concern batches')
     subsubparser=batch_parser.add_subparsers(dest='action')
@@ -101,7 +108,7 @@ def main():
     task_parser = subparser.add_parser('task', help='The following options will only concern tasks')
     subsubparser=task_parser.add_subparsers(dest='action')
     list_task_parser= subsubparser.add_parser('list',help='List all tasks')
-    list_task_parser.add_argument('-S','--status',help='Give you a list of tasks according to his status',type=str,choices=['','paused','running','failed','succeeded','pending'],default='')
+    list_task_parser.add_argument('-S','--status',help='Give you a list of tasks according to his status',type=str,choices=TaskDAO.authorized_status,default='')
     list_task_parser.add_argument('-b','--batch',help='Give you a list of tasks according to his batch',type=str,default='')
     list_task_parser.add_argument('-H','--no-header',help='Do not print the headers',action='store_true')
     list_task_parser.add_argument('-L','--long',help='Print the entire command',action='store_true')
@@ -136,6 +143,9 @@ def main():
     task_update_subparser.add_argument('-O','--option', help='The new docker option for the task', type=str, default=None)
     task_update_subparser.add_argument('-j','--input', help='The new input for the task', type=str, default=None)
     task_update_subparser.add_argument('-o','--output', help='The new output for the task', type=str, default=None)
+    task_update_subparser.add_argument('-R','--requirements', help='A new space separated required task ids', type=str, default=None)
+    task_update_subparser.add_argument('--run-timeout', help='Change the run timeout (in seconds) for this task', type=int, default=None)
+    task_update_subparser.add_argument('--download-timeout', help='Change the download timeout (in seconds) for this task', type=int, default=None)
     
     ansible_parser = subparser.add_parser('ansible', help='The following options are to work with ansible subcode')
     subsubparser=ansible_parser.add_subparsers(dest='action')
@@ -158,6 +168,48 @@ def main():
     debug_run_parser.add_argument('-w','--worker-conf', help=f'Use this environment file to set extra environment (default to {DEFAULT_WORKER_CONF})', 
                                   type=str, default=DEFAULT_WORKER_CONF)
     
+    recruiter_parser = subparser.add_parser('recruiter', help='Do some action about recruiter objects (recruiters automatically deploy workers in a batch when needed)')
+    subsubparser=recruiter_parser.add_subparsers(dest='action')
+
+    list_recruiter_parser=subsubparser.add_parser('list', help='List all recruiter')
+    list_recruiter_parser.add_argument('-b','--batch',help="Filter recruiter for this batch",type=str,default=None)
+    list_recruiter_parser.add_argument('-L','--long',help='Print all recruiter details',action='store_true')
+    list_recruiter_parser.add_argument('-H','--no-header',help='Do not print headers',action='store_true')
+
+    recruiter_create_parser = subsubparser.add_parser('create', help='Create a new recruiter (or override a recruiter of the same rank for this batch)')
+    recruiter_create_parser.add_argument('-b','--batch',type=str,required=True,help='batch in which workers are deployed')
+    recruiter_create_parser.add_argument('-n','--rank',type=int,help='rank in which recruiter is tried (unique per batch), default to 1',default=1)
+    recruiter_create_parser.add_argument('-f','--flavor',type=str,required=True,help='flavor (type of instance) of worker needed')
+    recruiter_create_parser.add_argument('-r','--region',type=str,help='worker region of provenance',default=None)
+    recruiter_create_parser.add_argument('-P','--provider',type=str,help='worker provider',default=None)
+    recruiter_create_parser.add_argument('-C','--concurrency',type=int,required=True,help='what should be the concurrency setting of recruited workers')
+    recruiter_create_parser.add_argument('-p','--prefetch',type=int,help='what should be the prefetch setting of recruited workers (default to 0)',default=None)
+    recruiter_create_parser.add_argument('-T','--tasks-per-worker',type=int,help='how many workers should be recruited (default to concurrency, but if you want each worker to work two rounds, set it to twice the concurrency)',default=None)
+    recruiter_create_parser.add_argument('-m','--minimum-tasks',type=int,help='prevent the recruiter from triggering before this minimal number of tasks is reached',default=None)
+    recruiter_create_parser.add_argument('-W','--maximum-workers',type=int,help='prevent the recruiter from recruiting more than this number of worker',default=None)
+    
+    recruiter_modify_parser = subsubparser.add_parser('update', help='Update a recruiter')
+    recruiter_modify_parser.add_argument('-b','--batch',type=str,required=True,help='batch in which workers are deployed')
+    recruiter_modify_parser.add_argument('-n','--rank',type=int,help='rank in which recruiter is tried (unique per batch), default to 1',default=1)
+    recruiter_modify_parser.add_argument('-f','--flavor',type=str,help='flavor (type of instance) of worker needed',default=None)
+    recruiter_modify_parser.add_argument('-r','--region',type=str,help='worker region of provenance',default=None)
+    recruiter_modify_parser.add_argument('-P','--provider',type=str,help='worker provider',default=None)
+    recruiter_modify_parser.add_argument('-C','--concurrency',type=int,help='what should be the concurrency setting of recruited workers',default=None)
+    recruiter_modify_parser.add_argument('-p','--prefetch',type=int,help='what should be the prefetch setting of recruited workers (default to 0)',default=None)
+    recruiter_modify_parser.add_argument('-T','--tasks-per-worker',type=int,help='how many workers should be recruited (default to concurrency, but if you want each worker to work two rounds, set it to twice the concurrency)',default=None)
+    recruiter_modify_parser.add_argument('-m','--minimum-tasks',type=int,help='prevent the recruiter from triggering before this minimal number of tasks is reached',default=None)
+    recruiter_modify_parser.add_argument('-W','--maximum-workers',type=int,help='prevent the recruiter from recruiting more than this number of worker',default=None)
+
+    recruiter_delete_parser = subsubparser.add_parser('delete', help='Delete a recruiter')
+    recruiter_delete_parser.add_argument('-b','--batch',type=str,required=True,help='batch in which workers are deployed')
+    recruiter_delete_parser.add_argument('-n','--rank',type=int,help='rank in which recruiter is tried (unique per batch), default to 1',default=1)
+    
+
+    db_parser = subparser.add_parser('db', help='The following options are to work with scitq database')
+    db_parser.add_argument('-c','--conf', help=f'Use this environment file to set environment (default to {DEFAULT_SERVER_CONF})', type=str, default=DEFAULT_SERVER_CONF)
+    subsubparser=db_parser.add_subparsers(dest='action')
+    db_upgrade_parser=subsubparser.add_parser('upgrade',help='Migrate the database to the current version of scitq')
+    db_init_parser=subsubparser.add_parser('init',help='Initialize a new database with current version of scitq')
 
     args=parser.parse_args()
 
@@ -170,23 +222,23 @@ def main():
         if args.action =='list':
             info_worker=['worker_id','name','status','concurrency','creation_date','last_contact_date','batch']
             if args.long:
-                info_worker+=['prefetch','assigned','accepted','running','failed','succeeded']
+                info_worker+=['provider','region','flavor','prefetch','assigned','accepted','running','failed','succeeded']
             if not args.no_header:
                 headers = info_worker
             else:
                 headers = []
-            worker_list=s.workers() 
+            filters={}
+            if args.batch:
+                filters['batch']=args.batch
+            if args.status:
+                filters['status']=args.status
+            worker_list=s.workers(**filters) 
             if args.long:
                 worker_dict=dict([(w['worker_id'],w) for w in worker_list])
                 worker_tasks=s.workers_tasks()
                 for w in worker_tasks:
                     worker_dict[w['worker_id']][w['status']]=w['count']
-            if args.batch!='':
-                worker_list=[worker for worker in worker_list 
-                                if worker['batch']==args.batch]
-            if args.status!='':
-                worker_list=[worker for worker in worker_list 
-                                if worker['status']==args.status] 
+            
             __list_print(worker_list, info_worker, headers)
 
         elif args.action =='deploy' :
@@ -221,7 +273,7 @@ def main():
             else:
                 raise RuntimeError('You must specify either name (-n) or id (-i)')
             s.worker_update(id, batch=args.batch, status=args.status,
-                concurrency=args.concurrency, prefetch=args.prefetch)
+                concurrency=args.concurrency, prefetch=args.prefetch, flavor=args.flavor)
         
     elif args.object == 'batch':
         if args.action =='list':
@@ -234,11 +286,11 @@ def main():
             if args.number:
                 signal = args.number
             elif args.term:
-                signal = 3
+                signal = SIGQUIT
             elif args.kill:
-                signal = 9
+                signal = SIGKILL
             elif args.pause:
-                signal = 20
+                signal = SIGTSTP
             for batch in args.name :
                 s.batch_stop(batch,signal)
         
@@ -247,7 +299,7 @@ def main():
             if args.number:
                 signal = args.number
             elif args.cont:
-                signal = 18
+                signal = SIGCONT
             for batch in args.name :
                 s.batch_go(batch, signal)
 
@@ -258,9 +310,9 @@ def main():
         
     elif args.object == 'task':  
         if args.action == 'list':
-            info_task=['task_id','name','status','command','creation_date','modification_date','batch']
+            info_task=['task_id','name','status','command','creation_date','modification_date','status_date','batch']
             if args.long:
-                info_task+=['container','container_options','input','output','resource']
+                info_task+=['container','container_options','input','output','resource','required_task_ids','retry','run_timeout','download_timeout']
             if not args.no_header:
                 headers = info_task
             else:
@@ -316,10 +368,19 @@ def main():
                     id=task['task_id']
                     break
                 else:
-                    raise RuntimeError(f'No such task {args.name}...')   
+                    raise RuntimeError(f'No such task {args.name}...')  
+            if args.requirements is not None:
+                try:
+                    args.requirements = [int(r) for r in args.requirements.split(' ')]
+                except: 
+                    try:
+                        args.requirements = [int(r) for r in args.requirements.split(',')]
+                    except:
+                        raise RuntimeError(f'requirements should be a space or comma separated list of integer not {args.requirements}') 
             s.task_update(id, name=args.new_name, status=args.status, batch=args.batch,
                 command=args.command, container=args.docker, container_options=args.option,
-                input=args.input, output=args.output)
+                input=args.input, output=args.output, required_task_ids=args.requirements, 
+                run_timeout=args.run_timeout, download_timeout=args.download_timeout)
         elif args.action == 'delete':
             if args.id is not None:
                 id=args.id
@@ -383,6 +444,57 @@ def main():
                 get_resource = False
             Debugger(task, get_input=get_input, get_resource=get_resource, 
                      configuration=args.conf, extra_configuration=args.worker_conf).run()
+    
+
+    elif args.object=='recruiter':
+
+        if args.action =='list':
+            info_recruiter=['batch','rank','flavor','region','provider','concurrency']
+            if args.long:
+                info_recruiter+=['prefetch','tasks_per_worker','minimum_tasks','maximum_worker']
+            if not args.no_header:
+                headers = info_recruiter
+            else:
+                headers = []
+            filters={}
+            if args.batch:
+                filters['batch']=args.batch
+            __list_print(s.recruiters(**filters), info_recruiter, headers)
+
+        elif args.action =='create' :
+            if args.tasks_per_worker is None:
+                args.tasks_per_worker=args.concurrency
+            s.recruiter_create(batch=args.batch,rank=args.rank,region=args.region,
+                flavor=args.flavor,concurrency=args.concurrency, prefetch=args.prefetch,
+                provider=args.provider, tasks_per_worker=args.tasks_per_worker,
+                minimum_tasks=args.minimum_tasks, maximum_workers=args.maximum_workers)
+        
+        elif args.action == 'update':
+            s.recruiter_update(batch=args.batch,rank=args.rank,region=args.region,
+                flavor=args.flavor,concurrency=args.concurrency, prefetch=args.prefetch,
+                provider=args.provider, tasks_per_worker=args.tasks_per_worker,
+                minimum_tasks=args.minimum_tasks, maximum_workers=args.maximum_workers)
+
+        elif args.action =='delete' :
+            s.recruiter_delete(batch=args.batch, rank=args.rank)
+
+    elif args.object=='db':
+
+        if args.action=='init':
+            dotenv.load_dotenv(args.conf)
+            # return code of flask db init seems to be random, outputing to 1 with no reason or with a good reason...
+            run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db init', shell=True, 
+                cwd=package_path(), check=False)
+            run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db stamp head', shell=True, 
+                cwd=package_path(), check=True)
+            print('DB intialized')
+
+        if args.action=='upgrade':
+            dotenv.load_dotenv(args.conf)
+            run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade', shell=True, 
+                cwd=package_path(), check=True)
+            print('DB migrated')
+
 
 if __name__=="__main__":
     main()

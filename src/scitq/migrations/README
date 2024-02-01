@@ -1,0 +1,28 @@
+Single-database configuration for Flask.
+
+
+# To create migrations
+
+```bash
+cd src/scitq
+SCITQ_PRODUCTION=1 FLASK_APP=server flask db migrate -m "Some description of the migration"
+```
+
+# To apply migrations
+
+```bash
+cd src/scitq
+SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade 
+```
+
+# Troubleshoot
+
+Whenever you run into this error:
+```bash
+ERROR [flask_migrate] Error: Target database is not up to date.
+```
+
+Which might happen at either above step, the solution is generally to:
+```bash
+SCITQ_PRODUCTION=1 FLASK_APP=server flask db stamp head 
+```

@@ -6,7 +6,7 @@ RUN apk add --no-cache python3 wget  gcc python3-dev libc-dev linux-headers ansi
     pip install scitq==1.0 openstacksdk==0.61 && \
     ansible-galaxy install rolehippie.mdadm && \
     ansible-galaxy collection install openstack.cloud && \
-    ansible-galaxy collection install azure.azcollection && \
+    ansible-galaxy collection install azure.azcollection:1.8.0 && \
     apk del gcc python3-dev libc-dev linux-headers wget && \
     rm get-pip.py
 

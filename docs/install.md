@@ -197,7 +197,7 @@ Just type in those two lines to add some required ansible collections and roles 
 
 ```bash
 ansible-galaxy install rolehippie.mdadm
-ansible-galaxy collection install openstack.cloud
+ansible-galaxy collection install openstack.cloud:1.8.0
 ```
 
 #### Azure ansible collection
@@ -223,7 +223,7 @@ This will create `/root/.ssh/id_rsa` and `/root/.ssh/id_rsa.pub`. If you are unf
 
 ### Configure ansible components
 
-First, you must attach scitq ansible configuration to ansible. You just need to add a specific inventory source, modifying the `inventory=...` line in `ansible.cfg` (by default, `/etc/ansible/ansible.cfg`), by adding a specific directory for scitq:
+First, you must attach scitq ansible configuration to ansible. You just need to add a specific inventory source, modifying the `inventory=...` line in `ansible.cfg` in the `[defaults]` section (by default, `/etc/ansible/ansible.cfg`), by adding a specific directory for scitq:
 `inventory=...,/etc/ansible/inventory`
 
 Also in `[inventory]` section, it is a good idea to enable the (normaly defaults) inventory plugins in the following order:
@@ -232,6 +232,16 @@ Also in `[inventory]` section, it is a good idea to enable the (normaly defaults
 enable_plugins=host_list, script, auto, ini, yaml, toml
 ...
 ```
+
+In the end this simple `/etc/ansible/ansible.cfg` should be enough:
+```ini
+[defaults]
+inventory=/etc/ansible/inventory
+
+[inventory]
+enable_plugins=host_list, script, auto, ini, yaml, toml
+```
+
 
 Now copy the default files with:
 ```bash
@@ -391,7 +401,7 @@ apt install iptables-persistent
 
 Upon the package install you will be proposed to save current rules, answer yes. You're done.
 
-If you want to resave the rules after install:
+If you do some manual change later on and you want to resave the rules without reinstalling iptables-persistent, just do:
 ```bash
 iptables-save > /etc/iptables/rules.v4
 ip6tables-save > /etc/iptables/rules.v6

@@ -2,7 +2,7 @@ var function_is_running=false;
 var running_time = 0;
 async function check_online(func) {
     if (!pause_loop && !function_is_running && !document.hidden) {
-        $.getJSON('/live/ping', async function() {
+        $.getJSON('/ui/ping', async function() {
             const begin_date = Date.now();
             console.log('fetching...');
             function_is_running = true;
@@ -68,6 +68,10 @@ function remove_from_array(arr, value){
             arr.splice(i, 1); 
         }
     }
+}
+
+function capitalize(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
 const svg_resume = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-circle-fill" 

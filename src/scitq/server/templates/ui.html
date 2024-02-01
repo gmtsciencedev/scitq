@@ -22,21 +22,12 @@
 
     <span id="workers">
         <div class="container total-div" style='margin-top:0.5em'>
-            <a target='_blank' id="pending-tasks" href='/ui/task/?sortby=&worker=&batch=&show=pending'>
-                Pending
-            </a>
-            <a href='#'  id="assigned-tasks">
-                Assigned
-            </a>
-            <a target='_blank' id="running-tasks" href='/ui/task/?sortby=&worker=&batch=&show=running'>
-                Running
-            </a>
-            <a target='_blank' id="failed-tasks" href='/ui/task/?sortby=&worker=&batch=&show=failed'>
-                Failed
-            </a>
-            <a target='_blank' id="succeeded-tasks" href='/ui/task/?sortby=&worker=&batch=&show=succeeded'>
-                Succeeded
-            </a>
+            {% for status in ['pending','assigned','accepted','running','failed','succeeded'] %}
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="status_filter" value="{{ status }}">
+                <input type="submit" id="{{ status }}-tasks" value="{{ status | capitalize }}">
+            </form>
+            {% endfor %}
         </div>
         <p style='float:right; margin:0.5em;border-width: 1px;border-color: grey;background-color: lightgrey;padding:0.3em;max-height:2.5em;border-style: double;font-size:small'>v{{ package_version }} </p>
         <a type='button' id='downloadall' target='_blank' href='/ui/batch/'  class='btn btn-secondary' style='float:right;margin:0.35em'>Batch view</a>

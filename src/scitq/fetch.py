@@ -16,7 +16,7 @@ import argparse
 import datetime
 import pytz
 import io
-from azure.storage.blob import BlobServiceClient, BlobBlock
+from azure.storage.blob import BlobServiceClient, BlobBlock, BlobClient
 import uuid
 import azure.core.exceptions
 from .constants import DEFAULT_WORKER_CONF
@@ -45,6 +45,7 @@ HTTP_CHUNK_SIZE = 81920
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
 MAX_PARALLEL_AZURE = 5
+MAX_CONCURRENCY_AZURE = 3
 AZURE_CHUNK_SIZE = 50*1024**2
 
 ASPERA_DOCKER = 'martinlaurent/ascli:4.14.0'
@@ -201,7 +202,8 @@ def s3_get(source, destination):
                 uri_match['path'],destination)
         except botocore.exceptions.ClientError as error:
             if 'Not Found' in error.response.get('Error',{}).get('Message',None):
-                raise FetchError(f'{source} was not found') from error
+                log.warning(f'{source} was not found, trying {source}/')
+                s3_get(source+'/',destination)
             else:
                 raise
 
@@ -278,9 +280,21 @@ def _container_get(container, blob_name, file_name):
     """A small wrapper to ease azure client in thread/process context to download a file
     container can be either a string or an Azure container client."""
     if type(container)==str:
-        container = AzureClient().client.get_container_client(container)
-    with open(file=file_name, mode="wb") as download_file:
-        download_file.write(container.download_blob(blob_name).readall())
+        #container = AzureClient().client.get_container_client(container)
+        blob_client = AzureClient().client.get_blob_client(
+                                        container=container,
+                                        blob=blob_name)
+    else:
+        blob_client = container.get_blob_client(blob=blob_name)
+    try:
+        with open(file=file_name, mode="wb") as download_file:
+            #download_file.write(container.download_blob(blob_name).readall())
+            download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
+            download_file.write(download_stream.readall())
+    except:
+        os.remove(file_name)
+        raise
+        
 
 class AzureClient:
     """A small wrapper above Azure blob client to integrate with scitq"""
@@ -296,7 +310,9 @@ class AzureClient:
         if account_name is None:
             raise FetchError(f'Azure account is not properly configured: either set {AZURE_ACCOUNT} and {AZURE_KEY} environment variables or adjust {DEFAULT_WORKER_CONF}.')
         connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
-        self.client = BlobServiceClient.from_connection_string(connection_string)
+        self.client = BlobServiceClient.from_connection_string(connection_string,
+                                        max_single_get_size=1024*1024*32,
+                                        max_chunk_get_size=1024*1024*4)
 
     @retry_if_it_fails(RETRY_TIME)
     def get(self, source, destination):
@@ -353,7 +369,8 @@ class AzureClient:
                 container=self.client.get_container_client(uri_match['container'])
                 _container_get(container, uri_match['path'],destination)
             except azure.core.exceptions.ResourceNotFoundError as error:
-                raise FetchError(f'{source} was not found') from error
+                log.warning(f'{source} was not found, trying {source}/')
+                self.get(source+'/', destination)
 
     @retry_if_it_fails(RETRY_TIME)
     def put(self, source, destination):
@@ -378,7 +395,7 @@ class AzureClient:
                     block_list.append(BlobBlock(block_id=blk_id))
                 blob_client.commit_block_list(block_list)
             else:
-                blob_client.upload_blob(data, overwrite=True)
+                blob_client.upload_blob(data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE)
 
     def info(self,uri):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""

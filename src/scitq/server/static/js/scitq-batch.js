@@ -2,18 +2,25 @@
 function batch_line(current_batch, workers_by_batch, 
         status_running, status_failed, status_succeeded, status_pending, total,
         stat_details) {
-    displayed_batch = current_batch===null?'Default':current_batch;
-    json_batch = displayed_batch.replace(' ','+')
+    //json_batch = current_batch.replace(' ','+');
+    
+    function task_button(task_status, task_count) {
+        return `<form target="_blank" method="post" action='/ui/task/'>
+            <input type="hidden" name="status_filter" value="${task_status}">
+            <input type="hidden" name="batch_filter" value="${current_batch}">
+            <input type="submit" class="btn btn-outline-dark border-0" value=${task_count}>
+        </form>`
+    }
+
     return `
     <tr>
         <td>
         </td>
         <td width ="5%">
-            <a type="button" class="btn btn-outline-dark border-0" 
-                target="_blank" 
-                href="/ui/task/?sortby=&worker=&batch=${json_batch}">
-                    ${displayed_batch}
-            </a>
+            <form target="_blank" method="post" action='/ui/task/'>
+                <input type="hidden" name="batch_filter" value="${current_batch}">
+                <input type="submit" id="batch-tasks" value="${current_batch}" class="btn btn-outline-dark border-0">
+            </form>
         </td>
         <td>
             ${workers_by_batch.get(current_batch)}
@@ -38,39 +45,21 @@ function batch_line(current_batch, workers_by_batch,
                 </div>
             </div>
         </td>
-            <td width ="10%" style="padding-top: 14px;">
-            ${status_pending}
+
+        <td width ="10%" style="padding-top: 14px;">
+            ${task_button('pending',status_pending)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0" 
-                    target="_blank" href="/ui/task/?sortby=&worker=&batch=${json_batch}&show=running">
-                ${status_running}
-            </a>
+            ${task_button('running',status_running)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0" 
-                    target="_blank" 
-                    href="/ui/task/?sortby=&worker=&batch=${json_batch}&show=succeeded">
-                ${status_succeeded}
-            </a>
+            ${task_button('succeeded',status_succeeded)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0" 
-                    target="_blank" 
-                    href="/ui/task/?sortby=&worker=&batch=${json_batch}&show=failed">
-                ${status_failed}
-            </a>
+            ${task_button('failed',status_failed)}
         </td>
         <td>
-            <a type="button" 
-                    class="btn btn-outline-dark border-0"
-                    target="_blank" 
-                    href="/ui/task/?sortby=&worker=&batch=${json_batch}">
-                ${total}
-            </a>
+            ${task_button('all',total)}
         </td>
         <td>
             ${stat_details}
@@ -79,36 +68,36 @@ function batch_line(current_batch, workers_by_batch,
             <div class="btn-group">
                 <button type="button" 
                         title="simple pause" 
-                        onclick="displayModal('${displayed_batch}','pause')" 
+                        onclick="displayModal('${current_batch}','pause')" 
                         class="btn btn-outline-dark">
                     ${svg_pause}
                 </button>
                 <button type="button" 
                         title="go" 
-                        onclick="displayModal('${displayed_batch}','go','${status_paused}')"
+                        onclick="displayModal('${current_batch}','go','${status_paused}')"
                         class="btn btn-outline-dark">
                     ${svg_restart}
                 </button>
                 <button type="button" 
                         title="stop" 
-                        onclick="displayModal('${displayed_batch}','stop')"
+                        onclick="displayModal('${current_batch}','stop')"
                         class="btn btn-outline-dark">
                     ${svg_stop}
                 </button>
                 <button type="button" 
                         title="break" 
-                        onclick="displayModal('${displayed_batch}','break')" 
+                        onclick="displayModal('${current_batch}','break')" 
                         class="btn btn-outline-dark">
                     ${svg_break}
                 </button>
                 <button type="button"
                         title="clear" 
-                        onclick="displayModal('${displayed_batch}','clear')"
+                        onclick="displayModal('${current_batch}','clear')"
                         class="btn btn-outline-dark">
                     ${svg_delete}
                 </button>
             </div>
-            <div id="batch-modal-${displayed_batch}" class="modal">
+            <div id="batch-modal-${current_batch}" class="modal">
             </div>
         </td>
     </tr>`;
