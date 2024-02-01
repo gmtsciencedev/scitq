@@ -378,7 +378,7 @@ Recruiters are listed sorted by their rank and apply one after the other if thei
 When the Recruiter triggers it applies recruitment criteria:
 
 - `worker_flavor` : (mandatory) flavor of Worker to recruit,
-- `worker_provider`, `worker_region`: (optional) both are needed for deploy to occur, otherwise this is a "recycle oncly" recruiter. Note that setting both parameters will not prevent recycling, but make it considerably unlikely as if a recyclable worker is not immediately available a new deploy will occur,
+- `worker_provider`, `worker_region`: (optional) both are needed for deploy to occur, otherwise this is a "recycle only" recruiter. Note that setting both parameters will not prevent recycling, but make it considerably unlikely as if a recyclable worker is not immediately available a new deploy will occur,
 - `tasks_per_worker`: (mandatory) dividing the pending task number by this figure will set the need number of worker (up to `maximum_workers`),
 - `worker_concurrency`,`worker_prefetch`: this are settings for newly recruited workers (deployed or recycled). Contrarily to what happens with the workflow high level system, here `worker_concurrency` is not taken into account to estimate the number of needed workers, only `tasks_per_worker` is used.
 

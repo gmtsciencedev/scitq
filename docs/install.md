@@ -466,17 +466,30 @@ rm -fr build dist
 python3 -m pip install .
 ```
 
+#### For a server only
+
+Upgrade database (mandatory when upgrading to v1.2):
+```
+scitq-manage db upgrade
+```
+
+Update Ansible base config:
+```
+scitq-manage ansible install
+```
+(add with -p paramater if you have used a custom inventory directory)
+
+
 Relaunch the services:
 ```
-systemctl restart scitq
+systemctl restart scitq-main scitq-queue
 ```
-Or for a worker:
+
+#### For a worker
+
 ```
 systemctl restart scitq-worker
 ```
-
-You must also upgrade your ansible code, with `scitq-manage ansible install` (or with -p paramater if you have used a custom inventory directory)
-
 
 ## What's next?
 

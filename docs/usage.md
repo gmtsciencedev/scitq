@@ -131,7 +131,8 @@ NB the `/scratch` thing is unrelated to the eponymous language, it is just a rem
 
 ### resource (-r)
 
-Resources are very much like above inputs (and like theom you may specify several times -r), except for two things:
+Resources are very much like above inputs (and like them you may specify several times -r), except for two things:
+
 - they are shared between tasks. If you specify the same resource for several tasks it will be downloaded once per worker (not the case with input, they are downloaded separately for each task),
 - they can be processed, unlike input which are downloaded as they are, either adding `|gunzip` or adding `|untar` to the URI, in which case the downloaded file will be un-zipped (the `.gz` file will be replaced by its gunzipped version of itself without `.gz` extension) or untarred (unlike `tar x` and like `gunzip` the tar archive will be deleted after extraction, to save space). `|untar` process any file of `.tar`, `.tar.gz` or `.tgz` extension.
 
