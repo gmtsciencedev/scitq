@@ -519,6 +519,7 @@ wf.clean()
 The **project specifics** and **collecting samples** parts are just a sample use of python requests and ENA API, nothing related to scitq, and really classic.
 
 Some details about **QC Workflow**
+
 - In the Workflow declaration, you will find the recruitment rules specified as described: 5 worker max for each Step set with `max_step_workers=5` (there are 4 of them), but a maximum of 10 for the whole workflow, `max_workflow_workers=10`, so given that there are lots of samples, there should be 10 workers but changing from the first steps to the last as the samples are progressing into the workflow (logically, there should be relatively quickly 5 workers on step1, 5 on step2, and when all samples went through step1, the step1 workers moving to step3, etc.).
 - You see also that the level of concurrency is quite different between step1 and step2/3, which tell us that the workers will spent a significant amount of time for step2/3, compared to step1 (and maybe it would make sense to lower the maximum_worker setting for step1).
 - Last, you see that step4 is a single step out of the for loop, that will synthetize all the steps before which are on the model one step per sample. This uses the gather method for the step4: its required_tasks is set to `step3.gather()`, that is all the different iterations of step3. You see also the use of `step3.gather('output')` for step4 input.
