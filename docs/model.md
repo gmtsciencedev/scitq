@@ -391,21 +391,31 @@ Any abnormal ending of the app will trigger an RuntimeException preventing furth
 
 ### A more elaborate example
 
+This is a real life example, a QC workflow for a public study (that is remove low quality sequences and sequences that belong to the host (which is usual in microbiota studies), and normalize (rarefy) samples), using the nice docker collection from StaPH-B group.
+
+To run this script, you'll need to configure scitq with an access to Azure.
+You will also need to upload [CHM13v2 catalog](https://genome-idx.s3.amazonaws.com/bt/chm13v2.0.zip), unzip it, tar gz it (so that files are in a chm13v2 folder), and upload it to your favorite cloud storage. Adapt the resulting URI in the step2.
+
+NB: Tt is easy to adapt to OVH just change provider to 'ovh' flavor to 'c2-120' and region to 'GRA11' for instance in Workflow definition, change the URI to use s3:// instead of azure://. 
+
 ```python
 from scitq.workflow import Workflow
 import requests
-import os
+import sys
  
 SEED = 42
-REGISTRY='XXXXX.gra7.container-registry.ovh.net/library'
  
 ######################################################
 #                                                    #
 #    Project specifics                               #
 #                                                    #
 ######################################################
-bioproject='PRJNAxxxxxx'
-depth='20000000'
+if len(sys.argv)<3:
+    print(f'Usage: {sys.argv[0]} <bioproject accession PRJxxxxxxx> <depth>')
+    sys.exit(1)
+
+bioproject=sys.argv[1]
+depth=sys.argv[2]
 ena_query=f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={bioproject}&\
 result=read_run&fields=sample_accession,run_accession,library_strategy,library_layout&format=json&download=true&limit=0"
 azure_base = f'azure://rnd/raw/{bioproject}'
@@ -482,7 +492,30 @@ for sample,runs in samples.items():
 #    Monitoring and post-treatment                   #
 #                                                    #
 ######################################################
- 
+
+step4 = wf.step(
+    batch='stats',
+    name=f'stats',
+    command='apt update && apt install -y parallel && \
+find /input -name *.fastq | parallel -j $CPU --ungroup seqkit -j 1 stats {}',
+    container='staphb/seqkit',
+    concurrency=1,
+    required_tasks=step3.gather(),
+    input=step3.gather('output'),
+)
+
 wf.run(refresh=10)
 wf.clean()
 ```
+
+The **project specifics** and **collecting samples** parts are just a sample use of python requests and ENA API, nothing related to scitq, and really classic.
+
+Some details about **QC Workflow**
+- In the Workflow declaration, you will find the recruitment rules specified as described: 5 worker max for each Step set with `max_step_workers=5` (there are 4 of them), but a maximum of 10 for the whole workflow, `max_workflow_workers=10`, so given that there are lots of samples, there should be 10 workers but changing from the first steps to the last as the samples are progressing into the workflow (logically, there should be relatively quickly 5 workers on step1, 5 on step2, and when all samples went through step1, the step1 workers moving to step3, etc.).
+- You see also that the level of concurrency is quite different between step1 and step2/3, which tell us that the workers will spent a significant amount of time for step2/3, compared to step1 (and maybe it would make sense to lower the maximum_worker setting for step1).
+- Last, you see that step4 is a single step out of the for loop, that will synthetize all the steps before which are on the model one step per sample. This uses the gather method for the step4: its required_tasks is set to `step3.gather()`, that is all the different iterations of step3. You see also the use of `step3.gather('output')` for step4 input.
+
+Last while step1/2/3 are iterated a certain number of times (1 of each per sample), step4 is unique (1 iteration for all the samples, thus out of the for loop). The appearance of the workflow code remains clear and easy to read, and the fact that step4 is out of the loop make it clear that it is unique. When defining step4 requirement, the use of gather() method bypasses the fact that, technically, the `step3` that is designated here out of loop is just the last of all step3: gather() result does not depend on which iteration of the step it is called.
+
+Last the result of the step4 is downloaded by the final `wf.clean()` (which download STDOUT for all tasks). 
+NB in production, it is recommanded to use a redirection to some result file in `/output` when the output of a command is the result of the analysis and not a simple log.
