@@ -23,6 +23,9 @@ Since v1.0rc10, a new table, job, has been added to follow internal tasks (like 
 
 Since v1.2, a new table, recruiter, has been added to allow dynamic worker allocation for tasks (new deployments and recycling of workers). This component is also used by scitq.workflow
 
+![schema_recruiter](img/recruiter.1degree.png)
+
+
 Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
 
 A direct interaction with the database must be used with caution since of course you could do anything. However there are specific cases (notably massive update of commands) where it may be extremely efficient. These are discussed in [Using sql directly](troubleshoot.md#using-sql-directly) chapter of troubleshoot.
@@ -275,6 +278,7 @@ So under the hood, Step is attached to a Batch object, which is named after the 
 Some of these arguments are mandatory, other are optional: this will be specified for each argument. Others can be set when creating the Workflow (in which case they become a default value that can be overriden for a specific Step), which will be specified with 'can be set at workflow level'. In one specific case (`maximum_workers`), the attribute name at Workflow level is different (`max_step_workers`), this is because a global workflow maximum can be set with `max_workflow_workers`, and it prevents ambiguity.
 
 Let us dive into Step attributes, first the Batch or shared attributes:
+
 - `batch` (mandatory): This is the name of the Batch object, but it is also used to define the batch to which Tasks will belong, the actual batch of the Tasks is <Workflow name>.<Step batch>, so as to avoid any collision with a similar Step from another Workflow,
 - `maximum_worker` (mandatory if Workflow `max_step_worker` is unset): this is the maximum number of workers to be allocated for this batch, see the worker recruitment system below,
 - `concurrency` (mandatory if Worfkow `concurrency` is unset): this is the concurrency setting for newly recruited workers,
@@ -284,6 +288,7 @@ Let us dive into Step attributes, first the Batch or shared attributes:
 - `tasks_per_worker` (optional): another logic for worker recruitment: in above exemple, you have a concurrency of 10, that is your worker launches ten tasks simultaneously, but in the end, you expect your worker to do 100 tasks (in 10 rounds). The following equation should be true: `tasks_per_worker = concurrency * rounds`. It's just another way of specifying your expectations.
 
 Then the Task or individual attributes (they may still get the same value for each individual task):
+
 - `command` (mandatory): the command to launch for this Step,
 - `name` (optional, recommanded): the name of the task, it defeats the purpose of this argument to use the same name for each task, as it is meant to distinguish between tasks: think of `batch` as the category of task you're launching and `name` as each individual task's name.
 - `shell` (optional, can be set at Workflow level): see shell attribute at task level: if set to True, the command is a shell instruction and not a simple binary call. Very likely to get the same value for all tasks of a kind, but formally not required to.
@@ -295,6 +300,7 @@ Then the Task or individual attributes (they may still get the same value for ea
 
 
 This specific argument is individual but slightly different from the equivalent argument of `task_create`:
+
 - `required_tasks` (optional): it can be a Step, Task or any object with an integer attribute named `task_id` or an simple integer, or a list of those things. A common pattern is to take the previous Step object of the workflow as a required task for the next. (NB in `task_create`, the equivalent argument is called `required_task_ids` and can only be a list of integers)
 
 
@@ -363,12 +369,14 @@ Recruiter objects are the low level objects implementing the recruitment rules o
 A Recruiter is attached to a `batch` (and thus may operate outside of Workflow use). A batch may have several strictly ranked Recruiters (only one Recruiter of a certain `rank`, starting by 1 and increasing, is allowed per `batch`, creating a new Recruiter for an already existing `rank` for a certain `batch` is the same as updating the old Recruiter if one existed before).
 
 Each Recruiter has some triggering parameters:
+
 - `minimum_tasks` : a minimal pending task number (which default to 0, trigger as soon as one pending task is there),
 - `maximum_workers` : a maximum number of workers which is reached for this batch will untrigger the Recruiter.
 
 Recruiters are listed sorted by their rank and apply one after the other if their triggering conditions are met. Thus the higher the rank, the more likely the `maximum_workers` condition is met.
 
 When the Recruiter triggers it applies recruitment criteria:
+
 - `worker_flavor` : (mandatory) flavor of Worker to recruit,
 - `worker_provider`, `worker_region`: (optional) both are needed for deploy to occur, otherwise this is a "recycle oncly" recruiter. Note that setting both parameters will not prevent recycling, but make it considerably unlikely as if a recyclable worker is not immediately available a new deploy will occur,
 - `tasks_per_worker`: (mandatory) dividing the pending task number by this figure will set the need number of worker (up to `maximum_workers`),
