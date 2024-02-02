@@ -221,6 +221,7 @@ s.join(tasks, retry=2)
     remember to use `s.task_create(command="sh -c '...'")` (double quote outside) and not `s.task_create(command='sh -c "..."')` (simple quote outside) to prevent intermediary shell interpretation.
 
 Since v1.2, `create_task` accept a `shell` optional argument, which default to `False`. If set to `True`, then the command is executed within a shell (`sh` shell). Shell command will be required:
+
 - if you do anything complex such as chaining two commands with `&&` or piping `|`, 
 - but also some simple stuff as shell expansion `ls *.png`, 
 - or if you use environment variables `touch $OUTPUT/myemptyoutput`. 
@@ -232,11 +233,13 @@ Most of the time, using `shell=True` is harmless if not useful. However, first, 
 **New in v1.2**
 
 While scitq.lib offers an excellent way of executing a simple command at a large scale, implementing a complete chain of small steps can become tedious. You can of course execute a more elaborate script chaining different commands in a task but this has several drawbacks:
+
 - First, this means you will not be able to use ready made dockers, you will have to write (and maintain) your specific dedicated docker,
 - Second, you will have two codes to maintain: the script that run within the task, and the code that distribute the tasks,
 - Third, some steps within your script may have specific hardware requirements while other may not, which may lead to unoptimal use of worker nodes for certain steps.
 
 scitq.worker aims to solve this 3 issues, it introduces Workflow and Step objects, Worker containing Steps and Steps being linked together by dependency relations:
+
 - Each step use a single docker, maximising reuse opportunities,
 - which in turn means the logic of each step is simple enough so as not to require a specific script,
 - plus each Step can express specific worker requirements - thus enabling timely and adapted worker usage.
@@ -280,7 +283,7 @@ Some of these arguments are mandatory, other are optional: this will be specifie
 Let us dive into Step attributes, first the Batch or shared attributes:
 
 - `batch` (mandatory): This is the name of the Batch object, but it is also used to define the batch to which Tasks will belong, the actual batch of the Tasks is <Workflow name>.<Step batch>, so as to avoid any collision with a similar Step from another Workflow,
-- `maximum_worker` (mandatory if Workflow `max_step_worker` is unset): this is the maximum number of workers to be allocated for this batch, see the worker recruitment system below,
+- `maximum_worker` (mandatory if Workflow `max_step_workers` is unset): this is the maximum number of workers to be allocated for this batch, see the worker recruitment system below,
 - `concurrency` (mandatory if Worfkow `concurrency` is unset): this is the concurrency setting for newly recruited workers,
 - `provider`, `region`, `flavor` (optional, can be set at Workflow level): these are mandatory if new workers should be deployed, if any of these is unset only recycling of currently idle workers will happen if at least `flavor` is set, see worker recruitment below,
 - `prefetch` (optional, default to 0): this is the prefetch setting for newly recruited workers,

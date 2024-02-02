@@ -31,54 +31,56 @@ UI_MAX_DISPLAYED_ROW = 500
 WORKER_DESTROY_RETRY=2
 DEFAULT_BATCH = 'Default'
 
-if os.environ.get('QUEUE_PROCESS') and os.environ.get('QUEUE_LOG_FILE'):
-    check_dir(os.environ.get('QUEUE_LOG_FILE'))
-    dictConfig({
-        'version': 1,
-        'formatters': {'default': {
-            'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-        }},
-        'handlers': {'wsgi': {
-            'class': 'logging.StreamHandler',
-            'stream': 'ext://flask.logging.wsgi_errors_stream',
-            'formatter': 'default'
-        }, "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "default",
-            "filename": os.environ.get('QUEUE_LOG_FILE'),
-            "maxBytes": int(os.environ.get('QUEUE_LOG_FILE_MAX_SIZE',
-                os.environ.get('LOG_FILE_MAX_SIZE',"10000000"))),
-            "backupCount": int(os.environ.get('QUEUE_LOG_FILE_KEEP',
-                os.environ.get('LOG_FILE_KEEP',"3")))
-        }},
-        'root': {
-            'level': os.environ.get('LOG_LEVEL',"INFO"),
-            'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
-        }
-    })
-else:
-    check_dir(os.environ.get('LOG_FILE',"/tmp/scitq.log"))
-    dictConfig({
-        'version': 1,
-        'formatters': {'default': {
-            'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-        }},
-        'handlers': {'wsgi': {
-            'class': 'logging.StreamHandler',
-            'stream': 'ext://flask.logging.wsgi_errors_stream',
-            'formatter': 'default'
-        }, "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "default",
-            "filename": os.environ.get('LOG_FILE',"/tmp/scitq.log"),
-            "maxBytes": int(os.environ.get('LOG_FILE_MAX_SIZE',"10000000")),
-            "backupCount": int(os.environ.get('LOG_FILE_KEEP',"3"))
-        }},
-        'root': {
-            'level': os.environ.get('LOG_LEVEL',"INFO"),
-            'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
-        }
-    })
+def setup_log():
+    """Setting up log must occur only in specific contexts"""
+    if os.environ.get('QUEUE_PROCESS') and os.environ.get('QUEUE_LOG_FILE'):
+        check_dir(os.environ.get('QUEUE_LOG_FILE'))
+        dictConfig({
+            'version': 1,
+            'formatters': {'default': {
+                'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+            }},
+            'handlers': {'wsgi': {
+                'class': 'logging.StreamHandler',
+                'stream': 'ext://flask.logging.wsgi_errors_stream',
+                'formatter': 'default'
+            }, "file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "formatter": "default",
+                "filename": os.environ.get('QUEUE_LOG_FILE'),
+                "maxBytes": int(os.environ.get('QUEUE_LOG_FILE_MAX_SIZE',
+                    os.environ.get('LOG_FILE_MAX_SIZE',"10000000"))),
+                "backupCount": int(os.environ.get('QUEUE_LOG_FILE_KEEP',
+                    os.environ.get('LOG_FILE_KEEP',"3")))
+            }},
+            'root': {
+                'level': os.environ.get('LOG_LEVEL',"INFO"),
+                'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
+            }
+        })
+    else:
+        check_dir(os.environ.get('LOG_FILE',"/tmp/scitq.log"))
+        dictConfig({
+            'version': 1,
+            'formatters': {'default': {
+                'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+            }},
+            'handlers': {'wsgi': {
+                'class': 'logging.StreamHandler',
+                'stream': 'ext://flask.logging.wsgi_errors_stream',
+                'formatter': 'default'
+            }, "file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "formatter": "default",
+                "filename": os.environ.get('LOG_FILE',"/tmp/scitq.log"),
+                "maxBytes": int(os.environ.get('LOG_FILE_MAX_SIZE',"10000000")),
+                "backupCount": int(os.environ.get('LOG_FILE_KEEP',"3"))
+            }},
+            'root': {
+                'level': os.environ.get('LOG_LEVEL',"INFO"),
+                'handlers': ['wsgi' if 'DEBUG' in os.environ else 'file']
+            }
+        })
 
 IS_SQLITE = 'sqlite' in SQLALCHEMY_DATABASE_URI
 

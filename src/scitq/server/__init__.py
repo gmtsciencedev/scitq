@@ -4,9 +4,9 @@ import logging as log
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_migrate import Migrate
-from .db import db
 
-from .config import WORKER_CREATE
+from .config import WORKER_CREATE, setup_log
+from .db import db
 
 def __background__(*args):
     raise RuntimeError('Not initialized')
@@ -14,6 +14,7 @@ def __background__(*args):
 migrate=Migrate()
 
 def create_app():
+    setup_log()
     log.info('Starting')
     log.warning(f'WORKER_CREATE is {WORKER_CREATE}')
 
