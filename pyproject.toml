@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitq"
-version = "1.2rc2"
+version = "1.2rc3"
 authors = [
   { name="Raynald de Lahondès" },
   { name="Rémi Tan" }
@@ -14,7 +14,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "License :: OSI Approved :: MIT License",
     "Development Status :: 5 - Production/Stable",
     "Operating System :: OS Independent",
 ]
