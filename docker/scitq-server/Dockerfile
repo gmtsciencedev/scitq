@@ -19,13 +19,10 @@ COPY run_services.sh /usr/local/bin/
 ENV SQLALCHEMY_DATABASE_URI=sqlite:////var/lib/scitq/scitq.db
 ENV FLASK_APP=scitq.server
 ENV PATH=/bin:/sbin:/usr/bin:/usr/local/bin
-ENV LOG_FILE=/var/log/scitq/scitq.log
-ENV QUEUE_LOG_FILE=/var/log/scitq/scitq-queue.log
-ENV LOG_FILE_MAX_SIZE=10000000
-ENV LOG_FILE_KEEP=10
 ENV SCITQ_SERVER=127.0.0.1
 ENV SCITQ_SERVER_PROCESS=2
 ENV SCITQ_PRODUCTION=1
+ENV DEBUG=1
 VOLUME ["/root/.ssh"]
 ENTRYPOINT [ "sh", "/usr/local/bin/run_services.sh" ]
 
