@@ -3,7 +3,7 @@ FROM docker:20.10.21-dind-alpine3.17
 RUN apk add --no-cache python3 wget  gcc python3-dev libc-dev linux-headers && \
     wget https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py && \
-    pip install scitq==1.2rc4 && \
+    pip install scitq==1.2rc5 && \
     apk del gcc python3-dev libc-dev linux-headers wget && \
     rm get-pip.py
 

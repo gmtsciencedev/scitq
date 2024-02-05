@@ -8,9 +8,10 @@ import json as json_module
 from .model import Task, Execution, Signal, Requirement, Worker, create_worker_destroy_job, Job, Recruiter, delete_batch
 from .db import db
 from .config import IS_SQLITE
+from ..constants import TASK_STATUS
 
 
-api = Api(version='1.0', title='TaskMVC API',
+api = Api(version='1.2', title='TaskMVC API',
     description='A simple TaskMVC API'
 )
 
@@ -100,7 +101,7 @@ ns = api.namespace('tasks', description='TASK operations')
 
 class TaskDAO(BaseDAO):
     ObjectType = Task
-    authorized_status = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
+    authorized_status = TASK_STATUS
 
     def list(self, **args):
         task_list = []
