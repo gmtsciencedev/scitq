@@ -1,23 +1,33 @@
 FROM alpine:3.17
 
-RUN apk add --no-cache python3 wget  gcc python3-dev libc-dev linux-headers ansible && \
+RUN apk add --no-cache python3 wget  gcc python3-dev libc-dev linux-headers ansible supervisor uwsgi && \
     wget https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py && \
-    pip install scitq==1.0 openstacksdk==0.61 && \
+    pip install scitq==1.2rc4 openstacksdk==0.61 pyuwsgi && \
     ansible-galaxy install rolehippie.mdadm && \
-    ansible-galaxy collection install openstack.cloud && \
-    ansible-galaxy collection install azure.azcollection:1.8.0 && \
+    ansible-galaxy collection install openstack.cloud:1.8.0 && \
+    ansible-galaxy collection install azure.azcollection && \
     apk del gcc python3-dev libc-dev linux-headers wget && \
     rm get-pip.py
 
 RUN scitq-manage ansible install
+RUN mkdir /var/lib/scitq
 
-ENV FLASK_APP=scitq.server
+COPY supervisord.conf /etc/supervisord.conf
+COPY run_services.sh /usr/local/bin/
+
 ENV SQLALCHEMY_DATABASE_URI=sqlite:////var/lib/scitq/scitq.db
-ENV DEBUG=1
-
-VOLUME ["/var/lib/scitq" , "/root/.ssh", "/etc/ansible/inventory/02-scitq"]
-ENTRYPOINT [ "flask", "run", "--host=0.0.0.0" ]
+ENV FLASK_APP=scitq.server
+ENV PATH=/bin:/sbin:/usr/bin:/usr/local/bin
+ENV LOG_FILE=/var/log/scitq/scitq.log
+ENV QUEUE_LOG_FILE=/var/log/scitq/scitq-queue.log
+ENV LOG_FILE_MAX_SIZE=10000000
+ENV LOG_FILE_KEEP=10
+ENV SCITQ_SERVER=127.0.0.1
+ENV SCITQ_SERVER_PROCESS=2
+ENV SCITQ_PRODUCTION=1
+VOLUME ["/root/.ssh"]
+ENTRYPOINT [ "sh", "/usr/local/bin/run_services.sh" ]
 
 EXPOSE 5000
 

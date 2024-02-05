@@ -210,6 +210,7 @@ def main():
     subsubparser=db_parser.add_subparsers(dest='action')
     db_upgrade_parser=subsubparser.add_parser('upgrade',help='Migrate the database to the current version of scitq')
     db_init_parser=subsubparser.add_parser('init',help='Initialize a new database with current version of scitq')
+    db_upgrade_parser=subsubparser.add_parser('upgrade-or-init',help='Migrate the database to the current version of scitq if it exists, initialize it otherwise')
 
     args=parser.parse_args()
 
@@ -479,6 +480,19 @@ def main():
             s.recruiter_delete(batch=args.batch, rank=args.rank)
 
     elif args.object=='db':
+
+        if args.action=='upgrade-or-init':
+            dotenv.load_dotenv(args.conf)
+            from .default_settings import SQLALCHEMY_DATABASE_URI
+            from sqlalchemy import create_engine
+            from sqlalchemy.exc import OperationalError
+            engine = create_engine(SQLALCHEMY_DATABASE_URI)
+            try:
+                engine.connect()
+                engine.execute('SELECT * FROM task LIMIT 1')
+                args.action='upgrade'
+            except OperationalError:
+                args.action='init'
 
         if args.action=='init':
             dotenv.load_dotenv(args.conf)
