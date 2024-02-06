@@ -285,6 +285,7 @@ class Executor:
         when a process apparently fails - return True if inpection worked, f"""
         if self.container_id is not None:
             log.warning(f'Docker inspecting task {self.task_id}')
+            #TODO : try to grab logs in more case, lots of case when this does not work 
             container_inspection_data = docker_inspect(self.container_id)
             if container_inspection_data is not None:
                 try:

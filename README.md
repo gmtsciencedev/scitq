@@ -10,7 +10,14 @@ Examples|[https://github.com/gmtsciencedev/scitq-examples](https://github.com/gm
 Keywords|task, queue, job, python, distributed, science
 
 
-**scitq** is a distributed task queue in python. While quite generalist, it was primarily designed for scientific jobs, relatively heavy tasks that can be expressed as a Unix shell instruction. It has also a specificity of relatively feebly interdependent tasks.
+**scitq** is a distributed task queue on steroids. Coded in python, it focuses on optimization 
+and ease of use. Optimization can be done by live tuning the tasks flow in a running process, 
+looking in real time at the workers stats and the different tasks' output. 
+
+A task is anything that can be express as a Unix command, and can be a complex script that 
+can be edited while the process is running. Scitq has a focus on relatively heavy tasks (e.g. 
+"scientific tasks"): it manages better thousands 1 hour long tasks than a million 1 second 
+long tasks (a scenario for which we strongly recommand Celery).
 
 It has a few added capabilities apart from strict task distribution:
 

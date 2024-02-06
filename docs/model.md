@@ -273,7 +273,7 @@ Then in the for loop, we instanciate Steps. The Step attributes are the same you
 
 In above example, there is only one step in the workflow, but in terms of python objects this is not true, there is one instance of Workflow and one hundred instances of Step.
 
-So the `step1` variable is overwritten 99 times, not a very clean code. Step is an hybrid object. By hybrid, we mean that it borrows from the Object Factory pattern: Step is primarily Factory for Tasks. So we **should** declare one Step object and then 100 Tasks from this single Step. But, as you will see in a more elaborate example below, making Step hybrid provides a natural way of writing things.
+So the `step1` variable is overwritten 99 times, not a very clean code. Step is an hybrid object. By hybrid, we mean that it borrows from the Object Factory pattern: Step is primarily a Factory for Tasks. So we **should** declare one Step object and then 100 Tasks from this single Step. But, as you will see in a more elaborate example below, making Step hybrid provides a natural way of writing things.
 
 So under the hood, Step is attached to a Batch object, which is named after the `batch` attribute, and to several Task objects. Some of the Step attributes apply to this Batch object like `maximum_workers` or `flavor` and are shared between Tasks, while others like `name`, `command` apply to individual Tasks. It may sound awkward, but if we look at Step attributes, guessing which apply to which is pretty obvious.
 
@@ -282,7 +282,7 @@ Some of these arguments are mandatory, other are optional: this will be specifie
 
 Let us dive into Step attributes, first the Batch or shared attributes:
 
-- `batch` (mandatory): This is the name of the Batch object, but it is also used to define the batch to which Tasks will belong, the actual batch of the Tasks is <Workflow name>.<Step batch>, so as to avoid any collision with a similar Step from another Workflow,
+- `batch` (mandatory): This is the name of the Batch object, but it is also used to define the batch to which Tasks will belong, the actual batch of the Tasks is `<Workflow name>.<Step batch>`, so as to avoid any collision with a similar Step from another Workflow,
 - `maximum_worker` (mandatory if Workflow `max_step_workers` is unset): this is the maximum number of workers to be allocated for this batch, see the worker recruitment system below,
 - `concurrency` (mandatory if Worfkow `concurrency` is unset): this is the concurrency setting for newly recruited workers,
 - `provider`, `region`, `flavor` (optional, can be set at Workflow level): these are mandatory if new workers should be deployed, if any of these is unset only recycling of currently idle workers will happen if at least `flavor` is set, see worker recruitment below,
@@ -349,18 +349,22 @@ One of the benefits of the Workflow system is a more dynamic Worker allocation s
 #### Recruitment rules
 
 To recruit, scitq need to know what kind of worker you need, how many of them, and where to recruit them:
+
 - the kind of worker is set by the `flavor` argument available at Workflow or Step level: this is the same argument that is expected in `worker_deploy()` call that we have seen before. There is one novelty in v1.2, now even manually deployed worker have a flavor, which by default is `'local'`, but can be changed notably in `/etc/scitq-worker.conf` with `SCITQ_FLAVOR=...`
 (this value is overriden by the one in scitq database if it exists, so to change the flavor of a manually deployed worker, change its /etc/scitq-worker.conf and its scitq database value with `scitq-manage worker update -n ... -f <newflavor>`).
 - where to recruit is set by the `provider` and `region` parameters. If both of those are set, it triggers the possibility to deploy new workers (but it does not make that automatic), if either is missing, no new deploy will occur, but recycling an already present worker remains possible.
 
 The last thing to know is to specify how many workers are needed, which is computed using the following rules:
+
 1) There must be some Tasks with status `pending` for this Step (that is tasks not running yet, but with their requirements (a.k.a. `required_tasks`) fulfilled), also scitq know that each worker can do `Step.concurrency` tasks in parallel so basically `# pending tasks / Step.concurrency` is the right base figure,
 2) An upper limit is set to avoid renting half Azure or half OVH because the Workflow went berseck, this is the `Step.maximum_workers` attribute.
 
 This is the minimal setup, but there are several refinement:
+
 - First, the `Step.maximum_workers` can be set really high and a lower limit can be set with `rounds` or `tasks_per_worker` Step level attributes. Both attributes are syntaxic sugar to specify how long you would ideally wait, if it remains below the hard limit that is `Step.maximum_workers`: the `rounds` argument is how many time scitq will reuse the worker for this Step. So if `rounds=10` and `concurrency=10`, it means scitq will expect one worker per 100 tasks. In that case, specifying `rounds=10` is the same as `tasks_per_worker=100`.
 - Second, scitq will always preferably recycle, that is reuse an available worker of the right kind, provided this worker has some spare possibilities from its previously attributed tasks (e.g. no more pending tasks in its previous batch). However you can force somehow this behaviour:
-  - for instance if `Workflow.max_worklow_workers=Sum of Step maximum_workers`, then new worker deploy propability is maximmal: as soon as a Task reach the `pending` status, if a worker of the right `flavor` is not immediately available, a new Worker is deployed,
+
+  - for instance if `Workflow.max_worklow_workers=Sum of Step maximum_workers`, then new worker deploy propability is maximal: as soon as a Task reaches the `pending` status, if a worker of the right `flavor` is not immediately available, a new Worker is deployed,
   - If `Worker.max_workflow_workers` is set to 0, then no new deploy will happen whatsoever, scitq will wait indefinitely that by chance a Worker of the right `flavor` becomes available.
   - An intermediate setup will trigger an initial and progressive recruitment up to `Worker.max_workflow_workers`, and then scitq will recycle these workers between the different Workflow steps (at least, those requiring the same `flavor`).
 
@@ -525,9 +529,8 @@ Some details about **QC Workflow**
 
 - In the Workflow declaration, you will find the recruitment rules specified as described: 5 worker max for each Step set with `max_step_workers=5` (there are 4 of them), but a maximum of 10 for the whole workflow, `max_workflow_workers=10`, so given that there are lots of samples, there should be 10 workers but changing from the first steps to the last as the samples are progressing into the workflow (logically, there should be relatively quickly 5 workers on step1, 5 on step2, and when all samples went through step1, the step1 workers moving to step3, etc.).
 - You see also that the level of concurrency is quite different between step1 and step2/3, which tell us that the workers will spent a significant amount of time for step2/3, compared to step1 (and maybe it would make sense to lower the maximum_worker setting for step1).
-- Last, you see that step4 is a single step out of the for loop, that will synthetize all the steps before which are on the model one step per sample. This uses the gather method for the step4: its required_tasks is set to `step3.gather()`, that is all the different iterations of step3. You see also the use of `step3.gather('output')` for step4 input.
+- Last, you see that step4 is a single step out of the for loop (1 iteration), that will synthetize all the iterations of step3. This uses the gather method for the step4 requirements: its required_tasks is set to `step3.gather()`, that is all the different iterations of step3. You can also see the use of `step3.gather('output')` for step4 input.
 
-Last while step1/2/3 are iterated a certain number of times (1 of each per sample), step4 is unique (1 iteration for all the samples, thus out of the for loop). The appearance of the workflow code remains clear and easy to read, and the fact that step4 is out of the loop make it clear that it is unique. When defining step4 requirement, the use of gather() method bypasses the fact that, technically, the `step3` that is designated here out of loop is just the last of all step3: gather() result does not depend on which iteration of the step it is called.
+Last while step1/2/3 are iterated a certain number of times (1 of each per sample) and step4 is unique (1 iteration for all the samples), the appearance of the workflow code remains clear and easy to read. When defining step4 requirement, the use of gather() method bypasses the fact that, technically, the `step3` that is designated here out of loop is just the last of all step3: gather() result does not depend on which iteration of the step3 it is called.
 
 Last the result of the step4 is downloaded by the final `wf.clean()` (which download STDOUT for all tasks). 
-NB in production, it is recommanded to use a redirection to some result file in `/output` when the output of a command is the result of the analysis and not a simple log.
