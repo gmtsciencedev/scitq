@@ -50,13 +50,14 @@ these, so docker remains non-mandatory in scitq).
 - scitq code can be patched while a task serie is running (client and/or server code),
 - it is resilient to network troubles,
 - loss of a node or temporary server loss (24 hours) should have very limited impact,
-- you can mix different cloud resources in the same serie (using S3, OVH, and Azure together if that is what you want).
+- you can mix different cloud resources in the same serie (using S3, OVH, and Azure together if that is what you want),
+- you can express a complex workflow of different steps and tasks dependancies, which may be simpler to create and maintain than workflows within a task that was the only possibility with previous versions.
 
 It provides convenient utilities such as scitq-fetch which can replace specialised tools like AWS or Azure tool and address the different storages the same way.
 
 It does not provide:
 
-- a workflow solution, as in its usual use case workflows are managed within tasks (notably in bioinformatics, useful programs tends to be provided as packaged workflows - no need to re-implement what is already done),
+- a mandatory workflow solution, as a in a number of cases workflows are managed within tasks,
 - an abstract environment: it runs vanilla docker with some mount options (or whatever option you want),
 - a custom language to express the orchestration logic, yet it provides a simple python library (`scitq.lib`) which makes orchestration through python an easy task (it can be done with some shell code also)
 
