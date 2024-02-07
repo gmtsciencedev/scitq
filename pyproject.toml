@@ -19,7 +19,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies=['Flask < 2.2',
-        'Werkzeug==2.3.8',
+        'Werkzeug==2.2.2',
         'sqlalchemy <= 1.5',
         'flask-sqlalchemy < 3.0.0',
         'Flask-Migrate',
