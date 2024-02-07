@@ -595,8 +595,8 @@ execution = api.model('Execution', {
         description="timestamp of execution creation (on worker)"),
     'modification_date': fields.DateTime(readonly=True,
         description="timestamp of execution last modification"),
-    'output': fields.String(readonly=True, description='The standard output of the execution'),
-    'error': fields.String(readonly=True, description='The standard error of the execution (if any)'),
+    'output': fields.String(readonly=False, required=False, description='The standard output of the execution'),
+    'error': fields.String(readonly=False, required=False, description='The standard error of the execution (if any)'),
     'output_files': fields.String(readonly=True, description='A list of output files transmitted (if any)'),
     'command': fields.String(required=False, description='The command that was really launched for this execution (it case Task.execution is modified)'),
     'latest': fields.Boolean(readonly=True, description='Latest or current execution for the related task')

@@ -328,7 +328,7 @@ In this file we will finish with manual worker deployment and security.
 
 Just like for scitq-server you need simply the python setuptools. With a Ubuntu distribution just do that:
 ```bash
-apt install python3 python3-pip unzip
+apt install python3 python3-pip unzip pigz
 pip3 install --upgrade pip
 pip3 install --upgrade setuptools
 ```

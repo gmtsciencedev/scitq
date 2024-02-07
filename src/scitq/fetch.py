@@ -648,7 +648,7 @@ def _my_fastq_download(method, url, md5, destination):
 
 
 @retry_if_it_fails(PUBLIC_RETRY_TIME)
-def fastq_run_get(source, destination):
+def fastq_run_get(source, destination, methods=['fastq_aspera', 'fastq_ftp', 'sra']):
     """Fetch some fastq associated to a run accession"""
     log.info(f'Run accession: uploading {source} to {destination}')
     if not destination.endswith('/'):
@@ -690,8 +690,9 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
     if 'fastq_ftp' or 'fastq_aspera' in run:
         ftp_md5s = run['fastq_md5'].split(';')
 
-        for method in ['fastq_aspera', 'fastq_ftp', 'sra']:
+        for method in methods:
             if method in ['fastq_aspera','sra'] and not docker_available:
+                log.exception(f'Cannot use {method} as docker is not available.')
                 continue
             if method == 'sra':
                 return fastq_sra_get(uri_match['run_accession'], destination, 
@@ -724,7 +725,7 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
 SUBMITTED_RUN_REGEXP=re.compile(r'^run\+submitted://(?P<run_accession>[^/]*)/?$')
 
 @retry_if_it_fails(PUBLIC_RETRY_TIME)
-def submitted_run_get(source, destination):
+def submitted_run_get(source, destination, methods=['submitted_aspera', 'submitted_ftp']):
     """Fetch some fastq associated to a run accession"""
     log.info(f'Run accession: uploading {source} to {destination}')
     if not destination.endswith('/'):
@@ -751,7 +752,7 @@ submitted_ftp&format=json&download=true&limit=0", timeout=30)
     if 'submitted_ftp' or 'submitted_aspera' in run:
         ftp_md5s = run['submitted_md5'].split(';')
 
-        for method in ['submitted_aspera', 'submitted_ftp']:
+        for method in methods:
             if method in run:
                 if method in ['submitted_aspera'] and not docker_available:
                     continue
@@ -888,7 +889,7 @@ def http_get(url, destination):
 
 # generic wrapper
 
-GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
+GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9@+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
 
 def get(uri, destination):
     """General downloader source should start with s3://... or ftp://...
@@ -921,8 +922,18 @@ def get(uri, destination):
             fasp_get(source, destination)
         elif m['proto']=='run+fastq':
             fastq_run_get(source, destination)       
+        elif m['proto']=='run+fastq@sra':
+            fastq_run_get(source.replace('run+fastq@sra://','run+fastq://'), destination, methods=['sra'])       
+        elif m['proto']=='run+fastq@ftp':
+            fastq_run_get(source.replace('run+fastq@ftp://','run+fastq://'), destination, methods=['fastq_ftp'])       
+        elif m['proto']=='run+fastq@aspera':
+            fastq_run_get(source.replace('run+fastq@aspera://','run+fastq://'), destination, methods=['fastq_aspera'])       
         elif m['proto']=='run+submitted':
-            submitted_run_get(source, destination)
+            submitted_run_get(source, destination)    
+        elif m['proto']=='run+submitted@ftp':
+            submitted_run_get(source.replace('run+submitted@ftp://','run+submitted://'), destination, methods=['submitted_ftp'])       
+        elif m['proto']=='run+submitted@aspera':
+            submitted_run_get(source.replace('run+submitted@aspera://','run+submitted://'), destination, methods=['submitted_aspera']) 
         elif m['proto'] in ['http','https']:
             http_get(source, destination)
         else:
@@ -992,7 +1003,9 @@ def check_uri(uri):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
-        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https']:
+        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https',
+                              'run+fastq@sra','run+fastq@ftp','run+fastq@aspera',
+                              'run+submitted@ftp','run+submitted@aspera',]:
             raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchError(f"Malformed URI : {uri}")

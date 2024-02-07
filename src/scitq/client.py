@@ -110,9 +110,10 @@ def docker_inspect(container_id):
         return None
 
 def docker_logs(container_id):
-    return subprocess.run(['docker','logs',container_id],
-            capture_output=True, check=True
-            ).stdout.decode('utf-8')
+    process = subprocess.run(['docker','logs',container_id],
+            capture_output=True, check=True, encoding='utf-8'
+            )
+    return process.stdout, process.stderr
 
 
 
@@ -293,11 +294,12 @@ class Executor:
                         log.warning('Docker process was too quick for us but we can inspect what went on')
                         return_code=container_inspection_data['State']['ExitCode']
                         self.status = STATUS_SUCCEEDED if return_code==0 else STATUS_FAILED
-                        output = docker_logs(self.container_id)
+                        output,error = docker_logs(self.container_id)
                         self.s.execution_update(
                             self.execution_id, 
                             status='succeeded' if self.status==STATUS_SUCCEEDED else 'failed',
                             output=output,
+                            error=error,
                             command=self.command,
                             return_code=return_code,
                             output_files=output_files
@@ -880,6 +882,7 @@ class Client:
 
     def clean_all(self):
         """Clean all unused directory"""
+        log.warning(f'Working_dirs are {self.working_dirs.values()}')
         for dir in os.listdir(BASE_WORKDIR):
             full_dir = os.path.join(BASE_WORKDIR, dir)
             if full_dir==BASE_RESOURCE_DIR:

@@ -5,7 +5,7 @@ Item|Project site
 Source|[https://github.com/gmtsciencedev/scitq](https://github.com/gmtsciencedev/scitq)
 Documentation|[https://scitq.readthedocs.io/](https://scitq.readthedocs.io/)
 Download|[https://pypi.org/project/scitq/](https://pypi.org/project/scitq/)
-Docker images|[worker](https://hub.docker.com/repository/docker/gmtscience/scitq-worker) and [server](https://hub.docker.com/repository/docker/gmtscience/scitq-server)
+Docker images|[worker](https://hub.docker.com/r/gmtscience/scitq-worker) and [server](https://hub.docker.com/r/gmtscience/scitq-server)
 Examples|[https://github.com/gmtsciencedev/scitq-examples](https://github.com/gmtsciencedev/scitq-examples)
 Keywords|task, queue, job, python, distributed, science
 

@@ -382,13 +382,14 @@ class Server:
             ), asynchronous=asynchronous)
 
     def execution_update(self, id, status=None, pid=None, return_code=None, 
-                        output=None, output_files=None, command=None,
+                        output=None, error=None, output_files=None, command=None,
                         asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/executions/{id}', data=_clean(
             {'status':status, 'pid':pid, 'return_code':return_code, 
-                'output':output, 'output_files':output_files, 'command':command}
+                'output':output, 'error':error, 'output_files':output_files, 
+                'command':command}
         ), asynchronous=asynchronous)
 
     def execution_output_write(self, id, output, asynchronous=True):

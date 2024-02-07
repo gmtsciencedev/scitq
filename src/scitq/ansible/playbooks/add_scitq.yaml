@@ -6,6 +6,7 @@
     name:
     - python3-setuptools
     - python3-pip
+    - pigz
     - unzip
     state: present
   become: true
