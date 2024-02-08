@@ -41,6 +41,9 @@ FTP_DIR_NAME_POSITION = 8
 
 HTTP_CHUNK_SIZE = 81920
 
+ARIA2_PROCESSES = 5
+SRA_AWS_URL = 'https://sra-pub-run-odp.s3.amazonaws.com/sra/{run_accession}/{run_accession}'
+
 # name of Azure variables
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
@@ -149,6 +152,7 @@ def s3_get(source, destination):
     """S3 downloader: download source expressed as s3://bucket/path_to_file 
     to destination - a local file path"""
     log.info(f'S3 downloading {source} to {destination}')
+    original_destination=destination
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(source).groupdict()
     if uri_match['path'].endswith('/'):
@@ -203,7 +207,7 @@ def s3_get(source, destination):
         except botocore.exceptions.ClientError as error:
             if 'Not Found' in error.response.get('Error',{}).get('Message',None):
                 log.warning(f'{source} was not found, trying {source}/')
-                s3_get(source+'/',destination)
+                s3_get(source+'/',original_destination)
             else:
                 raise
 
@@ -317,6 +321,7 @@ class AzureClient:
     @retry_if_it_fails(RETRY_TIME)
     def get(self, source, destination):
         log.info(f'Azure downloading {source} to {destination}')
+        original_destination = destination
         destination=complete_if_ends_with_slash(source, destination)
         uri_match = AZURE_REGEXP.match(source).groupdict()
         if uri_match['path'].endswith('/'):
@@ -370,7 +375,7 @@ class AzureClient:
                 _container_get(container, uri_match['path'],destination)
             except azure.core.exceptions.ResourceNotFoundError as error:
                 log.warning(f'{source} was not found, trying {source}/')
-                self.get(source+'/', destination)
+                self.get(source+'/', original_destination)
 
     @retry_if_it_fails(RETRY_TIME)
     def put(self, source, destination):
@@ -568,6 +573,22 @@ def docker_available():
     """A property to see if docker is there"""
     return subprocess.run(['docker', '-v'],check=False).returncode==0
 
+
+# aria2c
+
+@retry_if_it_fails(RETRY_TIME)
+def aria2_get(source, destination, processes=ARIA2_PROCESSES):
+    """FTP downloader: download source expressed as ftp://host/path_to_file 
+    to destination - a local file path"""
+    log.info(f'Aria downloading {source} to {destination}')
+    if source.endswith('/'):
+        raise FetchError('Directory fetching is not yet supported for ftp:// URI')
+    destination=complete_if_ends_with_slash(source, destination)
+    destination_folder,destination_file = os.path.split(destination)
+    subprocess.run(['aria2c','-x',str(processes),'-s',str(processes),source,'-o',destination_file]
+                   + ['-d', destination_folder] if destination_folder else [],
+                    check=True)
+
 # aspera
 
 ASPERA_REGEXP=re.compile(r'^fasp://(?P<username>.*)@(?P<server>.*):/?(?P<url>.*)$')
@@ -620,16 +641,29 @@ def fastq_sra_get(run_accession, destination):
     if not destination.endswith('/'):
             destination+='/'
     previous_fastq = glob.glob(os.path.join(destination, '*.fastq'))
-    subprocess.run(f'docker run --rm -v {destination}:/destination ncbi/sra-tools \
-        sh -c "cd /destination && prefetch {run_accession} && fasterq-dump -f --split-files {run_accession}"',
-        shell=True,
-        check=True)
+    try:
+        aria2 = True
+        aria2_get(SRA_AWS_URL.format(run_accession=run_accession), os.path.join(destination,run_accession+'.sra'))
+        log.warning('aria download ok')
+        subprocess.run(f"docker run --rm -v {destination}:/destination ncbi/sra-tools \
+            sh -c 'cd /destination && vdb-validate {run_accession}.sra && fasterq-dump -f -F --split-files {run_accession}.sra'",
+            shell=True,
+            check=True)
+    except:
+        aria2 = False
+        log.warning(f'aria2 download of {run_accession} failed, trying with prefetch')
+        subprocess.run(f'docker run --rm -v {destination}:/destination ncbi/sra-tools \
+            sh -c "cd /destination && prefetch {run_accession} && fasterq-dump -f --split-files {run_accession}"',
+            shell=True,
+            check=True)
     current_fastq = glob.glob(os.path.join(destination, '*.fastq'))
     fastqs = [fastq for fastq in current_fastq if fastq not in previous_fastq]
     log.info(f'Pigziping fastqs ({fastqs})')
     subprocess.run(['pigz','-f']+fastqs,
         check=True)
-    if os.path.isdir(os.path.join(destination, run_accession)):
+    if aria2:
+        os.remove(os.path.join(destination, run_accession+'.sra'))
+    elif os.path.isdir(os.path.join(destination, run_accession)):
         shutil.rmtree(os.path.join(destination, run_accession))
 
 def _my_fastq_download(method, url, md5, destination):
@@ -900,17 +934,30 @@ def get(uri, destination):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
+        
+        if m['action'] and m['action'].startswith('mv '):
+            destination=os.path.join(destination, m['action'][3:])
+        
         source = f"{m['proto']}://{m['resource']}"
+        if os.path.isdir(destination) and not destination.endswith('/'):
+            log.warning(f'Destination {destination} is a folder, changing for {destination}/')
+            destination+='/'
         complete_destination = complete_if_ends_with_slash(source, destination)
         if uri.endswith('/'):
-            complete_destination=complete_destination[:-1]
+            if complete_destination.endswith('/'):
+                complete_destination=complete_destination[:-1]
             complete_destination_folder=complete_destination            
         else:
             complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
         if not os.path.exists(complete_destination_folder):
             os.makedirs(complete_destination_folder, exist_ok=True)
+
         
-        if m['proto']=='s3':
+        
+        if m['proto'] and '@aria2' in m['proto']:
+            source = f"{m['proto'].replace('@aria2','')}://{m['resource']}"
+            aria2_get(source, destination)
+        elif m['proto']=='s3':
             s3_get(source, destination)
         elif m['proto']=='azure':
             AzureClient().get(source, destination) 
@@ -939,7 +986,9 @@ def get(uri, destination):
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
         
-        if m['action']=='gunzip':
+        if m['action'] and m['action'].startswith('mv '):
+            pass
+        elif m['action']=='gunzip':
             gunzip(complete_destination)
         elif m['action']=='untar':
             untar(complete_destination)
