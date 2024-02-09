@@ -151,7 +151,7 @@ def resource_to_json(resource_db, resource_file=RESOURCE_FILE):
         for data,data_info in resource_db.items():
             new_data_info = {}
             for k,v in data_info.items():
-                if k=='date':
+                if k=='date' and v is not None:
                     new_data_info[k]=v.isoformat()
                 else:
                     new_data_info[k]=v 
@@ -505,13 +505,14 @@ class Executor:
             try:
                 log.warning(f'Downloading resource {data}...')
                 get(data, current_resource_dir)
-                log.warning(f'Modification date is {repr(data_info.modification_date)}')
                 if data_info is not None:
+                    log.warning(f'Modification date is {repr(data_info.modification_date)}')
                     self.resources_db[data]={'status':'loaded',
                                     'date':data_info.modification_date,
                                     'size':data_info.size,
                                     'path':current_resource_dir}
                 else:
+                    log.warning(f'Resource has no metadata')
                     self.resources_db[data]={'status':'loaded',
                                     'date':None,
                                     'size':None,
@@ -576,9 +577,10 @@ class Executor:
                     data_info = None
                 if data not in self.resources_db or self.resources_db[data]['status']=='failed' or (
                             self.resources_db[data]['status']=='loaded' and 
-                            ( data_info is not None and 
-                                ( data_info.modification_date > self.resources_db[data]['date'] or
-                                data_info.size != self.resources_db[data]['size'] )
+                            ( data_info is not None and (
+                                    self.resources_db[data]['date'] is None or 
+                                    data_info.modification_date > self.resources_db[data]['date'] or
+                                    data_info.size != self.resources_db[data]['size'] )
                             )
                         ):
                     self.download_resource(data, data_info)

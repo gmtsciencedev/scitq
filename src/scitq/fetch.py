@@ -132,8 +132,10 @@ def untar(filepath):
     os.remove(filepath)
 
 def unzip(filepath):
-    """Stupid unzipper with unzip (and delete the archive like gunzip does)"""
-    subprocess.run(['unzip',filepath], check=True)
+    """Stupid unzipper with unzip (and delete the archive like gunzip does), 
+    unzip in place like gunzip does, not the default behaviour of unzip"""
+    path,_ = os.path.split(filepath)
+    subprocess.run(['unzip',filepath] + ['-d',path] if path else [], check=True)
     os.remove(filepath)
 
 # AWS S3 
@@ -1057,9 +1059,10 @@ def check_uri(uri):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
-        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https',
-                              'run+fastq@sra','run+fastq@ftp','run+fastq@aspera',
-                              'run+submitted@ftp','run+submitted@aspera',]:
+        proto = m['proto']
+        if '@' in proto:
+            proto=proto.split('@')[0]
+        if proto not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https']:
             raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchError(f"Malformed URI : {uri}")
