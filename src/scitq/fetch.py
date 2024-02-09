@@ -58,6 +58,9 @@ MAX_PARALLEL_SYNC = 10
 class FetchError(Exception):
     pass
 
+class UnsupportedError(FetchError):
+    pass
+
 def pathjoin(*items):
     """Like os.path.join but always with '/' even with Windows and no double '/'
         in the middle of the path 
@@ -103,8 +106,6 @@ def retry_if_it_fails(n):
             return retval
         return wrapper
     return decorator    
-
-
 
 def complete_if_ends_with_slash(source, destination):
     """This function checks if destination ends with slash in which case it completes
@@ -222,6 +223,7 @@ def s3_put(source, destination):
     xboto3().client('s3').upload_file(source,uri_match['bucket'],
         uri_match['path'])
 
+@retry_if_it_fails(RETRY_TIME)
 def s3_info(uri):
     """S3 info fetcher: get some info on a blob specified with s3://bucket/path_to_file"""
     log.info(f'S3 getting info for {uri}')
@@ -402,6 +404,7 @@ class AzureClient:
             else:
                 blob_client.upload_blob(data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE)
 
+    @retry_if_it_fails(RETRY_TIME)
     def info(self,uri):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
         log.info(f'Azure getting info for {uri}')
@@ -479,6 +482,7 @@ def ftp_put(source, destination):
             ftp.login()
             ftp.storbinary(f"STOR {uri_match['path']}", local_file.read)
 
+@retry_if_it_fails(RETRY_TIME)
 def ftp_info(uri):
     """FTP info: get some information on a FTP object"""
     log.info(f'FTP get info for {uri}')
@@ -843,6 +847,7 @@ def file_put(source, destination):
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {destination}")
 
+@retry_if_it_fails(RETRY_TIME)
 def file_info(uri):
     """Same as above except that source is this time a plain local path
     and destination is in the form file://... As above just some plain
@@ -956,7 +961,7 @@ def get(uri, destination):
         
         if m['proto'] and '@aria2' in m['proto']:
             source = f"{m['proto'].replace('@aria2','')}://{m['resource']}"
-            aria2_get(source, destination)
+            aria2_get(source, complete_destination)
         elif m['proto']=='s3':
             s3_get(source, destination)
         elif m['proto']=='azure':
@@ -1077,20 +1082,24 @@ def info(uri):
     if m:
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
-        if m['proto']=='s3':
+        proto = m['proto']
+        if '@' in proto:
+            # get rid of protocol options like @aria2
+            proto = proto.split('@')[0]
+        if proto=='s3':
             return s3_info(source)
-        elif m['proto']=='azure':
+        elif proto=='azure':
             return AzureClient().info(source) 
-        elif m['proto']=='ftp':
+        elif proto=='ftp':
             return ftp_info(source)
-        elif m['proto']=='file':
+        elif proto=='file':
             return file_info(source) 
         #elif m['proto']=='fasp':
         #    fasp_get(source, destination)
         #elif m['proto']=='run+fastq':
         #    fastq_run_get(source, destination)       
         else:
-            raise FetchError(f"This URI protocol is not supported: {m['proto']}")
+            raise UnsupportedError(f"This URI protocol is not supported: {m['proto']}")
 
 def list_content(uri, no_rec=False):
     """Return the recursive listing of folder specified as a URI

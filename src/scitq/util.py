@@ -4,6 +4,7 @@ import boto3
 from configparser import ConfigParser
 import re
 import stat
+import shutil
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -192,3 +193,12 @@ class colors:
 def flat_list(l):
     """Return a list of value from a list of one-uplet containing the value"""
     return list([item[0] for item in l])
+
+def force_hard_link(src, dst):
+    """A function that force hardlink creation, possibly overriding anything existing before"""
+    if os.path.exists(dst):
+        if os.path.isdir(dst):
+            shutil.rmtree(dst)
+        else:
+            os.remove(dst)
+    os.link(src, dst)
