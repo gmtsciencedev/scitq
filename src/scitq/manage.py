@@ -10,7 +10,7 @@ from .ansible.scitq.sqlite_inventory import inventory, decorate_parser
 import shutil
 import random
 from .debug import Debugger
-from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS
+from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS, EXECUTION_STATUS
 from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
 import dotenv
 
@@ -210,6 +210,33 @@ def main():
     db_upgrade_parser=subsubparser.add_parser('upgrade',help='Migrate the database to the current version of scitq')
     db_init_parser=subsubparser.add_parser('init',help='Initialize a new database with current version of scitq')
     db_upgrade_parser=subsubparser.add_parser('upgrade-or-init',help='Migrate the database to the current version of scitq if it exists, initialize it otherwise')
+
+    execution_parser = subparser.add_parser('execution', help='The following options will only concern task executions')
+    subsubparser=execution_parser.add_subparsers(dest='action')
+    list_execution_parser= subsubparser.add_parser('list',help='List all task executions')
+    option_group=list_execution_parser.add_mutually_exclusive_group()
+    option_group.add_argument('-i','--id',help='Filter for this task id',type=int, default=None)
+    option_group.add_argument('-n','--name',help='Filter for this task name',type=str, default=None)
+    list_execution_parser.add_argument('-S','--status',help='Filter by the executions statuses',type=str,choices=EXECUTION_STATUS,default=None)
+    list_execution_parser.add_argument('-b','--batch',help='Give you a list of task executions according to his batch',type=str,default='')
+    list_execution_parser.add_argument('-H','--no-header',help='Do not print the headers',action='store_true')
+    list_execution_parser.add_argument('-l','--limit',help='Limit output to the N latest executions (default to 10)',type=int, default=10)
+    list_execution_parser.add_argument('-L','--long',help=f'Print all available data (latest {MAX_LENGTH_STR} char for output/error)',action='store_true')
+
+    output_execution_parser= subsubparser.add_parser('output',help='Show the output/error for an execution')
+    option_group=output_execution_parser.add_mutually_exclusive_group()
+    option_group.add_argument('-i','--id',help='Filter for this task id',type=int, default=None)
+    option_group.add_argument('-n','--name',help='Filter for this task name',type=str, default=None)
+    option_group.add_argument('-x','--execution-id',help='Filter for this task execution id',type=int, default=None)
+    output_execution_parser.add_argument('-N','--relative-execution',help='0 means latest execution, -1 previous one, -2 the one before, etc.',type=int, default=None)
+    output_execution_parser.add_argument('-l','--limit',help='Limit output to the N latest executions (default to 10)',type=int, default=10)
+    option_group=output_execution_parser.add_mutually_exclusive_group()
+    option_group.add_argument('-o','--output',help='Show only the output for a task',action='store_true')
+    option_group.add_argument('-e','--error',help='Show only the error for a task',action='store_true')
+    output_execution_parser.add_argument('-H','--no-header',help='Do not print the headers',action='store_true')
+    output_execution_parser.add_argument('-S','--status',help='Filter by the executions statuses',type=str,choices=EXECUTION_STATUS,default=None)
+    output_execution_parser.add_argument('-C','--columns',help='A comma separated list of columns',type=str,default=None)
+
 
     args=parser.parse_args()
 
@@ -478,6 +505,81 @@ def main():
         elif args.action =='delete' :
             s.recruiter_delete(batch=args.batch, rank=args.rank)
 
+    elif args.object == 'execution':
+
+        if args.action == 'list':
+            info_execution=['execution_id','task_id','worker_id','status','command','creation_date','modification_date','latest']
+
+            if not args.no_header:
+                headers = info_execution
+            else:
+                headers = []
+            filters={}
+            if args.long:
+                filters['no_output']=False
+                info_execution+=['output','error','output_files']
+            else:
+                filters['no_output']=True
+            if args.batch:
+                filters['batch']=args.batch
+            if args.status:
+                filters['status']=args.status
+            if args.id:
+                filters['task_id']=args.id
+            if args.name:
+                filters['task_name']=args.name
+            if args.limit:
+                filters['limit']=args.limit
+            execution_list=s.executions(reverse=True, trunc=MAX_LENGTH_STR, **filters)
+            __list_print(execution_list, info_execution, headers, long=False)
+        
+        if args.action == 'output':
+            info_execution=['execution_id','task_id','worker_id','status','command','creation_date','modification_date','latest','output','error']
+            if args.columns:
+                new_info = []
+                for c in args.columns.split(','):
+                    c=c.strip()
+                    if c not in info_execution:
+                        raise RuntimeError(f'Column {c} is not available for executions, pick within {info_execution}')
+                    new_info.append(c)
+                info_execution = new_info
+            if not args.no_header:
+                headers = info_execution
+            else:
+                headers = []
+
+            filters = {}
+            if args.id:
+                filters['task_id']=args.id
+            if args.name:
+                filters['task_name']=args.name
+            if args.execution_id:
+                filters['execution_id']=args.execution_id
+            if args.limit and not args.relative_execution:
+                filters['limit']=args.limit
+            if args.status:
+                filters['status']=args.status
+            if args.output:
+                info_execution.remove('error')
+            if args.error:
+                info_execution.remove('output')
+            execution_list=s.executions(reverse=True, **filters)
+            if args.relative_execution:
+                initial_execution_list = execution_list
+                execution_list = []
+                current_task_id = None
+                for e in initial_execution_list:
+                    if e['task_id']!=current_task_id:
+                        current_task_id=e['task_id']
+                        n=0
+                    if n==args.relative_execution:
+                        execution_list.append(e)
+                    n-=1
+                    if args.limit and len(execution_list)==args.limit:
+                        break
+            __list_print(execution_list, info_execution, headers, long=True)
+
+
     elif args.object=='db':
 
         if args.action=='upgrade-or-init':
@@ -507,6 +609,7 @@ def main():
             run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade', shell=True, 
                 cwd=package_path(), check=True)
             print('DB migrated')
+    
 
 
 if __name__=="__main__":

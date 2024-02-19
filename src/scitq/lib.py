@@ -367,6 +367,11 @@ class Server:
         - task_id: int
         - status: str
         - latest: boolean
+        - batch: str
+        - task_name: str
+        - limit: int (limit results to N)
+        - reverse: set to true to have most recent executions first (default to False)
+        - trunc: trunc output/error to this size (trunc, keeping only this number of last characters)
         """
         return self.get(f'/executions/', **args)
     

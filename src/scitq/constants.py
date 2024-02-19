@@ -8,3 +8,4 @@ DEFAULT_WORKER_CONF='/etc/scitq-worker.conf'
 HTTP_ERROR_CODE_NOT_FOUND = 404
 
 TASK_STATUS = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
+EXECUTION_STATUS = ['pending','accepted','running','failed','succeeded']
