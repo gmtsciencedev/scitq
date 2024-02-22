@@ -163,6 +163,8 @@ def s3_get(source, destination):
         try:
             bucket=get_s3().Bucket(uri_match['bucket'])
             objects = list(bucket.objects.filter(Prefix=uri_match['path']))
+            if not objects:
+                raise FetchError(f'Cannot fetch from {source}: empty (non-existing) folder')
             while retry>0:
                 failed_objects = []
                 failed = False
@@ -333,6 +335,8 @@ class AzureClient:
             try:
                 container=self.client.get_container_client(uri_match['container'])
                 objects = list(container.list_blobs(name_starts_with=uri_match['path']))
+                if not objects:
+                    raise FetchError(f'Cannot fetch from {source}: empty (non-existing) folder')
                 while retry>0:
                     failed_objects = []
                     failed = False
