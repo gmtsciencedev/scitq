@@ -32,6 +32,7 @@ POLLING_TIME = 4
 READ_TIMEOUT = 5
 QUEUE_SIZE_THRESHOLD = 2
 IDLE_TIMEOUT = 600
+ZOMBIE_TIMEOUT = 600
 WAIT_FOR_FIRST_EXECUTION_TIMEOUT = 3600
 DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
@@ -681,9 +682,13 @@ class Executor:
                 subprocess.run(['docker','kill',self.container_id])
             else:
                 self.process.send_signal(SIGKILL)
+        killing_time = time()
         while True:
             sleep(POLLING_TIME)
             if self.process.returncode is not None:
+                break
+            if time() - killing_time > ZOMBIE_TIMEOUT:
+                log.exception(f"No I would rather suicide than becoming a zombie...")
                 break
         self.clean()
         sys.exit(1)
@@ -889,6 +894,7 @@ class Client:
         self.ref_disk = self.ref_network = None
         self.autoclean = autoclean
         self.executions_go = {}
+        self.zombie_executions = {}
 
 
     def declare(self):
@@ -939,6 +945,13 @@ class Client:
                     log.warning(f'Removing dir {full_dir}')
                     shutil.rmtree(full_dir)
                     break
+
+    def clean_execution(self, execution_id):
+        """Called when an execution is dead (or has become a zombie)"""
+        del(self.executions[execution_id])
+        del(self.executions_status[execution_id])
+        if execution_id in self.working_dirs:
+            del(self.working_dirs[execution_id])
 
     def run(self, status=DEFAULT_WORKER_STATUS):
         """Main loop of the client"""
@@ -1139,10 +1152,7 @@ class Client:
                         log.warning(f'Execution {signal.execution_id} is not running in this worker')
                 for execution_id in list(self.executions.keys()):
                     if not self.executions[execution_id][0].is_alive():
-                        del(self.executions[execution_id])
-                        del(self.executions_status[execution_id])
-                        if execution_id in self.working_dirs:
-                            del(self.working_dirs[execution_id])
+                        self.clean_execution(execution_id)
                 #if self.run_slots_semaphore.acquire():
                 #    self.has_run_slots_semaphore=True
                 #running_executions = [ execution_id 
@@ -1254,6 +1264,12 @@ class Client:
                         if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_RUNNING:
                             log.warning(f'Execution {execution_id} is still running but is no more assigned to us (or likely was deleted), sending SIGTERM signal')
                             self.executions[execution_id][1].put(SIGTERM)
+                            if execution_id not in self.zombie_executions:
+                                self.zombie_executions[execution_id]=current_time
+                            elif current_time - self.zombie_executions[execution_id] > ZOMBIE_TIMEOUT:
+                                self.clean_execution(execution_id)
+                                log.exception(f'Execution {execution_id} has become a zombie')
+                                del(self.zombie_executions[execution_id])
                         if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_WAITING:
                             log.warning(f'Execution {execution_id} is waiting but is no more assigned to us (or likely was deleted), releasing it to its death')
                             self.executions_go[execution_id].release()
