@@ -50,6 +50,13 @@
     path: /etc/scitq-worker.conf
     state: touch
   become: true
+- name: Add not permanent worker
+  lineinfile:
+    dest: "/etc/scitq-worker.conf"
+    regexp: "SCITQ_PERMANENT_WORKER"
+    line: "SCITQ_PERMANENT_WORKER=0"
+    state: present
+  become: true
 - name: Add azure account
   lineinfile:
     dest: "/etc/scitq-worker.conf"

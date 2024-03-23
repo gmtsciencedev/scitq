@@ -306,24 +306,24 @@ class Server:
         return self.get('/workers/',**args)
 
     def worker_update(self, id, name=None, hostname=None, concurrency=None, 
-                    status=None,batch=None, idle_callback=None, prefetch=None,
+                    status=None,batch=None, permanent=None, prefetch=None,
                     flavor=None,task_properties=None,asynchronous=True):
         """Update a specific worker with worker_id equal to id
         return the updated worker (or None if the server timeout)"""
         return self.put(f'/workers/{id}', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
-            'status':status, 'batch':batch, 'idle_callback':idle_callback,
+            'status':status, 'batch':batch, 'permanent':permanent,
             'prefetch':prefetch, 'flavor':flavor, 'task_properties':task_properties}
         ), asynchronous=asynchronous)
 
     def worker_create(self, name, concurrency, hostname=None, status='paused',
-                batch=None, idle_callback=None, prefetch=0, flavor=None,
+                batch=None, permanent=None, prefetch=0, flavor=None,
                 asynchronous=True):
         """Create a new worker
         return the new worker (or None if the server timeout)"""
         return self.post('/workers/', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
-            'status':status, 'batch':batch, 'idle_callback':idle_callback,
+            'status':status, 'batch':batch, 'permanent':permanent,
             'prefetch':prefetch, 'flavor':flavor}
         ), asynchronous=asynchronous)
 

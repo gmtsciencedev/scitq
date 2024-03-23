@@ -302,7 +302,8 @@ def _container_get(container, blob_name, file_name):
             download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
             download_file.write(download_stream.readall())
     except:
-        os.remove(file_name)
+        if os.path.isfile(file_name):
+            os.remove(file_name)
         raise
         
 

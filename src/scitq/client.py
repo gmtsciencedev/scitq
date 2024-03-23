@@ -47,6 +47,10 @@ RETRY_UPLOAD = 5
 RETRY_DOWNLOAD = 2
 DEFAULT_AUTOCLEAN = 95
 RESOURCE_VERSION = 2
+try:
+    SCITQ_PERMANENT_WORKER = bool(int(os.environ.get("SCITQ_PERMANENT_WORKER", '1')))
+except:
+    SCITQ_PERMANENT_WORKER = True
 
 if not os.path.exists(BASE_RESOURCE_DIR):
     os.mkdir(BASE_RESOURCE_DIR)
@@ -910,7 +914,8 @@ class Client:
                 concurrency=self.concurrency,
                 prefetch=self.prefetch,
                 hostname=self.hostname,
-                batch=self.batch)
+                batch=self.batch,
+                permanent=SCITQ_PERMANENT_WORKER)
 
     def clean_all(self):
         """Clean all unused directory"""

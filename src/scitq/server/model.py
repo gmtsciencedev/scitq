@@ -63,14 +63,14 @@ class Worker(db.Model):
     modification_date = db.Column(db.DateTime)
     last_contact_date = db.Column(db.DateTime)
     batch = db.Column(db.String, nullable=False,default=DEFAULT_BATCH)
-    idle_callback = db.Column(db.String, nullable=True)
+    permanent = db.Column(db.Boolean, default=True)
     flavor = db.Column(db.String, nullable=True)
     region = db.Column(db.String, nullable=True)
     provider = db.Column(db.String, nullable=True)
     signals = db.relationship("Signal", cascade="all,delete")
 
     def __init__(self, name, concurrency, prefetch=0, hostname=None, 
-                status='paused', batch=None, idle_callback=None, flavor=None, region=None, provider=None):
+                status='paused', batch=None, flavor=None, region=None, provider=None, permanent=True):
         self.name = name
         self.concurrency = concurrency
         self.prefetch = prefetch
@@ -79,7 +79,7 @@ class Worker(db.Model):
         self.modification_date = self.creation_date
         self.hostname = hostname
         self.batch = batch
-        self.idle_callback = idle_callback
+        self.permanent = permanent
         self.region = region
         self.flavor = flavor
         self.provider = provider

@@ -280,8 +280,8 @@ class WorkerDAO(BaseDAO):
         """Delete a worker
         """
         worker=self.get(id)
-        log.warning(f'Deleting worker {id} ({worker.idle_callback})')
-        if worker.idle_callback is not None and not is_destroyed:
+        log.warning(f'Deleting worker {id} ({worker.permanent})')
+        if not worker.permanent and not is_destroyed:
             create_worker_destroy_job(worker, session)
             return worker
         else:
@@ -317,8 +317,8 @@ worker = api.model('Worker', {
         description='timestamp of last worker ping (automatically sent by worker'),
     'batch': fields.String(required=False, 
         description="worker accept only tasks with same batch (null or not)."),
-    'idle_callback': fields.String(readonly=True,
-        description="A command to be called on scitq server when the worker load *returns* to zero. Typically used to end cloud instances."),
+    'permanent': fields.Boolean(readonly=False, required=False,
+        description="Set to True to create a permanent worker"),
     'flavor': fields.String(required=False, 
         description="flavor (cloud type of instance) of the worker."),
     'region': fields.String(readonly=True, 
@@ -423,7 +423,7 @@ class WorkerCallback(Resource):
         message = callback_parser.parse_args().get('message','')
         worker = worker_dao.get(id)
         if message == 'idle': 
-            if worker.idle_callback:
+            if not worker.permanent:
                 if db.session.query(Execution).filter(Execution.status.in_(['running','pending']),
                         Execution.worker_id==worker.worker_id).count()>0:
                     log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
@@ -432,7 +432,7 @@ class WorkerCallback(Resource):
                                         Task.batch==worker.batch)).count()>0:
                     log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
                     return {'result':'still some work to do, lazy one!'}
-                log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
+                log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching destruction')
                 #worker.destroy()
                 create_worker_destroy_job(worker, db.session, commit=False)
                 #db.session.delete(worker)

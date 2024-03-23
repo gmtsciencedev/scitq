@@ -30,11 +30,10 @@ def create_worker_object(concurrency, flavor, region, provider, batch, prefetch,
     """Create a worker object in db - this must be called linearly not in async way
     """
     hostname = get_nodename(db_session)
-    idle_callback = WORKER_IDLE_CALLBACK.format(hostname=hostname)
     log.info(f'Creating a new worker {hostname}: concurrency:{concurrency}, \
 flavor:{flavor}, region:{region}, provider:{provider}, prefetch:{prefetch}')
     w = Worker(name=hostname, hostname=hostname, concurrency=concurrency, status='offline', 
-            batch=batch, idle_callback=idle_callback, prefetch=prefetch, 
+            batch=batch, permanent=False, prefetch=prefetch, 
             flavor=flavor,region=region, provider=provider)
     db_session.add(w)
     db_session.commit()
@@ -54,7 +53,7 @@ def background(app):
     log.info('Starting thread for {}'.format(os.getpid()))
     ansible_workers = list(session.query(Worker).filter(and_(
                     Worker.status=='running',
-                    Worker.idle_callback.is_not(None))).with_entities(
+                    ~Worker.permanent)).with_entities(
                         Worker.hostname))
     if ansible_workers:
         log.warning(f'Making sure workers {",".join([w.hostname for w in ansible_workers])} has access to server')
@@ -193,9 +192,10 @@ def background(app):
                     host_exist_in_ansible = bool(json_module.loads(scitq_inventory(host=job.target)))
                     if host_exist_in_ansible:
                         if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
-                            log.warning(f'Launching destroy process for {job.target}, command is "{worker.idle_callback}"')
+                            worker_destroy_command = WORKER_IDLE_CALLBACK.format(hostname=job.target)
+                            log.warning(f'Launching destroy process for {job.target}, command is "{worker_destroy_command}"')
                             worker_delete_process = Popen(
-                                    worker.idle_callback,
+                                    worker_destroy_command,
                                     stdout = PIPE,
                                     stderr = PIPE,
                                     shell = True,
