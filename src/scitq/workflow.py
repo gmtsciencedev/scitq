@@ -1,4 +1,4 @@
-from .lib import Server
+from .lib import Server, HTTPException
 from .fetch import get
 from typing import Optional
 from time import sleep
@@ -71,9 +71,12 @@ class Batch:
             return None
     
     def clean(self):
-        self.server.recruiter_delete(self.name, rank=1)
-        if self.extra_workers>0:
-            self.server.recruiter_delete(self.name, rank=2)
+        try:
+            self.server.recruiter_delete(self.name, rank=1)
+            if self.extra_workers>0:
+                self.server.recruiter_delete(self.name, rank=2)
+        except HTTPException:
+            log.warning(f'No recruiter to delete for batch {self.name}')
     
     def destroy(self):
         self.server.batch_delete(batch=self.name)
