@@ -22,7 +22,7 @@
     nvme: true
   when: 
     - hostvars[nodename].flavor is defined
-    - hostvars[nodename].flavor == "i1-180" or hostvars[nodename].flavor == "Standard_L32as_v3"
+    - hostvars[nodename].flavor == "i1-180" or hostvars[nodename].flavor == "Standard_L32as_v3" or hostvars[nodename].flavor == "Standard_L32s_v3"
 - name: Assemble 2xNVMe RAID if needed
   include_role:
     name: rolehippie.mdadm
@@ -40,7 +40,7 @@
     nvme: true
   when: 
     - hostvars[nodename].flavor is defined
-    - hostvars[nodename].flavor == "i1-90" or hostvars[nodename].flavor == "Standard_L16as_v3"
+    - hostvars[nodename].flavor == "i1-90" or hostvars[nodename].flavor == "Standard_L16as_v3" or hostvars[nodename].flavor == "Standard_L16s_v3"
 - name: Add FS on extradisk if needed
   community.general.filesystem:
     fstype: xfs
@@ -49,7 +49,7 @@
   become: yes
   when: 
     - hostvars[nodename].flavor is defined
-    - hostvars[nodename].flavor == "i1-45" or hostvars[nodename].flavor == "Standard_L8as_v3"
+    - hostvars[nodename].flavor == "i1-45" or hostvars[nodename].flavor == "Standard_L8as_v3" or hostvars[nodename].flavor == "Standard_L8s_v3"
 - name: Mount extradisk if needed
   ansible.posix.mount:
     path: /scratch

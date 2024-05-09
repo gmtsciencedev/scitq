@@ -48,8 +48,8 @@ SRA_AWS_URL = 'https://sra-pub-run-odp.s3.amazonaws.com/sra/{run_accession}/{run
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
 MAX_PARALLEL_AZURE = 5
-MAX_CONCURRENCY_AZURE = 3
-AZURE_CHUNK_SIZE = 50*1024**2
+MAX_CONCURRENCY_AZURE = 10
+AZURE_CHUNK_SIZE = 100*1024**2
 
 ASPERA_DOCKER = 'martinlaurent/ascli:4.14.0'
 
@@ -297,10 +297,12 @@ def _container_get(container, blob_name, file_name):
     else:
         blob_client = container.get_blob_client(blob=blob_name)
     try:
+        stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
         with open(file=file_name, mode="wb") as download_file:
-            #download_file.write(container.download_blob(blob_name).readall())
-            download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
-            download_file.write(download_stream.readall())
+            for chunk in stream.chunks():
+                download_file.write(chunk)
+            #download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
+            #download_file.write(download_stream.readall())
     except:
         if os.path.isfile(file_name):
             os.remove(file_name)
@@ -309,10 +311,11 @@ def _container_get(container, blob_name, file_name):
 
 class AzureClient:
     """A small wrapper above Azure blob client to integrate with scitq"""
-    def __init__(self):
+    def __init__(self, max_parallel=MAX_PARALLEL_AZURE):
         """This deals with initialization"""
         account_name=os.environ.get(AZURE_ACCOUNT)
         account_key=os.environ.get(AZURE_KEY)
+        self.max_parallel = max_parallel
         if account_name is None:
             if os.path.isfile(DEFAULT_WORKER_CONF):
                 dotenv.load_dotenv(DEFAULT_WORKER_CONF)
@@ -322,8 +325,8 @@ class AzureClient:
             raise FetchError(f'Azure account is not properly configured: either set {AZURE_ACCOUNT} and {AZURE_KEY} environment variables or adjust {DEFAULT_WORKER_CONF}.')
         connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
         self.client = BlobServiceClient.from_connection_string(connection_string,
-                                        max_single_get_size=1024*1024*32,
-                                        max_chunk_get_size=1024*1024*4)
+                                        max_single_get_size=1024*1024*3200,
+                                        max_chunk_get_size=1024*1024*400)
 
     @retry_if_it_fails(RETRY_TIME)
     def get(self, source, destination):
@@ -343,7 +346,7 @@ class AzureClient:
                     failed = False
                     try:
                         jobs = {}
-                        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_AZURE) as executor:
+                        with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_parallel) as executor:
                             for obj in objects:
                                 destination_name = os.path.relpath(obj.name, uri_match['path'])
                                 destination_name = os.path.join(destination, destination_name)
@@ -405,8 +408,19 @@ class AzureClient:
                     if not read_data:
                         break # done
                     blk_id = str(uuid.uuid4())
-                    blob_client.stage_block(block_id=blk_id,data=read_data) 
-                    block_list.append(BlobBlock(block_id=blk_id))
+                    retry = RETRY_TIME
+                    while retry>=0:
+                        try:
+                            blob_client.stage_block(block_id=blk_id,data=read_data) 
+                            block_list.append(BlobBlock(block_id=blk_id))
+                            break
+                        except Exception as e:
+                            log.exception(f'Failed to upload chunk while uploading {source} to {destination}'
+                                        +', retrying' if retry>=0 else ', giving up')
+                            if retry >= 0:
+                                retry-=1
+                            else: 
+                                raise FetchError(f'Failed to upload {source} to {destination} because of {e}')                            
                 blob_client.commit_block_list(block_list)
             else:
                 blob_client.upload_blob(data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE)
@@ -937,7 +951,7 @@ def http_get(url, destination):
 
 GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9@+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
 
-def get(uri, destination):
+def get(uri, destination, parallel=None):
     """General downloader source should start with s3://... or ftp://...
     (source should not end with slash unless you know what you are doing if 
     destination ends with slash it will be completed with source end item)
@@ -972,7 +986,10 @@ def get(uri, destination):
         elif m['proto']=='s3':
             s3_get(source, destination)
         elif m['proto']=='azure':
-            AzureClient().get(source, destination) 
+            options = {}
+            if parallel:
+                options['max_parallel']=parallel
+            AzureClient(**options).get(source, destination) 
         elif m['proto']=='ftp':
             ftp_get(source, destination)
         elif m['proto']=='file':
@@ -1011,7 +1028,7 @@ def get(uri, destination):
     else:
         raise FetchError(f'This URI is malformed: {uri}')
 
-def put(source, uri):
+def put(source, uri, parallel=None):
     """General uploader destination should start with s3://.... or ftp://...
     (only anonymous ftp is implemented so put is unlikely to work with ftp)
     (source should not end with slash unless you know what you are doing if 
