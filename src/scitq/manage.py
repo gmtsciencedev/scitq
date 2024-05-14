@@ -486,7 +486,8 @@ def main():
             filters={}
             if args.batch:
                 filters['batch']=args.batch
-            __list_print(s.recruiters(**filters), info_recruiter, headers)
+            __list_print(list([dict([(k.replace('worker_',''),v) for k,v in r.items()]) 
+                     for r in s.recruiters(**filters)]), info_recruiter, headers)
 
         elif args.action =='create' :
             if args.tasks_per_worker is None:

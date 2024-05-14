@@ -71,13 +71,9 @@ class Batch:
             return None
     
     def clean(self):
-        try:
-            self.server.recruiter_delete(self.name, rank=1)
-            if self.extra_workers>0:
-                self.server.recruiter_delete(self.name, rank=2)
-        except HTTPException:
-            log.warning(f'No recruiter to delete for batch {self.name}')
-    
+        for recruiter in self.server.recruiters(batch=self.name):
+            self.server.recruiter_delete(self.name, rank=recruiter.rank)
+        
     def destroy(self):
         self.server.batch_delete(batch=self.name)
 

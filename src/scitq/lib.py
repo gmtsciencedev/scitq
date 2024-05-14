@@ -526,8 +526,7 @@ class Server:
     def recruiters(self, **args):
         """List all recruiters (a recruiter is an automate that deploy workers as needed for a certain batch)
         - args: some filtering option like batch='Default'"""
-        return list([dict([(k.replace('worker_',''),v) for k,v in r.items()]) 
-                     for r in self.get(f'/recruiter/', **args)])
+        return self.get(f'/recruiter/', **args)
 
     def recruiter_create(self, batch, rank, tasks_per_worker, flavor, concurrency, region=None, provider=None,  
                          prefetch=None, minimum_tasks=None, maximum_workers=None,asynchronous=True):
