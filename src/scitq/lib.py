@@ -436,6 +436,10 @@ class Server:
             if "'" in command:
                 log.warning(f'''This command ({command}) contains quote(s) (') and is unlikely to work''')
             command = f"{shell} -c '{command}'"
+        if type(input)==list:
+            input=' '.join(input)
+        if type(resource)==list:
+            resource=' '.join(resource)
         return self.post('/tasks/', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
@@ -451,6 +455,10 @@ class Server:
             asynchronous=True):
         """Update a specific execution, return the updated execution
         """
+        if type(input)==list:
+            input=' '.join(input)
+        if type(resource)==list:
+            resource=' '.join(resource)
         return self.put(f'/tasks/{id}', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
