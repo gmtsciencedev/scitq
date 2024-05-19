@@ -2,16 +2,18 @@ from sqlalchemy import select, and_, func, distinct
 from sqlalchemy.orm import Session, aliased
 import logging as log
 import os
-from subprocess import run, Popen, PIPE
+from subprocess import run, Popen, PIPE, TimeoutExpired
 import json as json_module
 from datetime import datetime
 from argparse import Namespace
 import math
-from time import sleep
+from time import sleep, time
 from signal import SIGKILL
 
 from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal
-from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY, WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME
+from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY,\
+    WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME, TERMINATE_TIMEOUT, KILL_TIMEOUT,\
+    JOB_MAX_LIFETIME
 from .db import db
 from ..util import PropagatingThread
 from ..ansible.scitq.sqlite_inventory import scitq_inventory
@@ -181,11 +183,27 @@ def background(app):
 
                 if job.action == 'worker_destroy':
                     change=True
+                    if ('destroy',job.target) in worker_process_queue:
+                        log.warning(f'A destruction job is already running for worker {job.target}, failing this one')
+                        job.status='failed'
+                        job.log='Another destruction job is already running, this job failed as a doublon.'
+                        continue
                     if ('create',job.target) in worker_process_queue:
-                        worker,worker_create_process,job_id = worker_process_queue[('create',job.target)]
+                        worker,worker_create_process,job_id,start_time = worker_process_queue[('create',job.target)]
                         if worker_create_process.poll() is None:
                             worker_create_process.terminate()
-                            log.warning(f'Worker {job.target} creation process has been terminated')
+                            try:
+                                worker_create_process.wait(timeout=TERMINATE_TIMEOUT)
+                                log.warning(f'Worker {job.target} creation process has been terminated')
+                            except TimeoutExpired:
+                                worker_create_process.kill()
+                                try:
+                                    worker_create_process.wait(timeout=KILL_TIMEOUT)
+                                    log.warning(f'Worker {job.target} creation process has been killed')
+                                except TimeoutExpired:
+                                    log.exception(f'Could not kill worker {job.target} creation process, giving up for this round!')
+                                    continue
+                            
                             del(worker_process_queue[('create',job.target)])
                             session.query(Job).get(job_id).status='failed'
                     worker = Namespace(**job.args)
@@ -202,14 +220,16 @@ def background(app):
                                     encoding = 'utf-8'
                                 )
                             job.status='running'
-                            worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process, job.job_id)
+                            worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process, job.job_id, time())
                             log.warning(f'Worker {job.target} destruction process has been launched')
                     else:
+                        #TODO: this should be a very rare event, we should do extra tests here
                         log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
                         real_worker = session.query(Worker).get(worker.worker_id)
                         if real_worker is not None:
                             change = True
                             session.delete(real_worker)
+                            job.log='Deleting unmanaged worker.'
                             job.status='succeeded'            
                 
                 if job.action == 'worker_create':
@@ -224,7 +244,7 @@ def background(app):
                     job.status = 'pending'
                 
                 if job.action == 'worker_deploy':
-                    if job.target not in worker_process_queue and len(
+                    if ('create',job.target) not in worker_process_queue and len(
                                 worker_process_queue)<WORKER_CREATE_CONCURRENCY:
                         if ('destroy',job.target) in worker_process_queue:
                             log.warning(f'Trying to recreate worker {job.target} after destruction too soon, waiting a little bit...')
@@ -254,14 +274,14 @@ def background(app):
                         )
                         worker.name = worker.hostname = job.target
                         job.status = 'running'
-                        worker_process_queue[('create',job.target)]=(worker, worker_create_process, job.job_id)
+                        worker_process_queue[('create',job.target)]=(worker, worker_create_process, job.job_id, time())
                         log.warning(f'Worker {job.target} creation process has been launched')
 
             if change:
                 session.commit()                
 
             change = False
-            for ((action,worker_name),(worker,worker_process,job_id)) in list(worker_process_queue.items()):
+            for ((action,worker_name),(worker,worker_process,job_id,start_time)) in list(worker_process_queue.items()):
                 returncode = worker_process.poll()
                 if returncode is not None:
                     change = True
@@ -275,7 +295,7 @@ def background(app):
                         if action=='destroy':
                             #session.execute(Worker.__table__.delete().where(
                             #    Worker.__table__.c.worker_id==worker.worker_id))
-                            log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
+                            log.warning(f'Deleting worker {worker.name} ({worker.worker_id}) after destruction')
                             real_worker = session.query(Worker).get(worker.worker_id)
                             if real_worker is not None:
                                 session.delete(real_worker)
@@ -295,6 +315,12 @@ def background(app):
                             if action=='create':
                                 worker = session.query(Worker).get(job.args['worker_id'])
                                 worker.status = 'failed'
+                elif time() - start_time > JOB_MAX_LIFETIME:
+                    log.warning(f'Process {action} is taking too long for worker {worker.name}, sending TERM signal.')
+                    worker_process.terminate()
+                elif time() - start_time > JOB_MAX_LIFETIME + TERMINATE_TIMEOUT:
+                    log.warning(f'Process {action} is really taking too long for worker {worker.name}, sending KILL signal.')
+                    worker_process.kill()
 
             for job in list(session.query(Job).filter(Job.status == 'running')):
                 if job.action=='worker_deploy':
