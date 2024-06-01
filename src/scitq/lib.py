@@ -306,24 +306,24 @@ class Server:
         return self.get('/workers/',**args)
 
     def worker_update(self, id, name=None, hostname=None, concurrency=None, 
-                    status=None,batch=None, idle_callback=None, prefetch=None,
+                    status=None,batch=None, permanent=None, prefetch=None,
                     flavor=None,task_properties=None,asynchronous=True):
         """Update a specific worker with worker_id equal to id
         return the updated worker (or None if the server timeout)"""
         return self.put(f'/workers/{id}', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
-            'status':status, 'batch':batch, 'idle_callback':idle_callback,
+            'status':status, 'batch':batch, 'permanent':permanent,
             'prefetch':prefetch, 'flavor':flavor, 'task_properties':task_properties}
         ), asynchronous=asynchronous)
 
     def worker_create(self, name, concurrency, hostname=None, status='paused',
-                batch=None, idle_callback=None, prefetch=0, flavor=None,
+                batch=None, permanent=None, prefetch=0, flavor=None,
                 asynchronous=True):
         """Create a new worker
         return the new worker (or None if the server timeout)"""
         return self.post('/workers/', data=_clean(
             {'name':name, 'hostname':hostname, 'concurrency':concurrency, 
-            'status':status, 'batch':batch, 'idle_callback':idle_callback,
+            'status':status, 'batch':batch, 'permanent':permanent,
             'prefetch':prefetch, 'flavor':flavor}
         ), asynchronous=asynchronous)
 
@@ -367,6 +367,11 @@ class Server:
         - task_id: int
         - status: str
         - latest: boolean
+        - batch: str
+        - task_name: str
+        - limit: int (limit results to N)
+        - reverse: set to true to have most recent executions first (default to False)
+        - trunc: trunc output/error to this size (trunc, keeping only this number of last characters)
         """
         return self.get(f'/executions/', **args)
     
@@ -382,13 +387,14 @@ class Server:
             ), asynchronous=asynchronous)
 
     def execution_update(self, id, status=None, pid=None, return_code=None, 
-                        output=None, output_files=None, command=None,
+                        output=None, error=None, output_files=None, command=None,
                         asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/executions/{id}', data=_clean(
             {'status':status, 'pid':pid, 'return_code':return_code, 
-                'output':output, 'output_files':output_files, 'command':command}
+                'output':output, 'error':error, 'output_files':output_files, 
+                'command':command}
         ), asynchronous=asynchronous)
 
     def execution_output_write(self, id, output, asynchronous=True):
@@ -430,6 +436,10 @@ class Server:
             if "'" in command:
                 log.warning(f'''This command ({command}) contains quote(s) (') and is unlikely to work''')
             command = f"{shell} -c '{command}'"
+        if type(input)==list:
+            input=' '.join(input)
+        if type(resource)==list:
+            resource=' '.join(resource)
         return self.post('/tasks/', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
@@ -445,6 +455,10 @@ class Server:
             asynchronous=True):
         """Update a specific execution, return the updated execution
         """
+        if type(input)==list:
+            input=' '.join(input)
+        if type(resource)==list:
+            resource=' '.join(resource)
         return self.put(f'/tasks/{id}', data=_clean({
             'command':command, 'name':name, 'status':status, 'batch':batch,
             'input':input, 'output':output, 'container':container, 
@@ -520,8 +534,7 @@ class Server:
     def recruiters(self, **args):
         """List all recruiters (a recruiter is an automate that deploy workers as needed for a certain batch)
         - args: some filtering option like batch='Default'"""
-        return list([dict([(k.replace('worker_',''),v) for k,v in r.items()]) 
-                     for r in self.get(f'/recruiter/', **args)])
+        return self.get(f'/recruiter/', **args)
 
     def recruiter_create(self, batch, rank, tasks_per_worker, flavor, concurrency, region=None, provider=None,  
                          prefetch=None, minimum_tasks=None, maximum_workers=None,asynchronous=True):

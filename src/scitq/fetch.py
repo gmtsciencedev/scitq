@@ -41,18 +41,24 @@ FTP_DIR_NAME_POSITION = 8
 
 HTTP_CHUNK_SIZE = 81920
 
+ARIA2_PROCESSES = 5
+SRA_AWS_URL = 'https://sra-pub-run-odp.s3.amazonaws.com/sra/{run_accession}/{run_accession}'
+
 # name of Azure variables
 AZURE_ACCOUNT='SCITQ_AZURE_ACCOUNT'
 AZURE_KEY='SCITQ_AZURE_KEY'
 MAX_PARALLEL_AZURE = 5
-MAX_CONCURRENCY_AZURE = 3
-AZURE_CHUNK_SIZE = 50*1024**2
+MAX_CONCURRENCY_AZURE = 10
+AZURE_CHUNK_SIZE = 100*1024**2
 
 ASPERA_DOCKER = 'martinlaurent/ascli:4.14.0'
 
 MAX_PARALLEL_SYNC = 10
 
 class FetchError(Exception):
+    pass
+
+class UnsupportedError(FetchError):
     pass
 
 def pathjoin(*items):
@@ -101,8 +107,6 @@ def retry_if_it_fails(n):
         return wrapper
     return decorator    
 
-
-
 def complete_if_ends_with_slash(source, destination):
     """This function checks if destination ends with slash in which case it completes
     with the source last item
@@ -128,8 +132,10 @@ def untar(filepath):
     os.remove(filepath)
 
 def unzip(filepath):
-    """Stupid unzipper with unzip (and delete the archive like gunzip does)"""
-    subprocess.run(['unzip',filepath], check=True)
+    """Stupid unzipper with unzip (and delete the archive like gunzip does), 
+    unzip in place like gunzip does, not the default behaviour of unzip"""
+    path,_ = os.path.split(filepath)
+    subprocess.run(['unzip',filepath] + ['-d',path] if path else [], check=True)
     os.remove(filepath)
 
 # AWS S3 
@@ -149,6 +155,7 @@ def s3_get(source, destination):
     """S3 downloader: download source expressed as s3://bucket/path_to_file 
     to destination - a local file path"""
     log.info(f'S3 downloading {source} to {destination}')
+    original_destination=destination
     destination=complete_if_ends_with_slash(source, destination)
     uri_match = S3_REGEXP.match(source).groupdict()
     if uri_match['path'].endswith('/'):
@@ -156,6 +163,8 @@ def s3_get(source, destination):
         try:
             bucket=get_s3().Bucket(uri_match['bucket'])
             objects = list(bucket.objects.filter(Prefix=uri_match['path']))
+            if not objects:
+                raise FetchError(f'Cannot fetch from {source}: empty (non-existing) folder')
             while retry>0:
                 failed_objects = []
                 failed = False
@@ -203,7 +212,7 @@ def s3_get(source, destination):
         except botocore.exceptions.ClientError as error:
             if 'Not Found' in error.response.get('Error',{}).get('Message',None):
                 log.warning(f'{source} was not found, trying {source}/')
-                s3_get(source+'/',destination)
+                s3_get(source+'/',original_destination)
             else:
                 raise
 
@@ -218,6 +227,7 @@ def s3_put(source, destination):
     xboto3().client('s3').upload_file(source,uri_match['bucket'],
         uri_match['path'])
 
+@retry_if_it_fails(RETRY_TIME)
 def s3_info(uri):
     """S3 info fetcher: get some info on a blob specified with s3://bucket/path_to_file"""
     log.info(f'S3 getting info for {uri}')
@@ -287,21 +297,25 @@ def _container_get(container, blob_name, file_name):
     else:
         blob_client = container.get_blob_client(blob=blob_name)
     try:
+        stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
         with open(file=file_name, mode="wb") as download_file:
-            #download_file.write(container.download_blob(blob_name).readall())
-            download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
-            download_file.write(download_stream.readall())
+            for chunk in stream.chunks():
+                download_file.write(chunk)
+            #download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
+            #download_file.write(download_stream.readall())
     except:
-        os.remove(file_name)
+        if os.path.isfile(file_name):
+            os.remove(file_name)
         raise
         
 
 class AzureClient:
     """A small wrapper above Azure blob client to integrate with scitq"""
-    def __init__(self):
+    def __init__(self, max_parallel=MAX_PARALLEL_AZURE):
         """This deals with initialization"""
         account_name=os.environ.get(AZURE_ACCOUNT)
         account_key=os.environ.get(AZURE_KEY)
+        self.max_parallel = max_parallel
         if account_name is None:
             if os.path.isfile(DEFAULT_WORKER_CONF):
                 dotenv.load_dotenv(DEFAULT_WORKER_CONF)
@@ -311,12 +325,13 @@ class AzureClient:
             raise FetchError(f'Azure account is not properly configured: either set {AZURE_ACCOUNT} and {AZURE_KEY} environment variables or adjust {DEFAULT_WORKER_CONF}.')
         connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
         self.client = BlobServiceClient.from_connection_string(connection_string,
-                                        max_single_get_size=1024*1024*32,
-                                        max_chunk_get_size=1024*1024*4)
+                                        max_single_get_size=1024*1024*3200,
+                                        max_chunk_get_size=1024*1024*400)
 
     @retry_if_it_fails(RETRY_TIME)
     def get(self, source, destination):
         log.info(f'Azure downloading {source} to {destination}')
+        original_destination = destination
         destination=complete_if_ends_with_slash(source, destination)
         uri_match = AZURE_REGEXP.match(source).groupdict()
         if uri_match['path'].endswith('/'):
@@ -324,12 +339,14 @@ class AzureClient:
             try:
                 container=self.client.get_container_client(uri_match['container'])
                 objects = list(container.list_blobs(name_starts_with=uri_match['path']))
+                if not objects:
+                    raise FetchError(f'Cannot fetch from {source}: empty (non-existing) folder')
                 while retry>0:
                     failed_objects = []
                     failed = False
                     try:
                         jobs = {}
-                        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_AZURE) as executor:
+                        with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_parallel) as executor:
                             for obj in objects:
                                 destination_name = os.path.relpath(obj.name, uri_match['path'])
                                 destination_name = os.path.join(destination, destination_name)
@@ -370,7 +387,7 @@ class AzureClient:
                 _container_get(container, uri_match['path'],destination)
             except azure.core.exceptions.ResourceNotFoundError as error:
                 log.warning(f'{source} was not found, trying {source}/')
-                self.get(source+'/', destination)
+                self.get(source+'/', original_destination)
 
     @retry_if_it_fails(RETRY_TIME)
     def put(self, source, destination):
@@ -391,12 +408,24 @@ class AzureClient:
                     if not read_data:
                         break # done
                     blk_id = str(uuid.uuid4())
-                    blob_client.stage_block(block_id=blk_id,data=read_data) 
-                    block_list.append(BlobBlock(block_id=blk_id))
+                    retry = RETRY_TIME
+                    while retry>=0:
+                        try:
+                            blob_client.stage_block(block_id=blk_id,data=read_data) 
+                            block_list.append(BlobBlock(block_id=blk_id))
+                            break
+                        except Exception as e:
+                            log.exception(f'Failed to upload chunk while uploading {source} to {destination}'
+                                        +', retrying' if retry>=0 else ', giving up')
+                            if retry >= 0:
+                                retry-=1
+                            else: 
+                                raise FetchError(f'Failed to upload {source} to {destination} because of {e}')                            
                 blob_client.commit_block_list(block_list)
             else:
                 blob_client.upload_blob(data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE)
 
+    @retry_if_it_fails(RETRY_TIME)
     def info(self,uri):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
         log.info(f'Azure getting info for {uri}')
@@ -474,6 +503,7 @@ def ftp_put(source, destination):
             ftp.login()
             ftp.storbinary(f"STOR {uri_match['path']}", local_file.read)
 
+@retry_if_it_fails(RETRY_TIME)
 def ftp_info(uri):
     """FTP info: get some information on a FTP object"""
     log.info(f'FTP get info for {uri}')
@@ -568,6 +598,22 @@ def docker_available():
     """A property to see if docker is there"""
     return subprocess.run(['docker', '-v'],check=False).returncode==0
 
+
+# aria2c
+
+@retry_if_it_fails(RETRY_TIME)
+def aria2_get(source, destination, processes=ARIA2_PROCESSES):
+    """FTP downloader: download source expressed as ftp://host/path_to_file 
+    to destination - a local file path"""
+    log.info(f'Aria downloading {source} to {destination}')
+    if source.endswith('/'):
+        raise FetchError('Directory fetching is not yet supported for ftp:// URI')
+    destination=complete_if_ends_with_slash(source, destination)
+    destination_folder,destination_file = os.path.split(destination)
+    subprocess.run(['aria2c','-x',str(processes),'-s',str(processes),source,'-o',destination_file]
+                   + ['-d', destination_folder] if destination_folder else [],
+                    check=True)
+
 # aspera
 
 ASPERA_REGEXP=re.compile(r'^fasp://(?P<username>.*)@(?P<server>.*):/?(?P<url>.*)$')
@@ -620,16 +666,29 @@ def fastq_sra_get(run_accession, destination):
     if not destination.endswith('/'):
             destination+='/'
     previous_fastq = glob.glob(os.path.join(destination, '*.fastq'))
-    subprocess.run(f'docker run --rm -v {destination}:/destination ncbi/sra-tools \
-        sh -c "cd /destination && prefetch {run_accession} && fasterq-dump -f --split-files {run_accession}"',
-        shell=True,
-        check=True)
+    try:
+        aria2 = True
+        aria2_get(SRA_AWS_URL.format(run_accession=run_accession), os.path.join(destination,run_accession+'.sra'))
+        log.warning('aria download ok')
+        subprocess.run(f"docker run --rm -v {destination}:/destination ncbi/sra-tools \
+            sh -c 'cd /destination && vdb-validate {run_accession}.sra && fasterq-dump -f -F --split-files {run_accession}.sra'",
+            shell=True,
+            check=True)
+    except:
+        aria2 = False
+        log.warning(f'aria2 download of {run_accession} failed, trying with prefetch')
+        subprocess.run(f'docker run --rm -v {destination}:/destination ncbi/sra-tools \
+            sh -c "cd /destination && prefetch {run_accession} && fasterq-dump -f --split-files {run_accession}"',
+            shell=True,
+            check=True)
     current_fastq = glob.glob(os.path.join(destination, '*.fastq'))
     fastqs = [fastq for fastq in current_fastq if fastq not in previous_fastq]
     log.info(f'Pigziping fastqs ({fastqs})')
     subprocess.run(['pigz','-f']+fastqs,
         check=True)
-    if os.path.isdir(os.path.join(destination, run_accession)):
+    if aria2:
+        os.remove(os.path.join(destination, run_accession+'.sra'))
+    elif os.path.isdir(os.path.join(destination, run_accession)):
         shutil.rmtree(os.path.join(destination, run_accession))
 
 def _my_fastq_download(method, url, md5, destination):
@@ -648,7 +707,7 @@ def _my_fastq_download(method, url, md5, destination):
 
 
 @retry_if_it_fails(PUBLIC_RETRY_TIME)
-def fastq_run_get(source, destination):
+def fastq_run_get(source, destination, methods=['fastq_aspera', 'fastq_ftp', 'sra']):
     """Fetch some fastq associated to a run accession"""
     log.info(f'Run accession: uploading {source} to {destination}')
     if not destination.endswith('/'):
@@ -690,8 +749,9 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
     if 'fastq_ftp' or 'fastq_aspera' in run:
         ftp_md5s = run['fastq_md5'].split(';')
 
-        for method in ['fastq_aspera', 'fastq_ftp', 'sra']:
+        for method in methods:
             if method in ['fastq_aspera','sra'] and not docker_available:
+                log.exception(f'Cannot use {method} as docker is not available.')
                 continue
             if method == 'sra':
                 return fastq_sra_get(uri_match['run_accession'], destination, 
@@ -724,7 +784,7 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
 SUBMITTED_RUN_REGEXP=re.compile(r'^run\+submitted://(?P<run_accession>[^/]*)/?$')
 
 @retry_if_it_fails(PUBLIC_RETRY_TIME)
-def submitted_run_get(source, destination):
+def submitted_run_get(source, destination, methods=['submitted_aspera', 'submitted_ftp']):
     """Fetch some fastq associated to a run accession"""
     log.info(f'Run accession: uploading {source} to {destination}')
     if not destination.endswith('/'):
@@ -751,7 +811,7 @@ submitted_ftp&format=json&download=true&limit=0", timeout=30)
     if 'submitted_ftp' or 'submitted_aspera' in run:
         ftp_md5s = run['submitted_md5'].split(';')
 
-        for method in ['submitted_aspera', 'submitted_ftp']:
+        for method in methods:
             if method in run:
                 if method in ['submitted_aspera'] and not docker_available:
                     continue
@@ -808,6 +868,7 @@ def file_put(source, destination):
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {destination}")
 
+@retry_if_it_fails(RETRY_TIME)
 def file_info(uri):
     """Same as above except that source is this time a plain local path
     and destination is in the form file://... As above just some plain
@@ -888,9 +949,9 @@ def http_get(url, destination):
 
 # generic wrapper
 
-GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
+GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9@+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
 
-def get(uri, destination):
+def get(uri, destination, parallel=None):
     """General downloader source should start with s3://... or ftp://...
     (source should not end with slash unless you know what you are doing if 
     destination ends with slash it will be completed with source end item)
@@ -899,20 +960,36 @@ def get(uri, destination):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
+        
+        if m['action'] and m['action'].startswith('mv '):
+            destination=os.path.join(destination, m['action'][3:])
+        
         source = f"{m['proto']}://{m['resource']}"
+        if os.path.isdir(destination) and not destination.endswith('/'):
+            log.warning(f'Destination {destination} is a folder, changing for {destination}/')
+            destination+='/'
         complete_destination = complete_if_ends_with_slash(source, destination)
         if uri.endswith('/'):
-            complete_destination=complete_destination[:-1]
+            if complete_destination.endswith('/'):
+                complete_destination=complete_destination[:-1]
             complete_destination_folder=complete_destination            
         else:
             complete_destination_folder = '/'.join(complete_destination.split('/')[:-1])
         if not os.path.exists(complete_destination_folder):
             os.makedirs(complete_destination_folder, exist_ok=True)
+
         
-        if m['proto']=='s3':
+        
+        if m['proto'] and '@aria2' in m['proto']:
+            source = f"{m['proto'].replace('@aria2','')}://{m['resource']}"
+            aria2_get(source, complete_destination)
+        elif m['proto']=='s3':
             s3_get(source, destination)
         elif m['proto']=='azure':
-            AzureClient().get(source, destination) 
+            options = {}
+            if parallel:
+                options['max_parallel']=parallel
+            AzureClient(**options).get(source, destination) 
         elif m['proto']=='ftp':
             ftp_get(source, destination)
         elif m['proto']=='file':
@@ -921,14 +998,26 @@ def get(uri, destination):
             fasp_get(source, destination)
         elif m['proto']=='run+fastq':
             fastq_run_get(source, destination)       
+        elif m['proto']=='run+fastq@sra':
+            fastq_run_get(source.replace('run+fastq@sra://','run+fastq://'), destination, methods=['sra'])       
+        elif m['proto']=='run+fastq@ftp':
+            fastq_run_get(source.replace('run+fastq@ftp://','run+fastq://'), destination, methods=['fastq_ftp'])       
+        elif m['proto']=='run+fastq@aspera':
+            fastq_run_get(source.replace('run+fastq@aspera://','run+fastq://'), destination, methods=['fastq_aspera'])       
         elif m['proto']=='run+submitted':
-            submitted_run_get(source, destination)
+            submitted_run_get(source, destination)    
+        elif m['proto']=='run+submitted@ftp':
+            submitted_run_get(source.replace('run+submitted@ftp://','run+submitted://'), destination, methods=['submitted_ftp'])       
+        elif m['proto']=='run+submitted@aspera':
+            submitted_run_get(source.replace('run+submitted@aspera://','run+submitted://'), destination, methods=['submitted_aspera']) 
         elif m['proto'] in ['http','https']:
             http_get(source, destination)
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
         
-        if m['action']=='gunzip':
+        if m['action'] and m['action'].startswith('mv '):
+            pass
+        elif m['action']=='gunzip':
             gunzip(complete_destination)
         elif m['action']=='untar':
             untar(complete_destination)
@@ -939,7 +1028,7 @@ def get(uri, destination):
     else:
         raise FetchError(f'This URI is malformed: {uri}')
 
-def put(source, uri):
+def put(source, uri, parallel=None):
     """General uploader destination should start with s3://.... or ftp://...
     (only anonymous ftp is implemented so put is unlikely to work with ftp)
     (source should not end with slash unless you know what you are doing if 
@@ -992,7 +1081,10 @@ def check_uri(uri):
     m = GENERIC_REGEXP.match(uri)
     if m:
         m = m.groupdict()
-        if m['proto'] not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https']:
+        proto = m['proto']
+        if '@' in proto:
+            proto=proto.split('@')[0]
+        if proto not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https']:
             raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchError(f"Malformed URI : {uri}")
@@ -1015,20 +1107,24 @@ def info(uri):
     if m:
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
-        if m['proto']=='s3':
+        proto = m['proto']
+        if '@' in proto:
+            # get rid of protocol options like @aria2
+            proto = proto.split('@')[0]
+        if proto=='s3':
             return s3_info(source)
-        elif m['proto']=='azure':
+        elif proto=='azure':
             return AzureClient().info(source) 
-        elif m['proto']=='ftp':
+        elif proto=='ftp':
             return ftp_info(source)
-        elif m['proto']=='file':
+        elif proto=='file':
             return file_info(source) 
         #elif m['proto']=='fasp':
         #    fasp_get(source, destination)
         #elif m['proto']=='run+fastq':
         #    fastq_run_get(source, destination)       
         else:
-            raise FetchError(f"This URI protocol is not supported: {m['proto']}")
+            raise UnsupportedError(f"This URI protocol is not supported: {m['proto']}")
 
 def list_content(uri, no_rec=False):
     """Return the recursive listing of folder specified as a URI

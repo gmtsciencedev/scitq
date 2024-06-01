@@ -11,20 +11,20 @@ Keywords|task, queue, job, python, distributed, science
 
 
 **scitq** is a distributed task queue on steroids. Coded in python, it focuses on optimization 
-and ease of use. Optimization can be done by live tuning the tasks flow in a running process, 
+and ease of use. Optimization can be done by tuning the tasks flow in a running process, 
 looking in real time at the workers stats and the different tasks' output. 
 
-A task is anything that can be express as a Unix command, and can be a complex script that 
-can be edited while the process is running. Scitq has a focus on relatively heavy tasks (e.g. 
-"scientific tasks"): it manages better thousands 1 hour long tasks than a million 1 second 
-long tasks (a scenario for which we strongly recommand Celery).
+A task is anything that can be expressed as a Unix command, and can be a complex script that 
+can be edited while the process is running. scitq has a focus on relatively heavy tasks (e.g. 
+"scientific tasks"): it manages thousands one hour-long tasks better than a million one second-long
+ tasks (a scenario for which we strongly recommend Celery).
 
 It has a few added capabilities apart from strict task distribution:
 
 - First it has the capacity to manage cloud instance life cycle (as for now 
 OpenStack (OVH), Microsoft Azure, and others to follow) - Note that you can still use 
 scitq without using that functionality, and you may use it in a mixed environment
-(with one or several static server plus extra temporary servers recruited on the
+(with one or several static servers plus extra temporary servers recruited on the
 cloud). 
 - next, scitq has the capacity to download and upload specific data - notably 
 using s3 buckets, or Azure containers as data exchange medium, but simple ftp is also possible,
@@ -39,25 +39,25 @@ these, so docker remains non-mandatory in scitq).
 
 ## What it does, and what it does not
 
-**scitq** is a practical tool; it is meant as a cloud solution to dispatch a serie of tasks and monitor them. It tries to do just this job in a convenient way, not getting in the middle. In a lot of concurrent tools, once a serie of tasks is launched, there is very little you can do: this is where scitq is at its best: 
+**scitq** is a practical tool; it is meant as a cloud solution to dispatch a series of tasks and monitor them. It tries to do just this job in a convenient way, not getting in the middle. In a lot of competitive tools, once a series of tasks is launched, there is very little you can do: this is where scitq is at its best: 
 
 - you can pause all the tasks to fix something amiss,
-- you can change the command executed for the future tasks whithout relaunching the whole serie,
-- you can resume and relauch very easily any failed task with or without changing the command (with UI or command line tools, no code needed),
+- you can change the command executed for the future tasks without relaunching the whole series,
+- you can resume and relaunch very easily any failed task with or without changing the command (with UI or command line tools, no code needed),
 - you can watch (almost - 5s) live the output of any individual task(s) using UI or command line,
 - you can adjust execution parameters (like concurrency or prefetch),
 - you can add or remove working nodes during execution,
-- scitq code can be patched while a task serie is running (client and/or server code),
+- scitq code can be patched while a task series is running (client and/or server code),
 - it is resilient to network troubles,
 - loss of a node or temporary server loss (24 hours) should have very limited impact,
-- you can mix different cloud resources in the same serie (using S3, OVH, and Azure together if that is what you want),
-- you can express a complex workflow of different steps and tasks dependancies, which may be simpler to create and maintain than workflows within a task that was the only possibility with previous versions.
+- you can mix different cloud resources in the same series (using S3, OVH, and Azure together if that is what you want),
+- you can express a complex workflow of different steps and tasks dependencies, which may be simpler to create and maintain than workflows within a task that was the only possibility with previous versions.
 
-It provides convenient utilities such as scitq-fetch which can replace specialised tools like AWS or Azure tool and address the different storages the same way.
+It provides convenient utilities such as scitq-fetch which can replace specialized tools like AWS or Azure tool and address the different storages the same way.
 
 It does not provide:
 
-- a mandatory workflow solution, as a in a number of cases workflows are managed within tasks,
+- a mandatory workflow solution, as in a number of cases workflows are managed within tasks,
 - an abstract environment: it runs vanilla docker with some mount options (or whatever option you want),
 - a custom language to express the orchestration logic, yet it provides a simple python library (`scitq.lib`) which makes orchestration through python an easy task (it can be done with some shell code also)
 
@@ -67,10 +67,10 @@ It does not provide:
 
 - a server hosts a series of (shell) tasks to be executed,
 - some workers connect to the server, fetch some tasks according to their capacity
-(which is very simply managed by the maximum number of parallel process they can
+(which is very simply managed by the maximum number of parallel processes they can
 handle, a.k.a. "concurrency"),
 - The stdout/stderr of the command is regularly (all 5s or so) sent to the
-server. A task may be executed several times (for instance if it fails). While
+server. A task may be executed several times (for instance, if it fails). While
 this is not automatic, it is easy to trigger and each execution of the task is
 remembered.
 
@@ -86,7 +86,7 @@ Now in one shell, run the server:
 FLASK_APP=scitq.server flask run
 ```
 
-In a another shell, launch the worker:
+In another shell, launch the worker:
 ```bash
 scitq-worker 127.0.0.1 1
 ```
@@ -97,7 +97,7 @@ scitq-launch echo 'Hello world!'
 ```
 You're done!
 
-Optionally look on http://127.0.0.1:5000/ui/ to see what happened.
+Optionally look at http://127.0.0.1:5000/ui/ to see what happened.
 
 Look into the [documentation](https://scitq.readthedocs.io/) to learn about the different options.
 
@@ -118,11 +118,11 @@ On the scitq-server server, install scitq:
 pip install scitq
 ```
 
-We will use an S3 storage. Configure it the usual way with `.aws/credentials` (and `.aws/config` if needed - note that is is needed for non-AWS S3). Configure it on each server (it is not strictly required on the scitq-server server, but it will be convenient to retrieve the data in the end). We will also need to create a bucket, which we will call `mybucket` (or adapt the code replacing mybucket by your real bucket name).
+We will use an S3 storage. Configure it the usual way with `.aws/credentials` (and `.aws/config` if needed - note that is needed for non-AWS S3). Configure it on each server (it is not strictly required on the scitq-server server, but it will be convenient to retrieve the data in the end). We will also need to create a bucket, which we will call `mybucket` (or adapt the code replacing mybucket by your real bucket name).
 
-On remote servers, when I run long term tasks, I usually use GNU screen. But then again, you can open several SSH connection if you prefer.
+On remote servers, when I run long-term tasks, I usually use GNU screen. But then again, you can open several SSH connections if you prefer.
 
-On the scitq-server server, we will need two open shell, one with the server runnning, with this command:
+On the scitq-server server, we will need two open shells, one with the server running, with this command:
 ```bash
 FLASK_APP=scitq.server flask run
 ```
@@ -157,7 +157,7 @@ def get_sample_runs(project):
   return samples
 ```
 
-Next for our task, we need to download the FASTQs, but scitq will take care of that for us, which we will see just after. Next we must pass them to fastp. We need to find a docker image with fastp included. We could of course build our own and use conda to install fastp, but here we are lucky and some nice people from StaPH-B did that for us, the docker image is public and called: staphb/fastp.
+Next for our task, we need to download the FASTQs, but scitq will take care of that for us, which we will see just after. Next we must pass them to fastp. We need to find a docker image with fastp included. We could, of course, build our own and use conda to install fastp, but here we are lucky and some nice people from StaPH-B did that for us, the docker image is public and called: staphb/fastp.
 
 We will run this rather classical fastp command (suited for unpaired reads):
 ```bash
@@ -165,7 +165,7 @@ zcat *.f*q.gz |fastp --stdin --out1 $sample.fastq.gz --json $sample-fastp.json -
   --adapter_sequence AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter_sequence_r2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
 ```
 
-scitq will take care of collecting the output for us, but we'd like to have fastp json report collected as well, and also get back the cleaned FASTQs. This is where our S3 storage will be useful.
+scitq will take care of collecting the output for us, but we'd like to have fastp json reports collected as well, and also get back the cleaned FASTQs. This is where our S3 storage will be useful.
 
 So our next function will create the corresponding scitq task using the Server.task_create method, our code will be run on the scitq server, so we will use 127.0.0.1 as the server IP address - but you can also use the public IP or a public name that point to it:
 ```python
@@ -194,12 +194,12 @@ def run_tasks(samples,project):
 
 Ok, here our s.task_create command is obviously doing lots of things, let's look in detail at each argument:
 
-- `command` : you recognize the shell command that we discussed above. We have wraped it in a shell (using `sh -c '...'`) because scitq tasks do not use shell by default (which is not always present in docker images), but here we use a pipe which is a shell comodity, so we need a shell. Next, we have taken our input files from the `/input/` folder, and we output all we want back in the `/output` folder. Otherwise it is the same command.
-- `input` this is were we ask scitq to fetch the public data for us and make it available in the `/input` folder of our docker. It is a string of space separated URI, and here we use a very specialised URI: `run+fastq://<run accession>` that probably only scitq understand. scitq will use whatever works, starting from EBI ftp, then switching to NCBI sratools if it does not work, and trying 10 times (EBI Aspera will also be tempted). As you have noticed we installed nothing for sratools or aspera, but scitq will use the official dockers of those solutions to fetch the data, if it thinks it is needed. (note that `scitq-fetch` is a standalone utility that understand these URIs and can be used outside of scitq, it is included in scitq python package)
+- `command` : you recognize the shell command that we discussed above. We have wrapped it in a shell (using `sh -c '...'`) because scitq tasks do not use the shell by default (which is not always present in docker images), but here we use a pipe which is a shell commodity, so we need a shell. Next, we have taken our input files from the `/input/` folder, and we output all we want back in the `/output` folder. Otherwise it is the same command.
+- `input` this is where we ask scitq to fetch the public data for us and make it available in the `/input` folder of our docker. It is a string of space separated URI, and here we use a very specialized URI: `run+fastq://<run accession>` that probably only scitq understand. scitq will use whatever works, starting from EBI ftp, then switching to NCBI sratools if it does not work, and trying 10 times (EBI Aspera will also be tempted). As you have noticed we installed nothing for sratools or aspera, but scitq will use the official dockers of those solutions to fetch the data, if it thinks it is needed. (note that `scitq-fetch` is a standalone utility that understands these URIs and can be used outside of scitq, it is included in scitq python package)
 - `output` this is where all that is in our docker `/output/` at the end of the task will be copied to. Here you may recognized a completely standard s3 URI, designating a folder in our s3 bucket, we have an different subfolder for each sample, which is not mandatory in our case as output files have different names for each sample, but is generally advised.
 - `container` this is simply the docker image that will be used to run the command.
 
-In the end, the last line, we use a small command (`s.join(tasks)`) to wait for all the tasks to complete, which name is reminiscent of a function much alike in python threading package. It will block python code, waiting that all the task completed, making the queuing script end only when all tasks are done. It takes an optional parameter, `retry`, which tels scitq to automatically retry failed tasks two times before giving up. It makes a small reporting log during execution also.
+In the end, the last line, we use a small command (`s.join(tasks)`) to wait for all the tasks to complete, which name is reminiscent of a function much alike in python threading package. It will block python code, waiting that all the task completed, making the queuing script end only when all tasks are done. It takes an optional parameter, `retry`, which tells scitq to automatically retry failed tasks two times before giving up. It makes a small reporting log during execution also.
 
 And that's it!
 
@@ -276,14 +276,14 @@ If you want to completely remove any trace of this computation on scitq, just de
 scitq-manage -s 127.0.0.1 batch delete -n Default
 ```
 
-Of course for the purpose of demonstration, do not delete the batch and let a few tasks end normally at least.
+Of course for the purpose of demonstration do not delete the batch and let a few tasks normally end at least.
 
 
 #### getting back the results
 
 So now your results are all in `s3://mybucket/myresults/PRJEB46098`. You should get them back on the server and see them.
 
-You can of course use AWS CLI utility:
+You can, of course, use AWS CLI utility:
 ```bash
 aws s3 sync s3://mybucket/myresults/PRJEB46098 ./PRJEB46098
 ```
@@ -308,7 +308,7 @@ Then get the output of any task:
 scitq-manage -s 127.0.0.1 task output -i <id of task>
 ```
 
-You can also group both commands to get a listing of all outputs (the first line enable us to give up the `-s` argument we've used up to now with `scitq-manage`):
+You can also group both commands to get a listing of all outputs (the first line enables us to give up the `-s` argument we've used up to now with `scitq-manage`):
 ```bash
 export SCITQ_SERVER=127.0.0.1
 scitq-manage task list -S succeeded -H|cut -d' ' -f1|xargs -n 1 scitq-manage task output --output -i

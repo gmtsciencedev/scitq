@@ -277,8 +277,8 @@ def handle_create_worker():
     if not flavor:
         return jsonify(error='Flavor must be specified')
         #return None
-    region = json['region']
-    provider = json['provider']
+    region = json['region'].strip()
+    provider = json['provider'].strip()
     if not region:
         return jsonify(error='Region must be specified')
         #return None

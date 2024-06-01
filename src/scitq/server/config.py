@@ -30,6 +30,9 @@ UI_OUTPUT_TRUNC=100
 UI_MAX_DISPLAYED_ROW = 500
 WORKER_DESTROY_RETRY=2
 DEFAULT_BATCH = 'Default'
+TERMINATE_TIMEOUT = 20
+KILL_TIMEOUT = 30
+JOB_MAX_LIFETIME = 600
 
 def setup_log():
     """Setting up log must occur only in specific contexts"""

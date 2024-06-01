@@ -13,7 +13,7 @@ import psutil
 import platform
 import queue
 import tempfile
-from .fetch import get,put,pathjoin, info, FetchError
+from .fetch import get,put,pathjoin, info, FetchError, UnsupportedError
 import traceback
 import shutil
 import subprocess
@@ -24,13 +24,15 @@ import concurrent.futures
 import json
 import datetime
 import sys
-from .util import isfifo
+from uuid import uuid1
+from .util import isfifo, force_hard_link
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
 READ_TIMEOUT = 5
 QUEUE_SIZE_THRESHOLD = 2
 IDLE_TIMEOUT = 600
+ZOMBIE_TIMEOUT = 600
 WAIT_FOR_FIRST_EXECUTION_TIMEOUT = 3600
 DEFAULT_WORKER_STATUS = "running"
 BASE_WORKDIR = os.environ.get("BASE_WORKDIR", 
@@ -44,6 +46,11 @@ MAXIMUM_PARALLEL_UPLOAD = 5
 RETRY_UPLOAD = 5
 RETRY_DOWNLOAD = 2
 DEFAULT_AUTOCLEAN = 95
+RESOURCE_VERSION = 2
+try:
+    SCITQ_PERMANENT_WORKER = bool(int(os.environ.get("SCITQ_PERMANENT_WORKER", '1')))
+except:
+    SCITQ_PERMANENT_WORKER = True
 
 if not os.path.exists(BASE_RESOURCE_DIR):
     os.mkdir(BASE_RESOURCE_DIR)
@@ -87,7 +94,7 @@ def docker_command(input_dir, output_dir, temp_dir, resource_dir, cpu, extra_opt
         '-v', f'{input_dir}:{DEFAULT_INPUT_DIR}',
         '-v', f'{output_dir}:{DEFAULT_OUTPUT_DIR}',
         '-v', f'{temp_dir}:{DEFAULT_TEMP_DIR}',
-        '-v', f'{resource_dir}:{DEFAULT_RESOURCE_DIR}',
+        '-v', f'{resource_dir}:{DEFAULT_RESOURCE_DIR}:ro',
         '-e', f'CPU={str(cpu)}'])
     docker_cmd.extend(shlex.split(extra_options))
     docker_cmd.append(container)
@@ -110,9 +117,10 @@ def docker_inspect(container_id):
         return None
 
 def docker_logs(container_id):
-    return subprocess.run(['docker','logs',container_id],
-            capture_output=True, check=True
-            ).stdout.decode('utf-8')
+    process = subprocess.run(['docker','logs',container_id],
+            capture_output=True, check=True, encoding='utf-8'
+            )
+    return process.stdout, process.stderr
 
 
 
@@ -144,11 +152,11 @@ def no_slash(path):
 def resource_to_json(resource_db, resource_file=RESOURCE_FILE):
     """Dump resource to a json file"""
     with open(resource_file,'w',encoding='utf-8') as rf:
-        resource_image = {}
+        resource_image = {'version':RESOURCE_VERSION}
         for data,data_info in resource_db.items():
             new_data_info = {}
             for k,v in data_info.items():
-                if k=='date':
+                if k=='date' and v is not None:
                     new_data_info[k]=v.isoformat()
                 else:
                     new_data_info[k]=v 
@@ -160,8 +168,20 @@ def json_to_resource(resource_db,resource_file=RESOURCE_FILE):
     if os.path.exists(resource_file):
         try:
             with open(resource_file,'r',encoding='utf-8') as rf:
-                for data,data_info in json.load(rf).items():
-                    resource_db[data]=dict( [(k,datetime.datetime.fromisoformat(v)) if k=='date' else (k,v) 
+                resource = json.load(rf)
+                if 'version' not in resource or resource['version']<RESOURCE_VERSION:
+                    resource_folder,_ = os.path.split(resource_file)
+                    log.warning(f'Obsolete resource folder, wiping {resource_folder}')
+                    for item in os.listdir(resource_folder):
+                        item = os.path.join(resource_folder, item)
+                        if os.path.isdir(item):
+                            shutil.rmtree(item)
+                        else:
+                            os.remove(item)
+                else:
+                    del(resource['version'])
+                    for data,data_info in resource.items():
+                        resource_db[data]=dict( [(k,datetime.datetime.fromisoformat(v)) if k=='date' else (k,v) 
                                              for k,v in data_info.items()] )
         except Exception as e:
             log.exception(f'Could not import resource from {resource_file}')
@@ -192,7 +212,7 @@ class Executor:
                 container, container_options, execution_queue,
                 cpu, resource_dir, resource, resources_db, #run_slots, #run_slots_semaphore,
                 worker_id, status, working_dirs, client_status,
-                recover=False, input_dir=None, output_dir=None, 
+                recover=False, input_dir=None, output_dir=None, task_resource_dir=None,
                 temp_dir=None, workdir=None, container_id=None, go=None):
         log.warning(f'Starting executor for {execution_id}')
         self.s = Server(server, style='object')
@@ -231,6 +251,7 @@ class Executor:
             self.input_dir = create_dir(self.workdir, DEFAULT_INPUT_DIR)
             self.output_dir = create_dir(self.workdir, DEFAULT_OUTPUT_DIR)
             self.temp_dir = create_dir(self.workdir, DEFAULT_TEMP_DIR)  
+            self.task_resource_dir = create_dir(self.workdir, DEFAULT_RESOURCE_DIR)
             self.container_id=None 
         else:
             self.workdir = workdir
@@ -238,6 +259,7 @@ class Executor:
             self.output_dir = output_dir
             self.temp_dir = temp_dir
             self.container_id = container_id
+            self.task_resource_dir = task_resource_dir
         self.working_dirs[execution_id]=self.workdir
         asyncio.run(self.run())
 
@@ -249,12 +271,14 @@ class Executor:
                 worker_id, status, working_dirs,
                 docker_container, client_status ):
         for mount in docker_container['Mounts']:
-            if mount['Destination']=='/input':
+            if mount['Destination']==DEFAULT_INPUT_DIR:
                 input_dir = final_slash(mount['Source'])
-            elif mount['Destination']=='/output':
+            elif mount['Destination']==DEFAULT_OUTPUT_DIR:
                 output_dir = final_slash(mount['Source'])
-            elif mount['Destination']=='/tmp':
+            elif mount['Destination']==DEFAULT_TEMP_DIR:
                 temp_dir = final_slash(mount['Source'])
+            elif mount['Destination']==DEFAULT_RESOURCE_DIR:
+                task_resource_dir = final_slash(mount['Source'])
         workdir='/'.join(input_dir.split('/')[:-2])
         log.warning(f'Workdir was recovered to {workdir}')        
         container_id=docker_container['Id']
@@ -267,7 +291,8 @@ class Executor:
             #run_slots_semaphore=run_slots_semaphore,
             worker_id=worker_id,
             status=status, working_dirs=working_dirs, recover=True, input_dir=input_dir, output_dir=output_dir,
-            temp_dir=temp_dir, workdir=workdir, container_id=container_id, client_status=client_status)
+            temp_dir=temp_dir, workdir=workdir, task_resource_dir=task_resource_dir,
+            container_id=container_id, client_status=client_status)
 
     @property
     def status(self):
@@ -293,11 +318,12 @@ class Executor:
                         log.warning('Docker process was too quick for us but we can inspect what went on')
                         return_code=container_inspection_data['State']['ExitCode']
                         self.status = STATUS_SUCCEEDED if return_code==0 else STATUS_FAILED
-                        output = docker_logs(self.container_id)
+                        output,error = docker_logs(self.container_id)
                         self.s.execution_update(
                             self.execution_id, 
                             status='succeeded' if self.status==STATUS_SUCCEEDED else 'failed',
                             output=output,
+                            error=error,
                             command=self.command,
                             return_code=return_code,
                             output_files=output_files
@@ -338,7 +364,7 @@ class Executor:
                             'INPUT': no_slash(self.input_dir),
                             'OUTPUT': no_slash(self.output_dir),
                             'TEMP': no_slash(self.temp_dir),
-                            'RESOURCE': no_slash(self.resource_dir)},
+                            'RESOURCE': no_slash(self.task_resource_dir)},
                         limit=OUTPUT_LIMIT)
                 #self.run_slots.value -= 1
                 #self.status = STATUS_RUNNING
@@ -360,7 +386,7 @@ class Executor:
                             input_dir=self.input_dir,
                             output_dir=self.output_dir,
                             temp_dir=self.temp_dir,
-                            resource_dir=self.resource_dir,
+                            resource_dir=self.task_resource_dir,
                             cpu=self.cpu,
                             extra_options=self.container_options),
                         shell=False,
@@ -474,6 +500,48 @@ class Executor:
 
         return self.process.returncode
 
+
+    def download_resource(self, data, data_info):
+        """A method to properly download resource"""
+        self.resources_db[data]={'status':'lock'}
+        current_resource_dir = os.path.join(self.resource_dir, str(uuid1()))+'/'
+        retry=RETRY_DOWNLOAD
+        while True:
+            try:
+                log.warning(f'Downloading resource {data}...')
+                get(data, current_resource_dir)
+                if data_info is not None:
+                    log.warning(f'Modification date is {repr(data_info.modification_date)}')
+                    self.resources_db[data]={'status':'loaded',
+                                    'date':data_info.modification_date,
+                                    'size':data_info.size,
+                                    'path':current_resource_dir}
+                else:
+                    log.warning(f'Resource has no metadata')
+                    self.resources_db[data]={'status':'loaded',
+                                    'date':None,
+                                    'size':None,
+                                    'path':current_resource_dir}
+                resource_to_json(self.resources_db)
+                log.warning(f'... resource {data} downloaded')
+                break
+            except Exception as e:
+                log.exception(f'Somthing failed with resource {data}')
+                retry-=1
+                if retry>=0:
+                    log.warning('Retrying')
+                else:
+                    self.resources_db[data]={'status':'failed'}
+                    log.warning(f'... resource {data} failed!')
+                    raise FetchError('Could not download resource')
+
+
+    def link_resource(self, path):
+        """Hardlink resource files into task resource dir"""
+        shutil.copytree(path, self.task_resource_dir, copy_function=force_hard_link, 
+                        dirs_exist_ok=True)
+            
+
     def download(self, input=None, resource=None):
         """Do the downloading part, before launching, getting all input URIs into input_dir"""
         if self.status != STATUS_RUNNING:
@@ -510,44 +578,17 @@ class Executor:
             for data in resource:
                 try:
                     data_info = info(data)
-                except:
+                except UnsupportedError:
                     data_info = None
                 if data not in self.resources_db or self.resources_db[data]['status']=='failed' or (
                             self.resources_db[data]['status']=='loaded' and 
-                            ( data_info is None or 
-                            ( data_info.modification_date > self.resources_db[data]['date'] or
-                             data_info.size != self.resources_db[data]['size'] )
+                            ( data_info is not None and (
+                                    self.resources_db[data]['date'] is None or 
+                                    data_info.modification_date > self.resources_db[data]['date'] or
+                                    data_info.size != self.resources_db[data]['size'] )
                             )
                         ):
-                    self.resources_db[data]={'status':'lock'}
-                    retry=RETRY_DOWNLOAD
-                    while retry>0:
-                        data_failure = False
-                        try:
-                            log.warning(f'Downloading resource {data}...')
-                            get(data, self.resource_dir)
-                            log.warning(f'Modification date is {repr(data_info.modification_date)}')
-                            if data_info is not None:
-                                self.resources_db[data]={'status':'loaded',
-                                                'date':data_info.modification_date,
-                                                'size':data_info.size}
-                            else:
-                                self.resources_db[data]={'status':'loaded',
-                                                'date':None,
-                                                'size':None}
-                            resource_to_json(self.resources_db)
-                            log.warning(f'... resource {data} downloaded')
-                            break
-                        except Exception as e:
-                            data_failure = True
-                            log.exception(f'Somthing failed with resource {data}')
-                            retry-=1
-                            if retry>0:
-                                log.warning('Retrying')
-                    if data_failure:
-                        self.resources_db[data]={'status':'failed'}
-                        log.warning(f'... resource {data} failed!')
-                        raise FetchError(f'Could not download {data}')
+                    self.download_resource(data, data_info)
                 else:
                     log.warning(f'Resource {data} is already there')
             while True:
@@ -562,23 +603,15 @@ class Executor:
             for data in resource:
                 if self.resources_db[data]['status']=='failed':
                     self.resources_db[data]={'status':'lock'}
-                    retry = RETRY_DOWNLOAD
-                    while retry > 0:
-                        try:
-                            log.warning(f'Trying again to download resource {data}...')
-                            get(data, self.resource_dir)
-                            data_info = info(data)
-                            self.resources_db[data]={'status':'loaded',
-                                        'date':data_info.modification_date,
-                                        'size':data_info.size}
-                            log.warning(f'... resource {data} finally downloaded')
-                            break
-                        except:
-                            self.resources_db[data]={'status':'failed'}
-                            log.warning(f'... resource {data} failed again!')
-                            retry -= 1
-                            if retry<=0:
-                                raise
+                    log.warning(f'Trying again to download resource {data}...')
+                    try:
+                        data_info = info(data)
+                    except UnsupportedError:
+                        data_info = None
+                    self.download_resource(data, data_info)
+                data_info = self.resources_db[data]
+                self.link_resource(data_info['path'])
+                
 
     def upload(self):
         """Do the uploading part at the end, getting all output into output URI"""
@@ -653,9 +686,13 @@ class Executor:
                 subprocess.run(['docker','kill',self.container_id])
             else:
                 self.process.send_signal(SIGKILL)
+        killing_time = time()
         while True:
             sleep(POLLING_TIME)
             if self.process.returncode is not None:
+                break
+            if time() - killing_time > ZOMBIE_TIMEOUT:
+                log.exception(f"No I would rather suicide than becoming a zombie...")
                 break
         self.clean()
         sys.exit(1)
@@ -861,6 +898,7 @@ class Client:
         self.ref_disk = self.ref_network = None
         self.autoclean = autoclean
         self.executions_go = {}
+        self.zombie_executions = {}
 
 
     def declare(self):
@@ -876,10 +914,12 @@ class Client:
                 concurrency=self.concurrency,
                 prefetch=self.prefetch,
                 hostname=self.hostname,
-                batch=self.batch)
+                batch=self.batch,
+                permanent=SCITQ_PERMANENT_WORKER)
 
     def clean_all(self):
         """Clean all unused directory"""
+        log.warning(f'Working_dirs are {self.working_dirs.values()}')
         for dir in os.listdir(BASE_WORKDIR):
             full_dir = os.path.join(BASE_WORKDIR, dir)
             if full_dir==BASE_RESOURCE_DIR:
@@ -910,6 +950,13 @@ class Client:
                     log.warning(f'Removing dir {full_dir}')
                     shutil.rmtree(full_dir)
                     break
+
+    def clean_execution(self, execution_id):
+        """Called when an execution is dead (or has become a zombie)"""
+        del(self.executions[execution_id])
+        del(self.executions_status[execution_id])
+        if execution_id in self.working_dirs:
+            del(self.working_dirs[execution_id])
 
     def run(self, status=DEFAULT_WORKER_STATUS):
         """Main loop of the client"""
@@ -1110,10 +1157,7 @@ class Client:
                         log.warning(f'Execution {signal.execution_id} is not running in this worker')
                 for execution_id in list(self.executions.keys()):
                     if not self.executions[execution_id][0].is_alive():
-                        del(self.executions[execution_id])
-                        del(self.executions_status[execution_id])
-                        if execution_id in self.working_dirs:
-                            del(self.working_dirs[execution_id])
+                        self.clean_execution(execution_id)
                 #if self.run_slots_semaphore.acquire():
                 #    self.has_run_slots_semaphore=True
                 #running_executions = [ execution_id 
@@ -1225,6 +1269,12 @@ class Client:
                         if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_RUNNING:
                             log.warning(f'Execution {execution_id} is still running but is no more assigned to us (or likely was deleted), sending SIGTERM signal')
                             self.executions[execution_id][1].put(SIGTERM)
+                            if execution_id not in self.zombie_executions:
+                                self.zombie_executions[execution_id]=current_time
+                            elif current_time - self.zombie_executions[execution_id] > ZOMBIE_TIMEOUT:
+                                self.clean_execution(execution_id)
+                                log.exception(f'Execution {execution_id} has become a zombie')
+                                del(self.zombie_executions[execution_id])
                         if execution_id not in executions_ids and self.executions_status[execution_id].value == STATUS_WAITING:
                             log.warning(f'Execution {execution_id} is waiting but is no more assigned to us (or likely was deleted), releasing it to its death')
                             self.executions_go[execution_id].release()

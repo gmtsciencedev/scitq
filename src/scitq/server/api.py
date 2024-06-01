@@ -1,6 +1,6 @@
 from flask_restx import Api, Resource, fields
 from datetime import datetime
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, select, func
 from sqlalchemy.sql.expression import label
 import logging as log
 import json as json_module
@@ -8,7 +8,7 @@ import json as json_module
 from .model import Task, Execution, Signal, Requirement, Worker, create_worker_destroy_job, Job, Recruiter, delete_batch
 from .db import db
 from .config import IS_SQLITE
-from ..constants import TASK_STATUS
+from ..constants import TASK_STATUS, EXECUTION_STATUS
 
 
 api = Api(version='1.2', title='TaskMVC API',
@@ -280,8 +280,8 @@ class WorkerDAO(BaseDAO):
         """Delete a worker
         """
         worker=self.get(id)
-        log.warning(f'Deleting worker {id} ({worker.idle_callback})')
-        if worker.idle_callback is not None and not is_destroyed:
+        log.warning(f'Deleting worker {id} ({worker.permanent})')
+        if not worker.permanent and not is_destroyed:
             create_worker_destroy_job(worker, session)
             return worker
         else:
@@ -317,8 +317,8 @@ worker = api.model('Worker', {
         description='timestamp of last worker ping (automatically sent by worker'),
     'batch': fields.String(required=False, 
         description="worker accept only tasks with same batch (null or not)."),
-    'idle_callback': fields.String(readonly=True,
-        description="A command to be called on scitq server when the worker load *returns* to zero. Typically used to end cloud instances."),
+    'permanent': fields.Boolean(readonly=False, required=False,
+        description="Set to True to create a permanent worker"),
     'flavor': fields.String(required=False, 
         description="flavor (cloud type of instance) of the worker."),
     'region': fields.String(readonly=True, 
@@ -423,8 +423,8 @@ class WorkerCallback(Resource):
         message = callback_parser.parse_args().get('message','')
         worker = worker_dao.get(id)
         if message == 'idle': 
-            if worker.idle_callback:
-                if db.session.query(Execution).filter(Execution.status=='running',
+            if not worker.permanent:
+                if db.session.query(Execution).filter(Execution.status.in_(['running','pending']),
                         Execution.worker_id==worker.worker_id).count()>0:
                     log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
                     return {'result':'still have running tasks'}
@@ -432,7 +432,7 @@ class WorkerCallback(Resource):
                                         Task.batch==worker.batch)).count()>0:
                     log.warning(f'Worker {worker.name} called idle but some tasks are still due...')
                     return {'result':'still some work to do, lazy one!'}
-                log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching: '+worker.idle_callback.format(**(worker.__dict__)))
+                log.warning(f'Worker {worker.name} ({worker.worker_id}) called idle callback, launching destruction')
                 #worker.destroy()
                 create_worker_destroy_job(worker, db.session, commit=False)
                 #db.session.delete(worker)
@@ -482,7 +482,7 @@ class WorkerDeploy(Resource):
 
 class ExecutionDAO(BaseDAO):
     ObjectType = Execution
-    authorized_status = ['pending','accepted','running','failed','succeeded']
+    authorized_status = EXECUTION_STATUS
 
     def create(self, data):
         task = task_dao.get(data['task_id'])
@@ -563,13 +563,32 @@ class ExecutionDAO(BaseDAO):
             db.session.commit()
         return execution
 
-    def list(self,no_output=False,**args):
-        sorting_column='execution_id'
+    def list(self,no_output=False,limit=None,reverse=False,trunc=None,**args):
+        sorting_column=Execution.execution_id
+        if reverse:
+            sorting_column=sorting_column.desc()
         q=Execution.query
         if args:
-            q=q.filter(process_filtering_args(Execution, args))
+            task_args = {}
+            if 'task_name' in args:
+                task_args['name']=args['task_name']
+                del(args['task_name'])
+            if 'batch' in args:
+                task_args['batch']=args['batch']
+                del(args['batch'])
+            filter = None
+            if args:
+                filter=process_filtering_args(Execution, args)
+            if task_args:
+                q = q.join(Task, Task.task_id==Execution.task_id)
+                if filter:
+                    filter = and_(filter, process_filtering_args(Task, task_args))
+                else:
+                    filter = process_filtering_args(Task, task_args)
+            q=q.filter(filter)
         if no_output:
             q=q.with_entities(Execution.execution_id,
+                              Execution.worker_id,
                               Execution.command, 
                               Execution.status,
                               Execution.task_id,
@@ -578,8 +597,30 @@ class ExecutionDAO(BaseDAO):
                               Execution.pid,
                               Execution.output_files,
                               Execution.latest)
+        elif trunc:
+            if IS_SQLITE:
+                trunc_output = func.substr(Execution.output, -trunc, trunc).label('output')
+                trunc_error = func.substr(Execution.error, -trunc, trunc).label('error')
+            else:
+                trunc_output = func.right(Execution.output, trunc).label('output')
+                trunc_error = func.right(Execution.error, trunc).label('error')
+            q=q.with_entities(Execution.execution_id,
+                              Execution.worker_id,
+                              Execution.command, 
+                              Execution.status,
+                              Execution.task_id,
+                              Execution.creation_date,
+                              Execution.modification_date,
+                              Execution.pid,
+                              Execution.output_files,
+                              Execution.latest,
+                              trunc_output,
+                              trunc_error)
+        q = q.order_by(sorting_column)
+        if limit:
+            q=q.limit(limit)
 
-        return list(q.order_by(sorting_column).all())
+        return list(q.all())
  
 execution_dao = ExecutionDAO()
 
@@ -595,8 +636,8 @@ execution = api.model('Execution', {
         description="timestamp of execution creation (on worker)"),
     'modification_date': fields.DateTime(readonly=True,
         description="timestamp of execution last modification"),
-    'output': fields.String(readonly=True, description='The standard output of the execution'),
-    'error': fields.String(readonly=True, description='The standard error of the execution (if any)'),
+    'output': fields.String(readonly=False, required=False, description='The standard output of the execution'),
+    'error': fields.String(readonly=False, required=False, description='The standard error of the execution (if any)'),
     'output_files': fields.String(readonly=True, description='A list of output files transmitted (if any)'),
     'command': fields.String(required=False, description='The command that was really launched for this execution (it case Task.execution is modified)'),
     'latest': fields.Boolean(readonly=True, description='Latest or current execution for the related task')
@@ -711,7 +752,13 @@ ns = api.namespace('executions', description='EXECUTION operations')
 execution_filter = api.model('ExecutionFilter', {
     'task_id': fields.Integer(required=False,decription='A list of ids to restrict listing'),
     'status': fields.String(required=False, description="Filter with this status"),
-    'latest': fields.Boolean(required=False, decription="Filter only for latest execution")
+    'latest': fields.Boolean(required=False, decription="Filter only for latest execution"),
+    'task_name': fields.String(required=False, description="Filter with this task name"),
+    'batch': fields.String(required=False, description="Filter with this batch"),
+    'limit': fields.Integer(required=False, description="Limit results to this number"),
+    'reverse': fields.Boolean(required=False, decription="Reverse sorting order, most recent executions first"),
+    'no_output': fields.Boolean(required=False, decription="Do not include output and error for a lighter query"),
+    'trunc': fields.Integer(required=False, description="Limit output size to this number"),
 })
 @ns.route('/')
 class ExecutionList(Resource):
