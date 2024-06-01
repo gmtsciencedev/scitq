@@ -130,10 +130,11 @@ NB the `/scratch` thing is unrelated to the eponymous language, it is just a rem
 #### New in v1.2.2
 
 scitq.fetch URI now accepts some transport options, which are specified right after the protocol, notably for the custom URL `run+fastq` (used in bioinformatics only). Normally this specific URI type chooses the best transport automatically. However you can now force this choice (notably in some cases we discovered that some sources are corrupted in EBI and fine in NCBI or the other way around):
-  - `run+fastq@ftp://...` : this forces EBI FTP transport,
-  - `run+fastq@aspera://...` : this forces EBI Aspera transport,
-  - `run+fastq@sra://...` : this forces NCBI transport (by default `ftp@aria2`, see below, else sratools)
-- scitq.fetch `https` and `ftp` transport support `@aria2` option like this, replace `https://...` by `https@aria2://...`  or `ftp://...` by `ftp@aria2://...`. [aria2](https://aria2.github.io/) is a lightweight multi-protocol & multi-source command-line download utility that notably parallelize download tasks by splitting the task in several processes (NB this can cause some ethical dilemma when using public resources as it is very demanding for the resource distribution server, so this option should only be used when the alternative methods have strong issues - which is the case for NCBI sratools which are very slow).
+- `run+fastq@ftp://...` : this forces EBI FTP transport,
+- `run+fastq@aspera://...` : this forces EBI Aspera transport,
+- `run+fastq@sra://...` : this forces NCBI transport (by default `ftp@aria2`, see below, else sratools)
+
+scitq.fetch `https` and `ftp` transport support `@aria2` option like this, replace `https://...` by `https@aria2://...`  or `ftp://...` by `ftp@aria2://...`. [aria2](https://aria2.github.io/) is a lightweight multi-protocol & multi-source command-line download utility that notably parallelize download tasks by splitting the task in several processes (NB this can cause some ethical dilemma when using public resources as it is very demanding for the resource distribution server, so this option should only be used when the alternative methods have strong issues - which is the case for NCBI sratools which are very slow).
 
 ### resource (-r)
 
