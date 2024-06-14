@@ -8,8 +8,9 @@ import re
 
 
 # Instantiate an OVH Client.
-# You can generate new credentials with full access to your account on
-# the token creation page (https://api.ovh.com/createToken/index.cgi?GET=/*&PUT=/*&POST=/*&DELETE=/*)
+print('''If you don't have credentials you can create ones with full access to your account on the token creation page:
+       https://api.ovh.com/createToken/index.cgi?GET=/*&PUT=/*&POST=/*&DELETE=/*
+''')
 client = ovh.Client(
 	endpoint='ovh-eu',               # Endpoint of API OVH (List of available endpoints: https://github.com/ovh/python-ovh#2-configure-your-application)
 	application_key=input('application key: '),    # Application Key
