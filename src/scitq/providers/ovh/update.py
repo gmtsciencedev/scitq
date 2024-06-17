@@ -72,6 +72,6 @@ for table in pd.read_html(r.content):
                     value=float(dicts['value'].replace(',','.'))
                     flavors[line.Nom]['gpumem']=n*value
 
-# Pretty print
+# dump resource
 with open('resource.json','w') as f:
     json.dump({'regions':regions, 'flavors':flavors},f)
