@@ -40,7 +40,8 @@ for rf in [Namespace(**rf) for rf in raw_flavors]:
             tags.append('metal')
         flavors[rf.name]={'cpu':rf.vcpus, 'ram':rf.ram/1000, 'disk': rf.disk, 'bandwidth': rf.inboundBandwidth/1000, 'regions': [rf.region], 'tags': tags}
     elif rf.region not in flavors[rf.name]['regions']:
-        flavors[rf.name]['regions'].append(rf.region)        
+        flavors[rf.name]['regions'].append(rf.region) 
+        flavors[rf.name]['regions'].sort()       
 
 r = requests.get('https://www.ovhcloud.com/fr/public-cloud/prices/')
 for table in pd.read_html(r.content):
