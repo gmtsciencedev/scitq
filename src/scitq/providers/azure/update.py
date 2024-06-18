@@ -7,6 +7,9 @@ from azure.mgmt.resourcegraph.models import QueryRequest, QueryRequestOptions
 import os
 import requests
 import json
+import csv
+
+GPU_RESOURCE='gpu.tsv'
 
 subscription_id = os.environ['AZURE_SUBSCRIPTION_ID']
 client_id = os.environ['AZURE_CLIENT_ID']
@@ -39,7 +42,7 @@ for region in regions:
                     'disk':max(flavor.os_disk_size_in_mb,flavor.resource_disk_size_in_mb)/1024,
                     'regions':[region],
                     'bandwidth':1,
-                    'tag':[],
+                    'tag':['gpu'] if flavor.name.startswith('Standard_N') else [],
                     'price':{},
                     'eviction':{}
                 }
@@ -95,6 +98,14 @@ while skip_token:
             flavors_lower[item['skuName']]['eviction'][item['location']]=eviction
 
     skip_token=query_response.skip_token
+
+print('\nAdding GPU info')
+with open(GPU_RESOURCE,'rt',encoding='utf-8') as f:
+    for entry in csv.DictReader(f,delimiter='\t'):
+        if entry['flavor'] in flavors:
+            flavors[entry['flavor']]['gpu']=entry['gpu']
+            flavors[entry['flavor']]['gpumem']=entry['gpumem']
+
 
 print('\nDumping resources')
 # dump resource
