@@ -533,7 +533,7 @@ class Executor:
                 else:
                     self.resources_db[data]={'status':'failed'}
                     log.warning(f'... resource {data} failed!')
-                    raise FetchError('Could not download resource')
+                    raise FetchError(f'Could not download resource {data} because of {e}')
 
 
     def link_resource(self, path):
