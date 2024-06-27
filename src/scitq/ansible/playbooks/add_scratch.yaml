@@ -98,13 +98,6 @@
     - mnt_big is defined
     - mnt_big.stdout is defined
     - mnt_big.stdout
-- name: add to fstab
-  lineinfile:
-    dest: /etc/fstab
-    regexp: "/scratch"
-    line: "/scratch /mnt none bind 0 0"
-  become: yes
-  when: hostvars[nodename].provider == 'azure' and mnt_big.stdout and hostvars[nodename].flavor not in ["Standard_L32-as_v3","Standard_L16-as_v3","Standard_L8-as_v3"]
 - name: Changing perm of /scratch, all+rwx
   file: dest=/scratch mode=a+rwx
   become: yes

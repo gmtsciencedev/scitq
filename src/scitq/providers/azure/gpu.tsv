@@ -39,7 +39,7 @@ Standard_NV36ads_A10_v5	24	1xA10
 Standard_NV36adms_A10_v5	24	1xA10
 Standard_NV72ads_A10_v5	48	2xA10
 Standard_ND96asr_v4	886	8xA100
-Standard_NV4as_v4	2	1/8xInstinc MI25
-Standard_NV8as_v4	4	1/4xInstinc MI25
-Standard_NV16as_v4	8	1/2xInstinc MI25
-Standard_NV32as_v4	16	1xInstinc MI25
+Standard_NV4as_v4	2	1/8xInstinct MI25
+Standard_NV8as_v4	4	1/4xInstinct MI25
+Standard_NV16as_v4	8	1/2xInstinct MI25
+Standard_NV32as_v4	16	1xInstinct MI25
