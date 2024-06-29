@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitq"
-version = "1.2.2"
+version = "1.2.3rc"
 authors = [
   { name="Raynald de Lahondès" },
   { name="Rémi Tan" }
@@ -34,7 +34,8 @@ dependencies=['Flask < 2.2',
         'boto3 >= 1.24.22',
         'python-dotenv',
         'azure-storage-blob',
-        'urwid'
+        'urwid',
+        'filelock',
         ]
 
 [project.urls]

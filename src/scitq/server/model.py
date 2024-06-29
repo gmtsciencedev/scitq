@@ -1,6 +1,6 @@
 from datetime import datetime
 import json as json_module
-from sqlalchemy import DDL, event, func, delete, select, or_
+from sqlalchemy import DDL, event, func, delete, select, or_, and_
 
 from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY
 from .db import db
@@ -67,6 +67,11 @@ class Worker(db.Model):
     flavor = db.Column(db.String, nullable=True)
     region = db.Column(db.String, nullable=True)
     provider = db.Column(db.String, nullable=True)
+    ipv4 = db.Column(db.String, nullable=True)
+    ipv6 = db.Column(db.String, nullable=True)
+    ansible_host = db.Column(db.String, nullable=True)
+    ansible_group = db.Column(db.String, nullable=True)
+    ansible_active = db.Column(db.Boolean, default=False)
     signals = db.relationship("Signal", cascade="all,delete")
 
     def __init__(self, name, concurrency, prefetch=0, hostname=None, 
@@ -282,3 +287,73 @@ def delete_batch(name, session, commit=True):
              execution_options={'synchronize_session':False})
     if commit:
         session.commit()
+
+
+class Region(db.Model):
+    __tablename__="region"
+    name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    
+class Flavor(db.Model):
+    __tablename__="flavor"
+    name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    cpu = db.Column(db.Integer, nullable=False)
+    ram = db.Column(db.Integer, nullable=False)
+    disk = db.Column(db.Integer, nullable=False)
+    bandwidth = db.Column(db.Integer, nullable=True)
+    gpu = db.Column(db.String, nullable=True)
+    gpumem = db.Column(db.Integer, nullable=True)
+    tags = db.Column(db.String, nullable=True)
+    workers = db.relationship('Worker', 
+            primaryjoin=and_(name==Worker.flavor, provider==Worker.provider),
+            backref='metrics', 
+            lazy=True)
+
+class FlavorMetrics(db.Model):
+    __tablename__='flavormetrics'
+    flavor_name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    region_name = db.Column(db.String, nullable=False, primary_key=True)
+    cost = db.Column(db.Integer, nullable=False)
+    eviction = db.Column(db.Integer, nullable=True)
+    flavor = db.relationship('Flavor', 
+            primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),
+            backref='metrics', 
+            lazy=True)
+    region = db.relationship('Region', 
+            primaryjoin=and_(region_name==Region.name, provider==Flavor.provider), 
+            backref='metrics', 
+            lazy=True)
+
+class FlavorStats(db.Model):
+    __tablename__='flavorstats'
+    flavor_name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    region_name = db.Column(db.String, nullable=False, primary_key=True)
+    rank = db.Column(db.Integer, nullable=False, primary_key=True)
+    failure_rate = db.Column(db.Float, default=0)
+    eviction_rate = db.Column(db.Float, default=0)
+    event_number = db.Column(db.Integer, default=0)
+    flavor = db.relationship('Flavor', 
+            primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),
+            backref='stats', 
+            lazy=True)
+    region = db.relationship('Region', 
+            primaryjoin=and_(region_name==Region.name, provider==Flavor.provider), 
+            backref='stats', 
+            lazy=True)
+
+    def deploy_success(self):
+        self.failure_rate = self.failure_rate * self.event_number / (self.event_number + 1)
+        self.event_number+=1
+
+    def deploy_failure(self):
+        self.failure_rate = (self.failure_rate * self.event_number + 1) / (self.event_number + 1)
+        self.event_number+=1
+
+    def eviction_event(self):
+        self.eviction_rate = (self.eviction_rate * (self.event_number-1) + 1) / self.event_number
+
+    def destroy_success(self):
+        self.eviction_rate = (self.eviction_rate * (self.event_number-1) ) / self.event_number

@@ -182,6 +182,12 @@ For OVH, you must create a public cloud project with a "manager" Horizon account
 
 Clicking on `...` on the right of the new user you can export the Openstack RC file. In that RC file, you fill find all the specific OpenStack environment variables starting with `OS_...` that must be added in scitq conf (`/etc/scitq.conf`) as shown in [OVH parameters](parameters.md#ovh--openstack-provider-specific-variables).
 
+NEW: you may now add OVH_REGIONS and OVH_CPUQUOTAS in scitq conf, this will enable the automatic flavor selection for OVH. Each variable should contain a list os space separated values, OVH Region Names for OVH_REGIONS and CPU quotas (so integer) for OVH_CPUQUOTAS. Both lists should have the same number of elements and given with the same order: the first CPU quota applies to the first region, etc. For instance:
+OVH_REGIONS="GRA7 GRA9 GRA11"
+OVH_CPUQUOTAS="500 500 500"
+
+This should match the info you see on the Region/Quota page, see below, Regions.
+
 Do not forget to apply those changes:
 ```bash
 systemctl daemon-reload

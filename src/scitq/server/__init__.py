@@ -13,11 +13,10 @@ def __background__(*args):
 
 migrate=Migrate()
 
-def create_app():
+def create_app(get_background=True, get_webapp=True):
     setup_log()
     log.info('Starting')
-    log.warning(f'WORKER_CREATE is {WORKER_CREATE}')
-
+    
     # via https://github.com/pallets/flask-sqlalchemy/blob/main/examples/hello/hello.py
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object('scitq.default_settings')
@@ -54,11 +53,14 @@ def create_app():
     from .ui import ui
     app.register_blueprint(ui)
 
-    from .background import background
-    global __background__
-    __background__=background
+    if get_background:
+        from .background import background
+        global __background__
+        __background__=background
+    
 
-    if not os.environ.get('SCITQ_PRODUCTION'):
+
+    if get_webapp and not os.environ.get('SCITQ_PRODUCTION'):
         Thread(target=background, args=[app]).start()
 
     return app
@@ -68,6 +70,14 @@ def background_app():
     """This is run by scitq-queue service"""
     app=create_app()
     __background__(app)
+
+def ansible_inventory():
+    """This is run when calling scitq-inventory"""
+    app=create_app()
+    from inventory import inventory
+    result = inventory(app)
+    if result:
+        print(result)
 
 if os.environ.get('SCITQ_PRODUCTION'):
     app = create_app()
