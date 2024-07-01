@@ -6,6 +6,9 @@ from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY
 from .db import db
 from ..util import to_dict
 
+class ModelException(Exception):
+    pass
+
 class Task(db.Model):
     __tablename__ = "task"
     task_id = db.Column(db.Integer, primary_key=True)
@@ -37,6 +40,8 @@ class Task(db.Model):
         self.modification_date = self.creation_date
         self.status_date = self.creation_date
         self.batch = batch
+        if '/' in batch:
+            raise ModelException(f'Cannot accept / in batch name, chose a proper batch name: {batch}')
         self.input = input
         self.output = output
         self.container = container
