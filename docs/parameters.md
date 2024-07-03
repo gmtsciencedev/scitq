@@ -103,7 +103,7 @@ The IP address or name (not the URL) where scitq-server can be reached. This is 
 
 ## Ansible parameters
 
-These parameters are used when you deploy workers automatically using internal SCITQ ansible configuration. Two default files exists which should not be modified: `/etc/ansible/inventory/01-scitq-default` and `/etc/ansible/inventory/sqlite_inventory.py`. These files are copied from internal templates by `scitq-manage ansible install`. It always safe to retype this command when unsure. 
+These parameters are used when you deploy workers automatically using internal SCITQ ansible configuration. Two default files exists which should not be modified: `/etc/ansible/inventory/01-scitq-default` and `/etc/ansible/inventory/scitq-inventory`. These files are copied from internal templates by `scitq-manage ansible install`. It always safe to retype this command when unsure. 
 You should only modify another file, `/etc/ansible/inventory/02-scitq`. This organization will enable upgrades in a sage way.
 
 A typical `/etc/ansible/inventory/02-scitq` file could look like this:

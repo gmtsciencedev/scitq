@@ -110,7 +110,7 @@ ansible-playbook destroy_vm.yaml --extra-vars "nodename=node5"
 ```
 
 
-#### Playing with Ansible inventory (sqlite_inventory.py)
+#### Playing with Ansible variables
 
 Ansible see the file as a standalone python script in scitq extra inventory source (the one you added to your `inventory=...` ansible.cfg file). You can call the file directly like Ansible, but `scitq-manage` can be used to call it in a simpler way:
 

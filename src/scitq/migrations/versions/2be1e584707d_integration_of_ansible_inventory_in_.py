@@ -23,7 +23,7 @@ def upgrade():
         batch_op.add_column(sa.Column('ipv6', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('ansible_host', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('ansible_group', sa.String(), nullable=True))
-        batch_op.add_column(sa.Column('ansible_active', sa.Boolean(), nullable=True))
+        batch_op.add_column(sa.Column('ansible_active', sa.Boolean(), server_default="0"))
 
     # ### end Alembic commands ###
 

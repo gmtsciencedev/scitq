@@ -16,7 +16,6 @@ from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_O
     JOB_MAX_LIFETIME
 from .db import db
 from ..util import PropagatingThread
-from ..ansible.scitq.sqlite_inventory import scitq_inventory
 
 def get_nodename(session):
     worker_names = list(map(lambda x: x[0], 
@@ -207,8 +206,8 @@ def background(app):
                             del(worker_process_queue[('create',job.target)])
                             session.query(Job).get(job_id).status='failed'
                     worker = Namespace(**job.args)
-                    host_exist_in_ansible = bool(json_module.loads(scitq_inventory(host=job.target)))
-                    if host_exist_in_ansible:
+                    real_worker = session.query(Worker).get(worker.worker_id)
+                    if real_worker.ansible_active:
                         if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
                             worker_destroy_command = WORKER_IDLE_CALLBACK.format(hostname=job.target)
                             log.warning(f'Launching destroy process for {job.target}, command is "{worker_destroy_command}"')
@@ -225,7 +224,6 @@ def background(app):
                     else:
                         #TODO: this should be a very rare event, we should do extra tests here
                         log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
-                        real_worker = session.query(Worker).get(worker.worker_id)
                         if real_worker is not None:
                             change = True
                             session.delete(real_worker)

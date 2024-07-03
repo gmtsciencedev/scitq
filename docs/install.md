@@ -48,12 +48,6 @@ You need simply the python setuptools. With a Ubuntu distribution just do that:
 apt install python3 python3-pip
 ```
 
-And make sure typing `python` launch python3, may be like this:
-```bash
-ln -s /usr/bin/python3 /usr/local/bin/python
-```
-(this is notably required for sqlite_inventory.py script in ansible)
-
 #### PostgreSQL
 
 `scitq-server` requires a relational database, sqlite or PostgreSQL are supported
@@ -300,11 +294,11 @@ docker_authentication=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 NB: remember not to set any variable you do not need, like the scitq_src variable which is only to deploy by source on workers. Also creating a `[managers]` section is not useful here if you do not use NFS.
 
-#### About `sqlite_inventory.py` 
+#### About `scitq-inventory` 
 
 If you are not interested in implementation details, just leave this file here and that will be fine.
 
-When we deploy a new worker there are a lot of information we must remember in Ansible to make a correct install, with some specificity as regards the worker configuration. This is called a `host var` in Ansible language, unfortunately Ansible default solution to store these values is very limited (and discouraged by Ansible itself), these `host var` are supposedly dynamically fetched from some dynamic code (likely from the provider itself), however this is a bit difficult if you have several providers (hence the requirement to have an Ansible host group per provider), and at least for some provider where the API are not so quick (or paid for) you do not wish to query them too frequently. This file maintains a small sqlite database with all the required information, it is extremely simple and quick.
+When we deploy a new worker there are a lot of information we must remember in Ansible to make a correct install, with some specificity as regards the worker configuration. This is called a `host var` in Ansible language, unfortunately Ansible default solution to store these values is very limited (and discouraged by Ansible itself), these `host var` are supposedly dynamically fetched from some dynamic code (likely from the provider itself), however this is a bit difficult if you have several providers (hence the requirement to have an Ansible host group per provider), and at least for some provider where the API are not so quick (or paid for) you do not wish to query them too frequently. This script use the database to store and manage these values and is simple and quick. It replaces the previous script `sqlite_inventory.py` which was using a separate dedicated sqlite database.
 
 ### What's next?
 

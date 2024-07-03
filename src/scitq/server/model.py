@@ -312,7 +312,9 @@ class Flavor(db.Model):
     tags = db.Column(db.String, nullable=True)
     workers = db.relationship('Worker', 
             primaryjoin=and_(name==Worker.flavor, provider==Worker.provider),
-            backref='metrics', 
+            foreign_keys=[Worker.flavor,Worker.provider],
+            viewonly=True,
+            backref='flavor_detail', 
             lazy=True)
 
 class FlavorMetrics(db.Model):
@@ -324,10 +326,14 @@ class FlavorMetrics(db.Model):
     eviction = db.Column(db.Integer, nullable=True)
     flavor = db.relationship('Flavor', 
             primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),
+            foreign_keys=[Flavor.name, Flavor.provider],
+            viewonly=True,
             backref='metrics', 
             lazy=True)
     region = db.relationship('Region', 
             primaryjoin=and_(region_name==Region.name, provider==Flavor.provider), 
+            foreign_keys=[Region.name, Region.provider],
+            viewonly=True,
             backref='metrics', 
             lazy=True)
 
@@ -342,10 +348,14 @@ class FlavorStats(db.Model):
     event_number = db.Column(db.Integer, default=0)
     flavor = db.relationship('Flavor', 
             primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),
+            foreign_keys=[Flavor.name, Flavor.provider],
+            viewonly=True,
             backref='stats', 
             lazy=True)
     region = db.relationship('Region', 
             primaryjoin=and_(region_name==Region.name, provider==Flavor.provider), 
+            foreign_keys=[Region.name, Region.provider],
+            viewonly=True,
             backref='stats', 
             lazy=True)
 

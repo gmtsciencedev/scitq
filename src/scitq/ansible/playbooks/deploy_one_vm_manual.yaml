@@ -11,11 +11,10 @@
           - name: Add host and host related variables
             ansible.builtin.script:
                 cmd: > 
-                 /etc/ansible/inventory/sqlite_inventory.py
+                 "{{ inventory_dir }}"/scitq-inventory
                  --add-host "{{ nodename }}" --in-group manual 
                  --variable ansible_host --value "{{ ipv4 }}"
                  --variable ipv4 --value "{{ ipv4 }}" 
-                 --variable target --value "{{ target }}"
           - meta: refresh_inventory
           - include_tasks: add_in_etchosts.yaml
           - name: Clean source 1

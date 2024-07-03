@@ -73,7 +73,7 @@
 - name: Complete host related variables
   ansible.builtin.script:
       cmd: > 
-        /etc/ansible/inventory/sqlite_inventory.py
+        "{{ inventory_dir }}"/scitq-inventory
         --for-host "{{ nodename }}"
         --variable ansible_host --value "{{ output_ip_address.state.ip_address }}"
         --variable ipv4 --value "{{ output_ip_address.state.ip_address }}" 

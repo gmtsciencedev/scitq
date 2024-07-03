@@ -8,7 +8,7 @@ import queue
 from argparse import Namespace
 import logging as log
 import time
-
+from .util import filter_none as _clean
 
 PUT_TIMEOUT = 30
 GET_TIMEOUT = 150
@@ -34,11 +34,6 @@ def _parse_date_andco(item):
         return _sub_parse(item)
     else:
         return item
-
-def _clean(d):
-    """filter out null value from a dict as well as key in remove list (default
-    to ['id'])"""
-    return dict([(k,v) for k,v in d.items() if v is not None])
 
 def _to_obj(d):
     """A simple recursive wrapper to convert JSON like objects in python objects"""

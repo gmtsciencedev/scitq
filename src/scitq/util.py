@@ -202,3 +202,8 @@ def force_hard_link(src, dst):
         else:
             os.remove(dst)
     os.link(src, dst)
+
+def filter_none(d):
+    """filter out null value from a dict as well as key in remove list (default
+    to ['id'])"""
+    return dict([(k,v) for k,v in d.items() if v is not None])

@@ -6,7 +6,10 @@ import shutil
 from .db import db
 from .model import Worker, Flavor
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import NoResultFound
 import filelock
+from .config import SCITQ_SERVER
+from ..util import filter_none
 
 
 # GLOBAL CONSTANTS
@@ -38,35 +41,41 @@ class Database:
         """Main inventory function, list all hosts in all groups with _meta (hostvars)"""
         inventory = {}
         inventory['_meta'] = {}
-        for worker,flavor in self.session.query(Worker).join(Flavor).filter(Worker.ansible_active==True):
+        for worker,flavor in self.session.query(Worker,Flavor).join(Worker.flavor_detail,isouter=True).filter(Worker.ansible_active==True):
             if worker.ansible_group not in inventory:
                 inventory[worker.ansible_group]=[]
             inventory[worker.ansible_group].append(worker.hostname)
-            inventory['_meta'][worker.hostname]={
+            inventory['_meta'][worker.hostname]=filter_none({
                 'ipv4': worker.ipv4,
                 'ipv6': worker.ipv6,
                 'provider': worker.provider,
                 'region': worker.region,
-                'cpu': flavor.cpu,
-                'ram': flavor.ram,
-                'gpu': flavor.gpu
-
-            }
-        return json.dumps(inventory,  indent=4, sort_keys=True)
+                'flavor': worker.flavor,
+                'cpu': flavor.cpu if flavor else None,
+                'ram': flavor.ram if flavor else None,
+                'gpu': flavor.gpu if flavor else None,
+                'target': SCITQ_SERVER,
+            })
+        return json.dumps(inventory,  indent=4)
 
     def list_host(self, host_name):
         """List all hostvars for a certain host, return an empty json if host has no vars or does not exists"""
-        worker,flavor = self.session.query(Worker).join(Flavor).filter(Worker.ansible_active==True).filter(Worker.hostname==host_name).one()
-        return json.dumps({
-                'ipv4': worker.ipv4,
-                'ipv6': worker.ipv6,
-                'provider': worker.provider,
-                'region': worker.region,
-                'cpu': flavor.cpu,
-                'ram': flavor.ram,
-                'gpu': flavor.gpu
-                },
-                indent=4, sort_keys=True)
+        try:
+            worker,flavor = self.session.query(Worker,Flavor).join(Worker.flavor_detail,isouter=True).filter(Worker.ansible_active==True).filter(Worker.hostname==host_name).one()
+            return json.dumps(filter_none({
+                    'ipv4': worker.ipv4,
+                    'ipv6': worker.ipv6,
+                    'provider': worker.provider,
+                    'region': worker.region,
+                    'flavor': worker.flavor,
+                    'cpu': flavor.cpu if flavor else None,
+                    'ram': flavor.ram if flavor else None,
+                    'gpu': flavor.gpu if flavor else None,
+                    'target': SCITQ_SERVER,
+                    }),
+                    indent=4)
+        except NoResultFound:
+            return json.dumps({})
 
     def add_host(self, host_name, group_name):
         """Add a host in the inventory with default group_name - watch out: must
@@ -79,18 +88,23 @@ class Database:
     def set_hostvar(self, host_name, variable, value):
         """Insert a new host variable (or update) in table hostvars - value is converted to text"""
         worker = self.session.query(Worker).filter(Worker.hostname==host_name).one()
-        setattr(worker, variable, value)
+        if hasattr(worker, variable):
+            setattr(worker, variable, value)
+        else:
+            print(f'WARNING: variable {variable} cannot be set, it is read-only, ignoring set to {value}')
     
     def del_host(self, host_name):
         """Delete a host and its hostvars in database"""
         worker = self.session.query(Worker).filter(Worker.hostname==host_name).one()
         worker.ansible_active = False
-        # why do we do it only here?
-        self.session.commit()
         
     def get_host_ips(self):
         """Return a dictionnary of hostname:IPv4"""
         return dict(self.session.query(Worker).filter(Worker.ansible_active==True).with_entities(Worker.hostname, Worker.ipv4))
+    
+    def commit(self):
+        """Commit pending changes"""
+        self.session.commit()
 
 def decorate_parser(parser):
     """Easing integration: all options to parser added here"""
@@ -181,14 +195,14 @@ def inventory(app):
         host = args.for_host
     
     if variables:
-        host_id = db.get_host_id(host)
         for variable, value in variables.items():
-            db.set_hostvar(host_id, variable, value)
-        db.connection.commit()
+            db.set_hostvar(host, variable, value)
 
     if args.del_host is not None:
         db.del_host(args.del_host)
     
+    db.commit()
+
     if args.change_etchosts:
         change_etc_hosts(db)
     

@@ -49,6 +49,7 @@ scitq-launch = "scitq.launch:main"
 scitq-manage = "scitq.manage:main"
 scitq-queue = "scitq.server:background_app"
 scitq-fetch = "scitq.fetch:main"
+scitq-inventory = "scitq.server:ansible_inventory"
 
 [tool.setuptools.packages.find]
 where = ["src"]

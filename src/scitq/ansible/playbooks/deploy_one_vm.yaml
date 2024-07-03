@@ -11,12 +11,8 @@
           - name: Add host and host related variables
             ansible.builtin.script:
                 cmd: > 
-                 /etc/ansible/inventory/sqlite_inventory.py
+                 "{{ inventory_dir }}"/scitq-inventory
                  --add-host "{{ nodename }}" --in-group "{{ provider }}"
-                 --variable region --value "{{ region }}"
-                 --variable flavor --value "{{ flavor }}"
-                 --variable target --value "{{ target }}"
-                 --variable provider --value "{{ provider }}"
           - include_tasks: deploy_vm_ovh.yaml
             when: provider == "ovh"
           - include_tasks: deploy_vm_azure.yaml

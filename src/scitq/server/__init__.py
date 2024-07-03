@@ -73,8 +73,8 @@ def background_app():
 
 def ansible_inventory():
     """This is run when calling scitq-inventory"""
-    app=create_app()
-    from inventory import inventory
+    app=create_app(get_background=False, get_webapp=False)
+    from .inventory import inventory
     result = inventory(app)
     if result:
         print(result)
