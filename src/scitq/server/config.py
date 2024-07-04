@@ -3,6 +3,12 @@ from socket import gethostname
 from ..util import check_dir, package_path
 from logging.config import dictConfig
 from ..default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
+from ..constants import DEFAULT_SERVER_CONF
+
+
+if 'FLASK_APP' not in os.environ and 'SCITQ_PRODUCTION' not in os.environ:
+    import dotenv
+    dotenv.load_dotenv(DEFAULT_SERVER_CONF, override=False)
 
 
 MAIN_THREAD_SLEEP = 5
@@ -33,6 +39,21 @@ DEFAULT_BATCH = 'Default'
 TERMINATE_TIMEOUT = 20
 KILL_TIMEOUT = 30
 JOB_MAX_LIFETIME = 600
+
+def _(x):
+    """a fail-free shortcut to os.environ.get to import an env variable"""
+    return os.environ.get(x,'')
+
+AZURE_REGIONS=_('AZURE_REGIONS')
+AZURE_CPUQUOTAS=_('AZURE_CPUQUOTAS')
+AZURE_SUBSCRIPTION_ID=_('AZURE_SUBSCRIPTION_ID')
+AZURE_CLIENT_ID=_('AZURE_CLIENT_ID')
+AZURE_SECRET=_('AZURE_SECRET')
+AZURE_TENANT=_('AZURE_TENANT')
+
+OVH_REGIONS=_('OVH_REGIONS')
+OVH_CPUQUOTAS=_('OVH_CPUQUOTAS')
+
 
 def setup_log():
     """Setting up log must occur only in specific contexts"""

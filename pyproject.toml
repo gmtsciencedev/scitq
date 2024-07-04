@@ -50,6 +50,7 @@ scitq-manage = "scitq.manage:main"
 scitq-queue = "scitq.server:background_app"
 scitq-fetch = "scitq.fetch:main"
 scitq-inventory = "scitq.server:ansible_inventory"
+scitq-azure-updater = "scitq.providers.azure.update:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

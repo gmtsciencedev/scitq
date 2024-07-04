@@ -4,6 +4,7 @@ import logging as log
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_migrate import Migrate
+from sqlalchemy.orm import Session
 
 from .config import WORKER_CREATE, setup_log
 from .db import db
@@ -78,6 +79,13 @@ def ansible_inventory():
     result = inventory(app)
     if result:
         print(result)
+
+def get_session():
+    """Return a simple session for the database access"""
+    app=create_app(get_background=False, get_webapp=False)
+    with app.app_context():
+        session = Session(db.engine)
+    return session
 
 if os.environ.get('SCITQ_PRODUCTION'):
     app = create_app()
