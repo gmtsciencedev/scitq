@@ -12,7 +12,6 @@ class GenericProvider:
 
     def __init__(self, session, provider):
         self.session = session
-        self.need_commit = False
         self.provider = provider
 
     def push(self, x, cache=StringIO()):

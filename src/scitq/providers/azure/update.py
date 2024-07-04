@@ -13,7 +13,6 @@ import logging as log
 from ..generic import GenericProvider, Flavor, FlavorMetrics
 from ...util import package_path
 from ...server import get_session, config
-import sys
 
 GPU_RESOURCE='providers/azure/gpu.tsv'
 
@@ -162,6 +161,7 @@ class Azure(GenericProvider):
 
         full_metrics = [flavors_lower[fmpk] for fmpk in full_metric_pkeys]
         self.update_flavor_metrics(metrics=full_metrics)
+        self.push('\n')
 
 
 def run():

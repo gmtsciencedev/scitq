@@ -5,6 +5,7 @@ from configparser import ConfigParser
 import re
 import stat
 import shutil
+from argparse import Namespace
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -207,3 +208,7 @@ def filter_none(d):
     """filter out null value from a dict as well as key in remove list (default
     to ['id'])"""
     return dict([(k,v) for k,v in d.items() if v is not None])
+
+def to_obj(d):
+    """Transform a dict into an obj"""
+    return Namespace(**d)
