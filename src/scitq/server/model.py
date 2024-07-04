@@ -306,11 +306,11 @@ class Flavor(db.Model):
     name = db.Column(db.String, nullable=False, primary_key=True)
     provider = db.Column(db.String, nullable=False, primary_key=True)
     cpu = db.Column(db.Integer, nullable=False)
-    ram = db.Column(db.Integer, nullable=False)
-    disk = db.Column(db.Integer, nullable=False)
-    bandwidth = db.Column(db.Integer, nullable=True)
+    ram = db.Column(db.Float, nullable=False)
+    disk = db.Column(db.Float, nullable=False)
+    bandwidth = db.Column(db.Float, nullable=True)
     gpu = db.Column(db.String, nullable=True)
-    gpumem = db.Column(db.Integer, nullable=True)
+    gpumem = db.Column(db.Float, nullable=True)
     tags = db.Column(db.String, nullable=True)
     workers = db.relationship('Worker', 
             primaryjoin=and_(name==Worker.flavor, provider==Worker.provider),
@@ -324,7 +324,7 @@ class FlavorMetrics(db.Model):
     flavor_name = db.Column(db.String, nullable=False, primary_key=True)
     provider = db.Column(db.String, nullable=False, primary_key=True)
     region_name = db.Column(db.String, nullable=False, primary_key=True)
-    cost = db.Column(db.Integer, nullable=False)
+    cost = db.Column(db.Float, nullable=False)
     eviction = db.Column(db.Integer, nullable=True)
     flavor = db.relationship('Flavor', 
             primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),

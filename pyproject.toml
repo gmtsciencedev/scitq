@@ -36,6 +36,11 @@ dependencies=['Flask < 2.2',
         'azure-storage-blob',
         'urwid',
         'filelock',
+        'azure-mgmt-subscription',
+        'azure-mgmt-resourcegraph',
+        'pandas',
+        'ovh',
+        'lxml'
         ]
 
 [project.urls]
