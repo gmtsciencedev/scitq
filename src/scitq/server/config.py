@@ -59,6 +59,19 @@ OVH_CONSUMERKEY       = _('OVH_CONSUMERKEY')
 OS_PROJECT_ID         = _('OS_PROJECT_ID')
 
 
+def get_quotas(provider=None):
+    if provider=='ovh':
+        return dict(zip(OVH_REGIONS.split(),map(int,OVH_CPUQUOTAS.split())))
+    elif provider=='azure':
+        return dict(zip(AZURE_REGIONS.split(),map(int,AZURE_CPUQUOTAS.split())))
+    elif provider is None:
+        quotas = {}
+        for provider in ['ovh','azure']:
+            for region, cpuquota in get_quotas(provider).items():
+                quotas[(provider,region)]=cpuquota
+        return quotas
+    else:
+        raise RuntimeError(f'Cannot give quotas for unknown provider: {provider}')
 
 def setup_log():
     """Setting up log must occur only in specific contexts"""

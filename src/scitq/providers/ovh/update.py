@@ -78,7 +78,8 @@ class OVH(GenericProvider):
                     fm=FlavorMetrics(
                         flavor_name=flavor.name,
                         provider=self.provider,
-                        region_name=flavor.region)
+                        region_name=flavor.region,
+                        eviction=0)
                 except:
                     log.exception('FlavorMetrics ill created')
                     self.push('!')

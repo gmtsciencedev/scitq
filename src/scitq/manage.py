@@ -9,9 +9,11 @@ from .util import package_path, package_version
 import shutil
 import random
 from .debug import Debugger
-from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS, EXECUTION_STATUS
+from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS, EXECUTION_STATUS,\
+    FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION
 from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
 import dotenv
+from tabulate import tabulate
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
@@ -34,22 +36,14 @@ def converter(x,long):
         x=''
     return x
 
-def tabulate(content, headers=None):
-    """A helper function to print TSV output from lists"""
-    def _print(l):
-        print('\t'.join(l))
-    if headers:
-        _print(headers)
-    for l in content:
-        _print(content)
 
 def __list_print(item_list, retained_columns, headers, long=False):
     """A small internal function to format a list of items (i.e. tasks or workers)"""
-    tabulate(
+    print(tabulate(
         [[converter(item.get(key,None),long) for key in retained_columns]
             for item in item_list],
         headers=headers,tablefmt ="plain"
-        )
+        ))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -247,6 +241,21 @@ def main():
     output_execution_parser.add_argument('-S','--status',help='Filter by the executions statuses',type=str,choices=EXECUTION_STATUS,default=None)
     output_execution_parser.add_argument('-C','--columns',help='A comma separated list of columns',type=str,default=None)
 
+    flavor_parser = subparser.add_parser('flavor', help='Get information on flavors (VM sizes)')
+    subsubparser=flavor_parser.add_subparsers(dest='action')
+
+    list_flavor_parser= subsubparser.add_parser('list',help='List available flavors')
+    list_flavor_parser.add_argument('-P','--provider',type=str,help='restrict to this provider',default=None)
+    list_flavor_parser.add_argument('-r','--region',type=str,help='restrict to this region',default=None)
+    list_flavor_parser.add_argument('--min-cpu',type=int,help='restrict to VM with this minimum of CPU',default=0)
+    list_flavor_parser.add_argument('--min-ram',type=int,help='restrict to VM with this minimum of RAM (Gb)',default=0)
+    list_flavor_parser.add_argument('--min-disk',type=int,help='restrict to VM with this minimum of disk (Gb)',default=0)
+    list_flavor_parser.add_argument('--max-eviction',type=int,
+                                    help=f'restrict to a maximum of eviction (default: {FLAVOR_DEFAULT_EVICTION})',
+                                    default=FLAVOR_DEFAULT_EVICTION)
+    list_flavor_parser.add_argument('--limit',type=int,
+                                    help=f'limit answer to that number of references (default: {FLAVOR_DEFAULT_LIMIT})',
+                                    default=FLAVOR_DEFAULT_LIMIT)    
 
     args=parser.parse_args()
 
@@ -395,7 +404,7 @@ def main():
             elif args.error:
                 print(execution['error'])
             else:
-                tabulate([[execution['output'],execution['error']]],headers=["output","error"])
+                print(tabulate([[execution['output'],execution['error']]],headers=["output","error"]))
         
         elif args.action == 'update':
             if args.id is not None:
@@ -627,6 +636,15 @@ def main():
             run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade', shell=True, 
                 cwd=package_path(), check=True)
             print('DB migrated')
+
+    elif args.object == 'flavor':
+
+        if args.action=='list':
+            flavors = s.flavors(min_cpu=args.min_cpu, min_ram=args.min_ram, min_disk=args.min_disk,
+                        max_eviction=args.max_eviction, limit=args.limit, provider=args.provider,
+                        region=args.region)
+            headers = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction','available']
+            __list_print(flavors, headers, headers, long=True)
     
 
 

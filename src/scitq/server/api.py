@@ -5,10 +5,11 @@ from sqlalchemy.sql.expression import label
 import logging as log
 import json as json_module
 
-from .model import Task, Execution, Signal, Requirement, Worker, create_worker_destroy_job, Job, Recruiter, delete_batch
+from .model import Task, Execution, Signal, Requirement, Worker,\
+    create_worker_destroy_job, Job, Recruiter, delete_batch, find_flavor
 from .db import db
 from .config import IS_SQLITE
-from ..constants import TASK_STATUS, EXECUTION_STATUS
+from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION
 
 
 api = Api(version='1.2', title='TaskMVC API',
@@ -1089,3 +1090,63 @@ class RecruiterObject(Resource):
         object=recruiter_dao.delete(batch, rank)
         return object 
 
+ns = api.namespace('flavor', description='Flavor querying')
+
+flavor_parser = api.parser()
+flavor_parser.add_argument('min_cpu', type=int, help='Minimum number of CPUs', 
+    required=False, location='json', default=0)
+flavor_parser.add_argument('min_ram', type=int, help='Minimum size of RAM (memory) in Gb', 
+    required=False, location='json', default=0)
+flavor_parser.add_argument('min_disk', type=int, help='Minimum size of disk (harddrive) in Gb', 
+    required=False, location='json', default=0)
+flavor_parser.add_argument('max_eviction', type=int, 
+    help=f'Maximal risk of eviction (default:{FLAVOR_DEFAULT_EVICTION})', 
+    required=False, location='json', default=FLAVOR_DEFAULT_EVICTION)
+flavor_parser.add_argument('limit', type=int, 
+    help=f'Maximal number or answer (default:{FLAVOR_DEFAULT_LIMIT})', 
+    required=False, location='json', default=FLAVOR_DEFAULT_LIMIT)
+flavor_parser.add_argument('provider', type=str, 
+    help=f'Specify provider', 
+    required=False, location='json', default=None)
+flavor_parser.add_argument('region', type=str, 
+    help=f'Specify region', 
+    required=False, location='json', default=None)
+
+custom_flavor = api.model('Flavor', {
+    'name': fields.String(readonly=True, description='The flavor reference'),
+    'provider':  fields.String(readonly=True, description='Provider name'),
+    'region':  fields.String(readonly=True, description='Provider region name'),
+    'cpu': fields.Integer(readonly=True,
+        description='The number of CPUs (vcores) for this flavor'), 
+    'ram': fields.Integer(readonly=True,
+        description='The size of the RAM (memory) in Gb'), 
+    'disk': fields.Integer(readonly=True,
+        description='The size of the disk in Gb'),
+    'tags': fields.String(readonly=True, 
+        description='A custom string listing some specificity of the flavor (G=GPU, M=Metal, N=NVMe)'),
+    'gpu': fields.String(readonly=True,
+        description='A description of the GPU (if available)'),
+    'gpumem': fields.Integer(readonly=True,
+        description='The size of the GPU memory in Gb (if available)'),
+    'cost': fields.Float(readonly=True, description='An indicative cost per hour in the unit of reference of the provider'),
+    'eviction': fields.Integer(readonly=True, description='An estimate of the hourly probability of eviction (VM shut down by provider)'), 
+    'available': fields.Integer(readonly=True, 
+        description='An estimate of the number of VM of this size one can create in this region and for this provider')
+})
+
+@ns.route("/")
+class FlavorList(Resource):
+    @ns.doc("list_flavor")
+    @ns.marshal_list_with(custom_flavor)
+    @ns.expect(flavor_parser)
+    def get(self):
+        """List the batches, their task statuses and workers"""
+        args = flavor_parser.parse_args()
+        return find_flavor(session=db.session, 
+                    min_cpu=args.min_cpu,
+                    min_ram=args.min_ram, 
+                    min_disk=args.min_disk,
+                    max_eviction=args.max_eviction,
+                    limit = args.limit,
+                    provider = args.provider,
+                    region = args.region)

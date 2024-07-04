@@ -9,3 +9,6 @@ HTTP_ERROR_CODE_NOT_FOUND = 404
 
 TASK_STATUS = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
 EXECUTION_STATUS = ['pending','accepted','running','failed','succeeded']
+
+FLAVOR_DEFAULT_LIMIT=10
+FLAVOR_DEFAULT_EVICTION=5

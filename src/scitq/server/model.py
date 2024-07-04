@@ -1,10 +1,12 @@
 from datetime import datetime
 import json as json_module
 from sqlalchemy import DDL, event, func, delete, select, or_, and_
+from sqlalchemy import func
 
-from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY
+from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas
 from .db import db
 from ..util import to_dict
+from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT
 
 class ModelException(Exception):
     pass
@@ -336,6 +338,42 @@ class FlavorMetrics(db.Model):
             viewonly=True,
             backref='metrics', 
             lazy=True)
+
+def find_remaining_quotas(session):
+    """Return a dictionnary of (provider,region):cpus where cpus is the number of CPUs still available because of the quota"""
+    quotas = get_quotas()
+    if quotas:
+        for provider,region,cpus in session.query(Worker.provider, Worker.region, func.sum(Flavor.cpu))\
+                .select_from(Worker).join(Flavor,and_(Worker.flavor==Flavor.name,Worker.provider==Flavor.provider))\
+                .group_by(Worker.provider, Worker.region):
+            if (provider,region) in quotas:
+                quotas[(provider,region)]-=cpus
+    return quotas    
+
+def find_flavor(session, min_cpu=0, min_ram=0, min_disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, 
+                limit=FLAVOR_DEFAULT_LIMIT, provider=None, region=None):
+    """Return a list of Flavor fulfilling specific conditions"""
+    filters = [Flavor.cpu>=min_cpu, Flavor.ram>=min_ram, Flavor.disk>=min_disk, FlavorMetrics.eviction<=max_eviction]
+    if provider is not None:
+        filters.append(Flavor.provider==provider)
+    if region is not None:
+        filters.append(FlavorMetrics.region==region)
+    #return session.query(Flavor,FlavorMetrics
+    fields = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction']
+    flavors = [dict(zip(fields, object)) for object in session.query(
+                  Flavor.name, Flavor.provider, FlavorMetrics.region_name, 
+                  Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
+                  Flavor.disk, FlavorMetrics.cost, FlavorMetrics.eviction      
+            ).select_from(FlavorMetrics).join(FlavorMetrics.flavor)\
+                .filter(and_(*filters))\
+                .order_by(FlavorMetrics.cost).limit(limit)]
+    quotas = find_remaining_quotas(session)
+    for flavor in flavors:
+        if (flavor['provider'], flavor['region']) in quotas:
+            flavor['available']=quotas[(flavor['provider'], flavor['region'])]//flavor['cpu']
+        else:
+            flavor['available']=None
+    return flavors
 
 class FlavorStats(db.Model):
     __tablename__='flavorstats'

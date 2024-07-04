@@ -9,6 +9,7 @@ from argparse import Namespace
 import logging as log
 import time
 from .util import filter_none as _clean
+from .constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT
 
 PUT_TIMEOUT = 30
 GET_TIMEOUT = 150
@@ -617,6 +618,11 @@ class Server:
         print('All tasks done!')
         return tasks
 
+    def flavors(self, min_cpu=0, min_ram=0, min_disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, limit=FLAVOR_DEFAULT_LIMIT,
+                provider=None, region=None):
+        """List all available flavors"""
+        return self.get(f'/flavor/', min_cpu=min_cpu, min_ram=min_ram, min_disk=min_disk, max_eviction=max_eviction,
+                        limit=limit, provider=provider, region=region)
 
 if __name__=="__main__":
     s=Server('127.0.0.1',style='object')
