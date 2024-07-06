@@ -4,6 +4,7 @@ from .lib import Server, HTTPException
 import socket
 from time import sleep, time
 import multiprocessing
+import threading
 import queue
 import asyncio
 from asyncio.subprocess import PIPE
@@ -26,6 +27,7 @@ import datetime
 import sys
 from uuid import uuid1
 from .util import isfifo, force_hard_link
+from .clientenvents import monitor_events
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -916,6 +918,11 @@ class Client:
                 hostname=self.hostname,
                 batch=self.batch,
                 permanent=SCITQ_PERMANENT_WORKER)
+        threading.Thread(target=monitor_events, 
+                                kwargs={'server': self.server, 
+                                        'provider':self.w.provider, 
+                                        'worker_id':self.w.worker_id}
+                                ).start()
 
     def clean_all(self):
         """Clean all unused directory"""

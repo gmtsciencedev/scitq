@@ -266,7 +266,7 @@ ns = api.namespace('workers', description='WORKER operations')
 
 class WorkerDAO(BaseDAO):
     ObjectType = Worker
-    authorized_status = ['paused','running','offline','failed']
+    authorized_status = ['paused','running','offline','failed','evicted']
 
     def update_contact(self, id, load,memory,stats):
         db.engine.execute(
@@ -276,6 +276,29 @@ class WorkerDAO(BaseDAO):
                     ).where(Worker.worker_id==id)
         )
         db.session.commit()
+
+    def update(self, id, data):
+        object = self.get(id)
+        modified = False
+        for attr, value in data.items():
+            if hasattr(object,attr): 
+                if getattr(object,attr)!=value:
+                    if attr=='status':
+                        if value not in self.authorized_status:
+                            api.abort(500,
+                                f"Status {value} is not possible (only {' '.join(self.authorized_status)})")
+                        if object.status=='evicted' and value not in ['running']:
+                            log.warning(f'Evicted worker {object.worker_id} can only return to running')
+                            continue
+                    setattr(object, attr, value)
+                    modified = True
+            else:
+                api.abort(500,f'Error: {object.__name__} has no attribute {attr}')
+        if modified:
+            if hasattr(object,'modification_date'):
+                object.modification_date = datetime.utcnow()
+            db.session.commit()
+        return object
 
     def delete(self,id,is_destroyed=False, session=db.session):
         """Delete a worker
