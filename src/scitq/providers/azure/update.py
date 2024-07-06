@@ -10,9 +10,10 @@ import json
 import csv
 from io import StringIO
 import logging as log
+from ...server import get_session, config
 from ..generic import GenericProvider, Flavor, FlavorMetrics
 from ...util import package_path
-from ...server import get_session, config
+
 
 GPU_RESOURCE='providers/azure/gpu.tsv'
 

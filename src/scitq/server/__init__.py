@@ -1,12 +1,12 @@
 from threading import Thread
 import os
 import logging as log
+from .config import WORKER_CREATE, setup_log
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_migrate import Migrate
 from sqlalchemy.orm import Session
 
-from .config import WORKER_CREATE, setup_log
 from .db import db
 
 def __background__(*args):

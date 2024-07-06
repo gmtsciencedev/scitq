@@ -1,4 +1,3 @@
-import json
 import ovh
 from getpass import getpass
 from argparse import Namespace

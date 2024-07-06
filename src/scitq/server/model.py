@@ -41,9 +41,9 @@ class Task(db.Model):
         self.creation_date = datetime.utcnow()
         self.modification_date = self.creation_date
         self.status_date = self.creation_date
-        self.batch = batch
-        if '/' in batch:
-            raise ModelException(f'Cannot accept / in batch name, chose a proper batch name: {batch}')
+        self.batch = batch if batch is not None else DEFAULT_BATCH
+        if '/' in self.batch:
+            raise ModelException(f'Cannot accept / in batch name, chose a proper batch name: {self.batch}')
         self.input = input
         self.output = output
         self.container = container

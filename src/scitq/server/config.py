@@ -1,14 +1,16 @@
 import os
-from socket import gethostname
-from ..util import check_dir, package_path
-from logging.config import dictConfig
-from ..default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
 from ..constants import DEFAULT_SERVER_CONF
-
 
 if 'FLASK_APP' not in os.environ and 'SCITQ_PRODUCTION' not in os.environ:
     import dotenv
     dotenv.load_dotenv(DEFAULT_SERVER_CONF, override=False)
+
+from socket import gethostname
+from ..util import check_dir, package_path
+from logging.config import dictConfig
+from ..default_settings import SQLALCHEMY_POOL_SIZE, SQLALCHEMY_DATABASE_URI
+
+
 
 
 MAIN_THREAD_SLEEP = 5
