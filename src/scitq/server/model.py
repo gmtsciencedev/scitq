@@ -207,7 +207,11 @@ def execution_update_status(execution, session, status, commit=True):
         else:
             raise ModelException(f"An execution cannot change status from pending to {status}")
     elif execution.status=='accepted':
-        if status in ['running','failed','succeeded','pending']:
+        if status=='refused':
+            task.stats = 'pending'
+            task.modification_date = now
+            task.status_date = now
+        elif status in ['running','failed','succeeded','pending']:
             task.status = status
             task.modification_date = now
             task.status_date = now
@@ -279,7 +283,7 @@ def worker_delete(worker, session, is_destroyed=False, commit=True):
     else:
         for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status=='running'):
             execution_update_status(execution, session, 'failed')
-        for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status=='pending'):
+        for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status.in_(['pending','accepted'])):
             execution_update_status(execution, session, 'refused')
         session.delete(worker)
         session.commit()
@@ -317,41 +321,43 @@ def worker_handle_eviction(worker, session, commit=True):
     # Here we want to make an exception: Execution failure on worker eviction should be 
     # immediately retried whatever the retry status
     # NB could not make the SQLALchemy ORM work in that simple case... NotImplementedError: This backend does not support multiple-table criteria within UPDATE
-    session.execute(f"UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE worker_id={worker.worker_id} AND status IN ('running','pending'))")
+    session.execute(f"UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE worker_id={worker.worker_id} AND status IN ('running','pending','accepted'))")
     session.execute(f"UPDATE execution SET status='failed' WHERE worker_id={worker.worker_id} AND status='running'")
-    session.execute(f"UPDATE execution SET status='refused' WHERE worker_id={worker.worker_id} AND status='pending'")
+    session.execute(f"UPDATE execution SET status='refused' WHERE worker_id={worker.worker_id} AND status IN ('pending','accepted')")
     
     if commit:
         session.commit()
     if EVICTION_ACTION in ['delete', 'replace']:
         create_worker_destroy_job(worker, session, commit=commit)
     if EVICTION_ACTION=='replace':
-        flavor = worker.flavor_detail
-        try:
-            cost = session.query(FlavorMetrics.cost).filter(FlavorMetrics.flavor_name==flavor.name, 
-                                                            FlavorMetrics.provider==flavor.provider,
-                                                            FlavorMetrics.region_name==worker.region).one()
-            cost = cost[0]
-        except NoResultFound:
-            cost = 0
-        for new_flavor in find_flavor(session, 
-                                      min_cpu=flavor.cpu, 
-                                      min_ram=flavor.ram, 
-                                      min_disk=flavor.disk, 
-                                      limit=1000):
-            if new_flavor["available"]==0:
-                continue
-            if cost==0 and new_flavor['cost']==0:
-                break
-            elif new_flavor['cost']/cost<EVICTION_COST_MARGIN:
-                break
-        else:
-            log.warning(f'Could not find any suitable replacement for flavor {flavor.name}')
-            return None
-        log.warning(f'Found a replacement flavor for {flavor.name}: {new_flavor["name"]} in {new_flavor["provider"]}:{new_flavor["region"]}')
-        create_worker_create_job(concurrency=worker.concurrency, prefetch=worker.prefetch,
-                                 batch=worker.batch, flavor=new_flavor["name"], region=new_flavor["region"],
-                                 provider=new_flavor["provider"], session=session, commit=commit)
+        pending_tasks=session.query(func.count(Task.task_id)).filter(Task.batch==worker.batch, Task.status=='pending').scalar()
+        if pending_tasks > 0:
+            flavor = worker.flavor_detail
+            try:
+                cost = session.query(FlavorMetrics.cost).filter(FlavorMetrics.flavor_name==flavor.name, 
+                                                                FlavorMetrics.provider==flavor.provider,
+                                                                FlavorMetrics.region_name==worker.region).one()
+                cost = cost[0]
+            except NoResultFound:
+                cost = 0
+            for new_flavor in find_flavor(session, 
+                                        min_cpu=flavor.cpu, 
+                                        min_ram=flavor.ram, 
+                                        min_disk=flavor.disk, 
+                                        limit=1000):
+                if new_flavor["available"]==0:
+                    continue
+                if cost==0 and new_flavor['cost']==0:
+                    break
+                elif new_flavor['cost']/cost<EVICTION_COST_MARGIN:
+                    break
+            else:
+                log.warning(f'Could not find any suitable replacement for flavor {flavor.name}')
+                return None
+            log.warning(f'Found a replacement flavor for {flavor.name}: {new_flavor["name"]} in {new_flavor["provider"]}:{new_flavor["region"]}')
+            create_worker_create_job(concurrency=worker.concurrency, prefetch=worker.prefetch,
+                                    batch=worker.batch, flavor=new_flavor["name"], region=new_flavor["region"],
+                                    provider=new_flavor["provider"], session=session, commit=commit)
         
 
 
