@@ -46,6 +46,12 @@ def _(x):
     """a fail-free shortcut to os.environ.get to import an env variable"""
     return os.environ.get(x,'')
 
+def _num(x, default=None):
+    """a failing shortcut to os.environ.get to import an env variable supposed to be numerical"""
+    if x in os.environ:
+        return float(os.environ[x])
+    return default
+
 AZURE_REGIONS=_('AZURE_REGIONS')
 AZURE_CPUQUOTAS=_('AZURE_CPUQUOTAS')
 AZURE_SUBSCRIPTION_ID=_('AZURE_SUBSCRIPTION_ID')
@@ -60,6 +66,8 @@ OVH_APPLICATIONSECRET = _('OVH_APPLICATIONSECRET')
 OVH_CONSUMERKEY       = _('OVH_CONSUMERKEY')
 OS_PROJECT_ID         = _('OS_PROJECT_ID')
 
+EVICTION_ACTION=_('EVICTION_ACTION')
+EVICTION_COST_MARGIN=_num('EVICTION_COST_MARGIN', default=10)
 
 def get_quotas(provider=None):
     if provider=='ovh':

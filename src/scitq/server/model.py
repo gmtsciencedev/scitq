@@ -1,15 +1,20 @@
 from datetime import datetime
 import json as json_module
 from sqlalchemy import DDL, event, func, delete, select, or_, and_
+from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy import func
 
-from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas
+from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_ACTION, EVICTION_COST_MARGIN
 from .db import db
 from ..util import to_dict
-from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT
+from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
+
+import logging as log
 
 class ModelException(Exception):
-    pass
+    @property
+    def message(self):
+        return self.args[0]
 
 class Task(db.Model):
     __tablename__ = "task"
@@ -95,7 +100,7 @@ class Worker(db.Model):
         self.region = region
         self.flavor = flavor
         self.provider = provider
-    
+     
 
 class Execution(db.Model):
     __tablename__ = "execution"
@@ -176,6 +181,58 @@ event.listen(
     trigger_latest_postgres.execute_if(dialect="postgresql")    
 )
 
+def execution_update_status(execution, session, status, commit=True):
+    """Change status of an execution, impacting on task if required"""
+    if status not in EXECUTION_STATUS:
+        raise ModelException(f"Status {status} is not possible (only {' '.join(EXECUTION_STATUS)})")
+    task=execution.task
+    now = datetime.utcnow()
+    if execution.status=='pending':
+        if status=='running':
+            task.status = 'running'
+            task.modification_date = now
+            task.status_date = now
+        elif status=='accepted':
+            task.status = 'accepted'
+            task.modification_date = now
+            task.status_date = now
+        elif status in ['refused','failed']:
+            task.status = 'pending'
+            task.modification_date = now
+            task.status_date = now
+        elif status=='succeeded':
+            task.status = 'succeeded'
+            task.modification_date = now
+            task.status_date = now
+        else:
+            raise ModelException(f"An execution cannot change status from pending to {status}")
+    elif execution.status=='accepted':
+        if status in ['running','failed','succeeded','pending']:
+            task.status = status
+            task.modification_date = now
+            task.status_date = now
+        else:
+            log.exception(f"An execution cannot change status from accepted to {status}")
+            raise ModelException(f"An execution cannot change status from accepted to {status}")
+    elif execution.status=='running':
+        if status in ['succeeded', 'failed']:
+            task.status=status
+            task.modification_date = now
+            task.status_date = now
+            if status=='failed' and task.retry>0:
+                log.warning(f'Failure of execution {execution.execution_id} trigger task {task.task_id} retry ({task.retry-1} retries left)')
+                task.retry -= 1
+                task.status = 'pending'
+        else:
+            log.exception(f"An execution cannot change status from running to {status}")
+            raise ModelException(f"An execution cannot change status from running to {status}")
+    else:
+        raise ModelException(f"An execution cannot change status from {execution.status} (only from pending, running or accepted)")
+    execution.status=status
+    if commit:
+        session.commit()
+
+
 class Signal(db.Model):
     __tablename__ = "signal"
     #execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), primary_key=True, nullable=True)
@@ -183,6 +240,11 @@ class Signal(db.Model):
     execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), nullable=True)
     worker_id = db.Column(db.Integer, db.ForeignKey("worker.worker_id"))
     signal = db.Column(db.Integer, nullable=False)    
+    execution = db.relationship(
+        Execution,
+        backref=db.backref('signals',
+                            uselist=True,
+                            cascade='delete,all'))
 
     def __init__(self, execution_id, worker_id, signal):
         self.execution_id = execution_id
@@ -209,6 +271,19 @@ class Job(db.Model):
         self.args = args
         self.retry = retry
 
+def worker_delete(worker, session, is_destroyed=False, commit=True):
+    """Handle worker delete, take care of launching the destroy job if needed."""
+    if not worker.permanent and not is_destroyed:
+        create_worker_destroy_job(worker, session)
+        return worker
+    else:
+        for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status=='running'):
+            execution_update_status(execution, session, 'failed')
+        for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status=='pending'):
+            execution_update_status(execution, session, 'refused')
+        session.delete(worker)
+        session.commit()
+        return worker
 
 def create_worker_destroy_job(worker, session, commit=True):
     job = Job(target = worker.name,
@@ -218,6 +293,69 @@ def create_worker_destroy_job(worker, session, commit=True):
     session.add(job)
     if commit:
         session.commit()
+
+def create_worker_create_job(concurrency, prefetch, batch, flavor, region, provider, session, number=1, commit=True):
+    for _ in range(number):
+        session.add(
+            Job(target='', 
+                action='worker_create', 
+                args={
+                    'concurrency': concurrency, 
+                    'prefetch': prefetch,
+                    'flavor': flavor,
+                    'region':region,
+                    'provider':provider,
+                    'batch':batch
+                }
+            )
+        )
+    if commit:
+        session.commit()
+
+def worker_handle_eviction(worker, session, commit=True):
+    "Handle worker eviction"
+    # Here we want to make an exception: Execution failure on worker eviction should be 
+    # immediately retried whatever the retry status
+    # NB could not make the SQLALchemy ORM work in that simple case... NotImplementedError: This backend does not support multiple-table criteria within UPDATE
+    session.execute(f"UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE worker_id={worker.worker_id} AND status IN ('running','pending'))")
+    session.execute(f"UPDATE execution SET status='failed' WHERE worker_id={worker.worker_id} AND status='running'")
+    session.execute(f"UPDATE execution SET status='refused' WHERE worker_id={worker.worker_id} AND status='pending'")
+    
+    if commit:
+        session.commit()
+    if EVICTION_ACTION in ['delete', 'replace']:
+        create_worker_destroy_job(worker, session, commit=commit)
+    if EVICTION_ACTION=='replace':
+        flavor = worker.flavor_detail
+        try:
+            cost = session.query(FlavorMetrics.cost).filter(FlavorMetrics.flavor_name==flavor.name, 
+                                                            FlavorMetrics.provider==flavor.provider,
+                                                            FlavorMetrics.region_name==worker.region).one()
+            cost = cost[0]
+        except NoResultFound:
+            cost = 0
+        for new_flavor in find_flavor(session, 
+                                      min_cpu=flavor.cpu, 
+                                      min_ram=flavor.ram, 
+                                      min_disk=flavor.disk, 
+                                      limit=1000):
+            if new_flavor["available"]==0:
+                continue
+            if cost==0 and new_flavor['cost']==0:
+                break
+            elif new_flavor['cost']/cost<EVICTION_COST_MARGIN:
+                break
+        else:
+            log.warning(f'Could not find any suitable replacement for flavor {flavor.name}')
+            return None
+        log.warning(f'Found a replacement flavor for {flavor.name}: {new_flavor["name"]} in {new_flavor["provider"]}:{new_flavor["region"]}')
+        create_worker_create_job(concurrency=worker.concurrency, prefetch=worker.prefetch,
+                                 batch=worker.batch, flavor=new_flavor["name"], region=new_flavor["region"],
+                                 provider=new_flavor["provider"], session=session, commit=commit)
+        
+
+
+
 
 class Requirement(db.Model):
     __tablename__="requirement"

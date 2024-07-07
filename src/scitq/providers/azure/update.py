@@ -13,9 +13,10 @@ import logging as log
 from ...server import get_session, config
 from ..generic import GenericProvider, Flavor, FlavorMetrics
 from ...util import package_path
-
+import re
 
 GPU_RESOURCE='providers/azure/gpu.tsv'
+FLAVOR_NAME_RE=re.compile(r'Standard_(?P<main>[A-Z0-9-]+)(?P<option>[a-z]+)?(_.*?)?$')
 
 class Azure(GenericProvider):
     def __init__(self, subscription_id, client_id, client_secret, tenant_id, session,
@@ -63,7 +64,18 @@ class Azure(GenericProvider):
             try:
                 for flavor in self.compute_client.virtual_machine_sizes.list(location=region):
                     # the flavor name must contain a small s to be compatible with premium storage
-                    if 's' not in flavor.name or 'Basic' in flavor.name: 
+                    m=FLAVOR_NAME_RE.match(flavor.name)
+                    if not m:
+                        # we know that basic are not accepted no need to shout for such
+                        if 'Basic' not in flavor.name:
+                            self.push(f'<Not a standard flavor {flavor.name}>')
+                        continue
+                    options=m.groupdict()['option']
+                    if options is None or 's' not in options:
+                        # no premium storage
+                        continue
+                    if 'p' in options:
+                        # arm64 not supported yet
                         continue
                     if flavor.name not in seen_flavors:
                         try:

@@ -6,10 +6,12 @@ import logging as log
 import json as json_module
 
 from .model import Task, Execution, Signal, Requirement, Worker,\
-    create_worker_destroy_job, Job, Recruiter, delete_batch, find_flavor
+    create_worker_destroy_job, Job, Recruiter, delete_batch, \
+    find_flavor, execution_update_status, worker_delete, \
+    ModelException, create_worker_create_job, worker_handle_eviction
 from .db import db
 from .config import IS_SQLITE
-from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION
+from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, WORKER_STATUS
 
 
 api = Api(version='1.2', title='TaskMVC API',
@@ -266,7 +268,7 @@ ns = api.namespace('workers', description='WORKER operations')
 
 class WorkerDAO(BaseDAO):
     ObjectType = Worker
-    authorized_status = ['paused','running','offline','failed','evicted']
+    authorized_status = WORKER_STATUS
 
     def update_contact(self, id, load,memory,stats):
         db.engine.execute(
@@ -291,6 +293,8 @@ class WorkerDAO(BaseDAO):
                             log.warning(f'Evicted worker {object.worker_id} can only return to running')
                             continue
                     setattr(object, attr, value)
+                    if attr=='status' and value=='evicted':
+                        worker_handle_eviction(worker=object,session=db.session, commit=False)
                     modified = True
             else:
                 api.abort(500,f'Error: {object.__name__} has no attribute {attr}')
@@ -305,14 +309,7 @@ class WorkerDAO(BaseDAO):
         """
         worker=self.get(id)
         log.warning(f'Deleting worker {id} ({worker.permanent})')
-        if not worker.permanent and not is_destroyed:
-            create_worker_destroy_job(worker, session)
-            return worker
-        else:
-            object = self.get(id)
-            session.delete(object)
-            session.commit()
-            return object
+        return worker_delete(worker, session, is_destroyed=is_destroyed)
 
     def list(self, **args):
         return super().list(sorting_column='worker_id', **args)
@@ -484,22 +481,23 @@ class WorkerDeploy(Resource):
     def put(self):
         """Create and deploy one or several workers"""
         deploy_args = deploy_parser.parse_args()
-
-        for _ in range(deploy_args['number']):
-            db.session.add(
-                Job(target='', 
-                    action='worker_create', 
-                    args={
-                        'concurrency': deploy_args['concurrency'], 
-                        'prefetch':deploy_args['prefetch'],
-                        'flavor':deploy_args['flavor'],
-                        'region':deploy_args['region'],
-                        'provider':deploy_args['provider'],
-                        'batch':deploy_args['batch']
-                    }
-                )
-            )
-        db.session.commit()
+        create_worker_create_job(session=db.session, **deploy_args)
+        #for _ in range(deploy_args['number']):
+#
+        #    db.session.add(
+        #        Job(target='', 
+        #            action='worker_create', 
+        #            args={
+        #                'concurrency': deploy_args['concurrency'], 
+        #                'prefetch':deploy_args['prefetch'],
+        #                'flavor':deploy_args['flavor'],
+        #                'region':deploy_args['region'],
+        #                'provider':deploy_args['provider'],
+        #                'batch':deploy_args['batch']
+        #            }
+        #        )
+        #    )
+        #db.session.commit()
 
 
         return {'result':'ok'}
@@ -530,55 +528,14 @@ class ExecutionDAO(BaseDAO):
             if hasattr(execution,attr): 
                 if getattr(execution,attr)!=value:
                     if attr=='status':
-                        if value not in self.authorized_status:
-                            api.abort(500,
-                                f"Status {value} is not possible (only {' '.join(self.authorized_status)})")
-                        task=task_dao.get(execution.task_id)
-                        now = datetime.utcnow()
-                        if execution.status=='pending':
-                            if value=='running':
-                                task.status = 'running'
-                                task.modification_date = now
-                                task.status_date = now
-                            elif value=='accepted':
-                                task.status = 'accepted'
-                                task.modification_date = now
-                                task.status_date = now
-                            elif value in ['refused','failed']:
-                                task.status = 'pending'
-                                task.modification_date = now
-                                task.status_date = now
-                            elif value=='succeeded':
-                                task.status = 'succeeded'
-                                task.modification_date = now
-                                task.status_date = now
-                            else:
-                                api.abort(500, f"An execution cannot change status from pending to {value}")
-                        elif execution.status=='accepted':
-                            if value in ['running','failed','succeeded','pending']:
-                                task.status = value
-                                task.modification_date = now
-                                task.status_date = now
-                            else:
-                                log.exception(f"An execution cannot change status from accepted to {value}")
-                                api.abort(500, f"An execution cannot change status from accepted to {value}")
-                        elif execution.status=='running':
-                            if value in ['succeeded', 'failed']:
-                                task.status=value
-                                task.modification_date = now
-                                task.status_date = now
-                                if value=='failed' and task.retry>0:
-                                    log.warning(f'Failure of execution {execution.execution_id} trigger task {task.task_id} retry ({task.retry-1} retries left)')
-                                    task.retry -= 1
-                                    task.status = 'pending'
-                            else:
-                                log.exception(f"An execution cannot change status from running to {value}")
-                                api.abort(500, f"An execution cannot change status from running to {value}")
-                        else:
-                            api.abort(500, f"An execution cannot change status from {execution.status} (only from pending, running or accepted)")
-
-                    setattr(execution, attr, value)
-                    modified = True
+                        try:
+                            execution_update_status(execution, db.session, value, commit=False)
+                            modified = True
+                        except ModelException as model_exception:
+                            api.abort(500, model_exception.message)
+                    else:
+                        setattr(execution, attr, value)
+                        modified = True
             else:
                 raise Exception('Error: {} has no attribute {}'.format(
                     execution.__name__, attr))

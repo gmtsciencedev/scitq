@@ -10,7 +10,7 @@ import math
 from time import sleep, time
 from signal import SIGKILL
 
-from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal
+from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal, worker_delete
 from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY,\
     WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME, TERMINATE_TIMEOUT, KILL_TIMEOUT,\
     JOB_MAX_LIFETIME
@@ -226,7 +226,8 @@ def background(app):
                         log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
                         if real_worker is not None:
                             change = True
-                            session.delete(real_worker)
+                            worker_delete(real_worker, session, is_destroyed=True, commit=False)
+                            #session.delete(real_worker)
                             job.log='Deleting unmanaged worker.'
                             job.status='succeeded'            
                 
@@ -296,7 +297,8 @@ def background(app):
                             log.warning(f'Deleting worker {worker.name} ({worker.worker_id}) after destruction')
                             real_worker = session.query(Worker).get(worker.worker_id)
                             if real_worker is not None:
-                                session.delete(real_worker)
+                                #session.delete(real_worker)
+                                worker_delete(real_worker, session, is_destroyed=True, commit=False)
                             else:
                                 log.error(f'Could not find a worker with worker_id {worker.worker_id}')
                             #worker_dao.delete(worker.worker_id, is_destroyed=True)
