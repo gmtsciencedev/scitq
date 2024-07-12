@@ -11,5 +11,8 @@ TASK_STATUS = ['paused','waiting','pending','assigned','accepted','running','fai
 EXECUTION_STATUS = ['pending','accepted','running','failed','succeeded','refused']
 WORKER_STATUS = ['paused','running','offline','failed','evicted']
 
+PROTOFILTER_SYNTAX=r'^(?P<item>cpu|ram|disk|tags|gpumem|eviction|region|cost|provider)(?P<comparator>==|!=|>=|>|<|<=|~|#)(?P<value>[0-9\.]+|[A-Za-z0-9_%-]+)$'
+PROTOFILTER_SEPARATOR=':'
+
 FLAVOR_DEFAULT_LIMIT=10
 FLAVOR_DEFAULT_EVICTION=5

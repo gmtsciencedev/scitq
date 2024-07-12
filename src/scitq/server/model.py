@@ -6,7 +6,7 @@ from sqlalchemy import func
 
 from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_ACTION, EVICTION_COST_MARGIN
 from .db import db
-from ..util import to_dict
+from ..util import to_dict, validate_protofilter, protofilter_syntax, PROTOFILTER_SEPARATOR, is_like, has_tag
 from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
 
 import logging as log
@@ -406,6 +406,7 @@ class Recruiter(db.Model):
         self.batch = batch
         self.rank = rank
         self.tasks_per_worker = tasks_per_worker
+        validate_protofilter(worker_flavor)
         self.worker_flavor = worker_flavor
         self.worker_region = worker_region
         self.worker_provider = worker_provider
@@ -413,8 +414,53 @@ class Recruiter(db.Model):
         self.worker_prefetch = worker_prefetch
         self.minimum_tasks = minimum_tasks
         self.maximum_workers = maximum_workers
+
+    def match_flavor(self, worker, session):
+        """A function that says if protofilters (which may appear as auto:... in Recruiter.worker_flavor) validate a worker.flavor"""
+        if self.worker_flavor.startswith('auto'):
+            if PROTOFILTER_SEPARATOR in self.worker_flavor:
+                if worker.flavor_detail is None:
+                    return False
+                flavor_detail=worker.flavor_detail 
+                env={'cpu':flavor_detail.cpu, 'ram':flavor_detail.ram, 'disk':flavor_detail.disk,'tags':flavor_detail.tags, 
+                     'gpumem':flavor_detail.gpumem, 'region':worker.region,'provider':worker.provider}
+                if 'cost' in self.worker_flavor or 'eviction' in self.worker_flavor:
+                    try:
+                        metrics = session.query(FlavorMetrics).filter(FlavorMetrics.flavor_name==worker.flavor,
+                                                                    FlavorMetrics.provider==worker.provider,
+                                                                    FlavorMetrics.region_name==worker.region).one()
+                        env['cost']=metrics.cost
+                        env['eviction']=metrics.eviction
+                    except NoResultFound:
+                        return False
+                result = True
+                for protofilter in self.worker_flavor.split(PROTOFILTER_SEPARATOR):
+                    protofilter_match = protofilter_syntax.match(protofilter)
+                    if protofilter_match:
+                        protofilter_match = protofilter_match.groupdict()
+                        variable = protofilter_match['item']
+                        comp = protofilter_match['comparator']
+                        value = protofilter_match['value']
+                        if value[0] not in '0123456789.':
+                            # value is a string
+                            value=repr(value)
+                        if comp=='~':
+                            env['is_like']=is_like
+                            eval_protofilter = f"is_like({variable},{value})"
+                        elif comp=='#':
+                            env['has_tag']=has_tag
+                            eval_protofilter = f"has_tag({variable},{value})"
+                        else:
+                            eval_protofilter = f"{variable}{comp}{value}"
+                        try:
+                            result = result and eval(eval_protofilter,env)
+                        except Exception as e:
+                            log.exception(f'Could not evaluate protofilter {protofilter} (compiled as {eval_protofilter}), eval to False')
+                            return False
+                return result
+        else:
+            return self.worker_flavor==worker.flavor
         
-    
     # NB Session.merge() seems the way to go with this object
     # cf https://docs.sqlalchemy.org/en/14/orm/session_api.html#sqlalchemy.orm.Session.merge
 
@@ -494,14 +540,53 @@ def find_remaining_quotas(session):
                 quotas[(provider,region)]-=cpus
     return quotas    
 
-def find_flavor(session, min_cpu=0, min_ram=0, min_disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, 
-                limit=FLAVOR_DEFAULT_LIMIT, provider=None, region=None):
-    """Return a list of Flavor fulfilling specific conditions"""
-    filters = [Flavor.cpu>=min_cpu, Flavor.ram>=min_ram, Flavor.disk>=min_disk, FlavorMetrics.eviction<=max_eviction]
+def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=None, 
+                max_eviction=FLAVOR_DEFAULT_EVICTION, 
+                limit=FLAVOR_DEFAULT_LIMIT, provider=None, region=None, flavor=None):
+    """Return a list of Flavor fulfilling specific conditions
+
+    protofilters should be a string of PROTOFILTER_SEPARATOR (e.g. :) separated strings passing validate_protofilter() function
+    """
+    filters = []
+    if max_eviction is not None and 'eviction' not in protofilters:
+        filters.append(FlavorMetrics.eviction<=max_eviction)
+    if min_cpu is not None:
+        filters.append(Flavor.cpu>=min_cpu)
+    if min_ram is not None:
+        filters.append(Flavor.ram>=min_ram)
+    if min_disk is not None:
+        filters.append(Flavor.disk>=min_disk)
     if provider is not None:
         filters.append(Flavor.provider==provider)
     if region is not None:
         filters.append(FlavorMetrics.region==region)
+    if flavor is not None:
+        filters.append(Flavor.name.like(flavor))
+    for protofilter_string in protofilters.split(PROTOFILTER_SEPARATOR):
+        protofilter = protofilter_syntax.match(protofilter_string)
+        if protofilter:
+            protofilter=protofilter.groupdict()
+            protofilter_item = getattr(FlavorMetrics, 'region_name' if protofilter['item']=='region' else protofilter['item']) \
+                if protofilter['item'] in ['region','cost','eviction'] else \
+                getattr(Flavor, protofilter['item'])
+            comp = protofilter['comparator']
+            if comp=='==':
+                filters.append(protofilter_item==protofilter['value'])
+            elif comp=='>':
+                filters.append(protofilter_item>protofilter['value'])
+            elif comp=='<':
+                filters.append(protofilter_item<protofilter['value'])
+            elif comp=='>=':
+                filters.append(protofilter_item>=protofilter['value'])
+            elif comp=='<=':
+                filters.append(protofilter_item<=protofilter['value'])
+            elif comp=='~':
+                filters.append(protofilter_item.like(protofilter['value']))
+            elif comp=='#':
+                for letter in protofilter['value']:
+                    filters.append(protofilter_item.like(f'%{letter}%'))
+        else:
+            log.warning(f'Unknown protofilter {protofilter_string}')
     #return session.query(Flavor,FlavorMetrics
     fields = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction']
     flavors = [dict(zip(fields, object)) for object in session.query(
@@ -509,7 +594,7 @@ def find_flavor(session, min_cpu=0, min_ram=0, min_disk=0, max_eviction=FLAVOR_D
                   Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
                   Flavor.disk, FlavorMetrics.cost, FlavorMetrics.eviction      
             ).select_from(FlavorMetrics).join(FlavorMetrics.flavor)\
-                .filter(and_(*filters))\
+                .filter(*filters)\
                 .order_by(FlavorMetrics.cost).limit(limit)]
     quotas = find_remaining_quotas(session)
     for flavor in flavors:

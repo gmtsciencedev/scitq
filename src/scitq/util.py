@@ -6,6 +6,8 @@ import re
 import stat
 import shutil
 from argparse import Namespace
+from .constants import PROTOFILTER_SYNTAX, PROTOFILTER_SEPARATOR
+from functools import reduce
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -212,3 +214,25 @@ def filter_none(d):
 def to_obj(d):
     """Transform a dict into an obj"""
     return Namespace(**d)
+
+protofilter_syntax=re.compile(PROTOFILTER_SYNTAX)
+
+def validate_protofilter(worker_flavor):
+    """A function that raise an Exception if worker_flavor does not match expected syntax"""
+    if worker_flavor.startswith('auto'):
+        if PROTOFILTER_SEPARATOR in worker_flavor:
+            for filter in worker_flavor.split(PROTOFILTER_SEPARATOR)[1:]:
+                match=protofilter_syntax.match(filter)
+                if not match:
+                    raise RuntimeError(f'Protofilter syntax error in {worker_flavor}: {filter} is not recognized as a proper filter')
+        else:
+            if worker_flavor!='auto':
+                raise RuntimeError(f'Protofilter syntax error, worker_flavor should be auto or auto{PROTOFILTER_SEPARATOR}... not {worker_flavor}')
+
+def is_like(a,b):
+    """A small helper to simulate SQL like function that use % as a widechar"""
+    return bool(re.match(b.replace('%','.*'),a))
+
+def has_tag(a,b):
+    """A small helper to simulate protofilter # sign, e.g. a#b == a contain tags b"""
+    return reduce(lambda x,y: x and y, [c in a for c in b], True)
