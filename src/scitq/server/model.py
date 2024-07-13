@@ -4,7 +4,7 @@ from sqlalchemy import DDL, event, func, delete, select, or_, and_
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy import func
 
-from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_ACTION, EVICTION_COST_MARGIN
+from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_ACTION, EVICTION_COST_MARGIN, PREFERRED_REGIONS
 from .db import db
 from ..util import to_dict, validate_protofilter, protofilter_syntax, PROTOFILTER_SEPARATOR, is_like, has_tag
 from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
@@ -548,6 +548,7 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
     protofilters should be a string of PROTOFILTER_SEPARATOR (e.g. :) separated strings passing validate_protofilter() function
     """
     filters = []
+    order_by = (FlavorMetrics.cost,)
     if max_eviction is not None and 'eviction' not in protofilters:
         filters.append(FlavorMetrics.eviction<=max_eviction)
     if min_cpu is not None:
@@ -558,8 +559,10 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
         filters.append(Flavor.disk>=min_disk)
     if provider is not None:
         filters.append(Flavor.provider==provider)
+        if provider in PREFERRED_REGIONS and PREFERRED_REGIONS[provider]:
+            order_by = (FlavorMetrics.region_name.like(PREFERRED_REGIONS[provider])).desc(),*order_by
     if region is not None:
-        filters.append(FlavorMetrics.region==region)
+        filters.append(FlavorMetrics.region_name==region)
     if flavor is not None:
         filters.append(Flavor.name.like(flavor))
     for protofilter_string in protofilters.split(PROTOFILTER_SEPARATOR):
@@ -572,6 +575,8 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
             comp = protofilter['comparator']
             if comp=='==':
                 filters.append(protofilter_item==protofilter['value'])
+            elif comp=='!=':
+                filters.append(protofilter_item!=protofilter['value'])
             elif comp=='>':
                 filters.append(protofilter_item>protofilter['value'])
             elif comp=='<':
@@ -595,7 +600,7 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
                   Flavor.disk, FlavorMetrics.cost, FlavorMetrics.eviction      
             ).select_from(FlavorMetrics).join(FlavorMetrics.flavor)\
                 .filter(*filters)\
-                .order_by(FlavorMetrics.cost).limit(limit)]
+                .order_by(*order_by).limit(limit)]
     quotas = find_remaining_quotas(session)
     for flavor in flavors:
         if (flavor['provider'], flavor['region']) in quotas:

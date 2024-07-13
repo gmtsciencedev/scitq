@@ -17,6 +17,7 @@ import re
 
 GPU_RESOURCE='providers/azure/gpu.tsv'
 FLAVOR_NAME_RE=re.compile(r'Standard_(?P<main>[A-Z0-9-]+)(?P<option>[a-z]+)?(_.*?)?$')
+DEFAULT_OS_DISK=30
 
 class Azure(GenericProvider):
     def __init__(self, subscription_id, client_id, client_secret, tenant_id, session,
@@ -84,7 +85,7 @@ class Azure(GenericProvider):
                                 provider=self.provider,
                                 cpu=flavor.number_of_cores,
                                 ram=flavor.memory_in_mb/1024,
-                                disk=max(flavor.os_disk_size_in_mb,flavor.resource_disk_size_in_mb)/1024,
+                                disk=max(DEFAULT_OS_DISK,flavor.resource_disk_size_in_mb/1024), # do not use flavor.os_disk_size_in_mb, this is a maximal optional size not the real size
                                 bandwidth=1,
                                 tags='G' if flavor.name.startswith('Standard_N') else '')
                             if flavor.name in flavor_gpu:

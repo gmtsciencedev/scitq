@@ -479,7 +479,7 @@ we already have {workers} workers')
                             worker_flavor=recruiter.worker_flavor
                         worker_to_find=nb_workers
                         flavor_list=list(map(to_obj,find_flavor(session, provider=worker_provider, region=worker_region, 
-                                                            flavor=worker_flavor, protofilters=protofilters)))
+                                                            flavor=worker_flavor, protofilters=protofilters, limit=None)))
                         flavor_remaining_availability={(flavor.name,flavor.provider,flavor.region):flavor.available for flavor in flavor_list}
                         while worker_to_find>0 and flavor_list:
                             current_flavor=flavor_list[0]
