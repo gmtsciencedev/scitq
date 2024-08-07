@@ -16,7 +16,7 @@ from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_O
     WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME, TERMINATE_TIMEOUT, KILL_TIMEOUT,\
     JOB_MAX_LIFETIME
 from .db import db
-from ..util import PropagatingThread, to_obj
+from ..util import PropagatingThread, to_obj, validate_protofilter
 from ..constants import PROTOFILTER_SEPARATOR, PROTOFILTER_SYNTAX
 
 protofilter_syntax=re.compile(PROTOFILTER_SYNTAX)
@@ -239,12 +239,52 @@ def background(app):
                     change = True
                     worker = create_worker_object(db_session=session,
                         **job.args)
-                    job.action = 'worker_deploy'
-                    job.target = worker.name
-                    job.args = dict(job.args)
-                    job.args['worker_id'] = worker.worker_id
-                    job.retry = WORKER_CREATE_RETRY
-                    job.status = 'pending'
+                    
+                    auto_deploy = False
+                    if worker.provider=='auto' or worker.region=='auto' or worker.flavor.startswith('auto'):
+                        try:
+                            log.warning(' -> Auto deploy detected')
+                            auto_deploy = True
+                            provider = None if worker.provider=='auto' else worker.provider
+                            region = None if worker.region=='auto' else worker.region
+                            protofilters=''
+                            if worker.flavor.startswith('auto'):
+                                validate_protofilter(worker.flavor)
+                                flavor=None
+                                if PROTOFILTER_SEPARATOR in worker.flavor:
+                                    protofilters = PROTOFILTER_SEPARATOR.join(
+                                            worker.flavor.split(PROTOFILTER_SEPARATOR)[1:])
+                            else:
+                                flavor=worker.flavor
+                            flavor_list=list(map(to_obj,find_flavor(session, provider=provider, region=region, 
+                                                                flavor=flavor, protofilters=protofilters, limit=None)))
+                            while flavor_list:
+                                current_flavor=flavor_list[0]
+                                if current_flavor.available is not None and current_flavor.available<=0:
+                                    flavor_list.pop(0)
+                                    continue
+                                else:
+                                    worker.flavor=current_flavor.name
+                                    worker.region=current_flavor.region
+                                    worker.provider=current_flavor.provider
+                                    break
+                            else:
+                                raise RuntimeError(f'Could not find a flavor satisfying provider={worker.provider},region={worker.region},flavor={worker.flavor}')
+                        except RuntimeError as re:
+                            job.status='failed'
+                            job.log=re.args[0]
+
+                    if job.status!='failed':
+                        job.action = 'worker_deploy'
+                        job.target = worker.name
+                        job.args = dict(job.args)
+                        job.args['worker_id'] = worker.worker_id
+                        if auto_deploy:
+                            job.args['flavor'] = worker.flavor
+                            job.args['provider'] = worker.provider
+                            job.args['region'] = worker.region
+                        job.retry = WORKER_CREATE_RETRY
+                        job.status = 'pending'
                 
                 if job.action == 'worker_deploy':
                     if ('create',job.target) not in worker_process_queue and len(
@@ -255,13 +295,13 @@ def background(app):
                         change = True
                         log.warning(f'Launching creation process for worker {job.target}.')
                         worker = Namespace(**job.args)
-                        log.warning(f'Launching command is "'+WORKER_CREATE.format(
-                                hostname=job.target,
-                                concurrency=worker.concurrency,
-                                flavor=worker.flavor,
-                                region=worker.region,
-                                provider=worker.provider,
-                            )+'"')
+                        log.exception(f'Launching command is "'+WORKER_CREATE.format(
+                            hostname=job.target,
+                            concurrency=worker.concurrency,
+                            flavor=worker.flavor,
+                            region=worker.region,
+                            provider=worker.provider,
+                        )+'"')
                         worker_create_process = Popen(
                             WORKER_CREATE.format(
                                 hostname=job.target,
@@ -483,7 +523,8 @@ we already have {workers} workers')
                         flavor_remaining_availability={(flavor.name,flavor.provider,flavor.region):flavor.available for flavor in flavor_list}
                         while worker_to_find>0 and flavor_list:
                             current_flavor=flavor_list[0]
-                            if flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]<=0:
+                            if flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)] is None or \
+                               flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]<=0:
                                 flavor_list.pop(0)
                             else:
                                 flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]-=1

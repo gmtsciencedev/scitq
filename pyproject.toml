@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0","setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitq"
-version = "1.2.3rc2"
+version = "1.2.3rc3"
 authors = [
   { name="Raynald de Lahondès" },
   { name="Rémi Tan" }
@@ -18,30 +18,10 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Operating System :: OS Independent",
 ]
-dependencies=['Flask < 2.2',
-        'Werkzeug==2.2.2',
-        'sqlalchemy <= 1.5',
-        'flask-sqlalchemy < 3.0.0',
-        'Flask-Migrate',
-        'flask-restx==1.2.0',
-        'flask-socketio >= 5.2.0',
-        'requests',
-        'psutil',
-        'tabulate',
-        'psycopg2-binary',
-        'awscli >= 1.25.22',
-        'awscli-plugin-endpoint',
-        'boto3 >= 1.24.22',
-        'python-dotenv',
-        'azure-storage-blob',
-        'urwid',
-        'filelock',
-        'azure-mgmt-subscription',
-        'azure-mgmt-resourcegraph',
-        'pandas',
-        'ovh',
-        'lxml'
-        ]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.in"] }
 
 [project.urls]
 "Homepage" = "https://github.com/gmtsciencedev/scitq"
