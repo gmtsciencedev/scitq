@@ -551,6 +551,8 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
     order_by = (FlavorMetrics.cost,)
     if max_eviction is not None and 'eviction' not in protofilters:
         filters.append(FlavorMetrics.eviction<=max_eviction)
+    if 'tags' not in protofilters:
+        filters.append(~Flavor.tags.like('%M%'))
     if min_cpu is not None:
         filters.append(Flavor.cpu>=min_cpu)
     if min_ram is not None:
@@ -587,13 +589,25 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
                 filters.append(protofilter_item<=protofilter['value'])
             elif comp=='~':
                 filters.append(protofilter_item.like(protofilter['value']))
+            elif comp=='!~':
+                filters.append(~protofilter_item.like(protofilter['value']))
             elif comp=='#':
                 for letter in protofilter['value']:
                     filters.append(protofilter_item.like(f'%{letter}%'))
+            elif comp=='!#':
+                for letter in protofilter['value']:
+                    filters.append(~protofilter_item.like(f'%{letter}%'))
         else:
             log.warning(f'Unknown protofilter {protofilter_string}')
     #return session.query(Flavor,FlavorMetrics
     fields = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction']
+    print(session.query(
+                  Flavor.name, Flavor.provider, FlavorMetrics.region_name, 
+                  Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
+                  Flavor.disk, FlavorMetrics.cost, FlavorMetrics.eviction      
+            ).select_from(FlavorMetrics).join(FlavorMetrics.flavor)\
+                .filter(*filters)\
+                .order_by(*order_by).limit(limit))
     flavors = [dict(zip(fields, object)) for object in session.query(
                   Flavor.name, Flavor.provider, FlavorMetrics.region_name, 
                   Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
