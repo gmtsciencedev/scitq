@@ -601,13 +601,6 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
             log.warning(f'Unknown protofilter {protofilter_string}')
     #return session.query(Flavor,FlavorMetrics
     fields = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction']
-    print(session.query(
-                  Flavor.name, Flavor.provider, FlavorMetrics.region_name, 
-                  Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
-                  Flavor.disk, FlavorMetrics.cost, FlavorMetrics.eviction      
-            ).select_from(FlavorMetrics).join(FlavorMetrics.flavor)\
-                .filter(*filters)\
-                .order_by(*order_by).limit(limit))
     flavors = [dict(zip(fields, object)) for object in session.query(
                   Flavor.name, Flavor.provider, FlavorMetrics.region_name, 
                   Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
