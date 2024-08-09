@@ -1091,6 +1091,9 @@ flavor_parser.add_argument('provider', type=str,
 flavor_parser.add_argument('region', type=str, 
     help=f'Specify region', 
     required=False, location='json', default=None)
+flavor_parser.add_argument('protofilters', type=str, 
+    help=f'Add some : separated protofilters like cpu>10 or ram>=128', 
+    required=False, location='json', default=None)
 
 custom_flavor = api.model('Flavor', {
     'name': fields.String(readonly=True, description='The flavor reference'),
@@ -1129,4 +1132,5 @@ class FlavorList(Resource):
                     max_eviction=args.max_eviction,
                     limit = args.limit,
                     provider = args.provider,
-                    region = args.region)
+                    region = args.region,
+                    protofilters = args.protofilters)

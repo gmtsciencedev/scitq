@@ -255,7 +255,10 @@ def main():
                                     default=FLAVOR_DEFAULT_EVICTION)
     list_flavor_parser.add_argument('--limit',type=int,
                                     help=f'limit answer to that number of references (default: {FLAVOR_DEFAULT_LIMIT})',
-                                    default=FLAVOR_DEFAULT_LIMIT)    
+                                    default=FLAVOR_DEFAULT_LIMIT)  
+    list_flavor_parser.add_argument('--protofilters',type=str,
+                                    help=f'Add some : separated filters like cpu>1 or tags#G - do not forget to quote as shell like to intrepret > signs...',
+                                    default=None)    
 
     args=parser.parse_args()
 
@@ -642,7 +645,7 @@ def main():
         if args.action=='list':
             flavors = s.flavors(min_cpu=args.min_cpu, min_ram=args.min_ram, min_disk=args.min_disk,
                         max_eviction=args.max_eviction, limit=args.limit, provider=args.provider,
-                        region=args.region)
+                        region=args.region, protofilters=args.protofilters)
             headers = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction','available']
             __list_print(flavors, headers, headers, long=True)
     

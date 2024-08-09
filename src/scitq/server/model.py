@@ -549,9 +549,9 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
     """
     filters = []
     order_by = (FlavorMetrics.cost,)
-    if max_eviction is not None and 'eviction' not in protofilters:
+    if max_eviction is not None and not (protofilters and 'eviction' in protofilters):
         filters.append(FlavorMetrics.eviction<=max_eviction)
-    if 'tags' not in protofilters:
+    if not (protofilters and 'tags' in protofilters):
         filters.append(~Flavor.tags.like('%M%'))
     if min_cpu is not None:
         filters.append(Flavor.cpu>=min_cpu)
@@ -567,38 +567,39 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
         filters.append(FlavorMetrics.region_name==region)
     if flavor is not None:
         filters.append(Flavor.name.like(flavor))
-    for protofilter_string in protofilters.split(PROTOFILTER_SEPARATOR):
-        protofilter = protofilter_syntax.match(protofilter_string)
-        if protofilter:
-            protofilter=protofilter.groupdict()
-            protofilter_item = getattr(FlavorMetrics, 'region_name' if protofilter['item']=='region' else protofilter['item']) \
-                if protofilter['item'] in ['region','cost','eviction'] else \
-                getattr(Flavor, protofilter['item'])
-            comp = protofilter['comparator']
-            if comp=='==':
-                filters.append(protofilter_item==protofilter['value'])
-            elif comp=='!=':
-                filters.append(protofilter_item!=protofilter['value'])
-            elif comp=='>':
-                filters.append(protofilter_item>protofilter['value'])
-            elif comp=='<':
-                filters.append(protofilter_item<protofilter['value'])
-            elif comp=='>=':
-                filters.append(protofilter_item>=protofilter['value'])
-            elif comp=='<=':
-                filters.append(protofilter_item<=protofilter['value'])
-            elif comp=='~':
-                filters.append(protofilter_item.like(protofilter['value']))
-            elif comp=='!~':
-                filters.append(~protofilter_item.like(protofilter['value']))
-            elif comp=='#':
-                for letter in protofilter['value']:
-                    filters.append(protofilter_item.like(f'%{letter}%'))
-            elif comp=='!#':
-                for letter in protofilter['value']:
-                    filters.append(~protofilter_item.like(f'%{letter}%'))
-        else:
-            log.warning(f'Unknown protofilter {protofilter_string}')
+    if protofilters:
+        for protofilter_string in protofilters.split(PROTOFILTER_SEPARATOR):
+            protofilter = protofilter_syntax.match(protofilter_string)
+            if protofilter:
+                protofilter=protofilter.groupdict()
+                protofilter_item = getattr(FlavorMetrics, 'region_name' if protofilter['item']=='region' else protofilter['item']) \
+                    if protofilter['item'] in ['region','cost','eviction'] else \
+                    getattr(Flavor, protofilter['item'])
+                comp = protofilter['comparator']
+                if comp=='==':
+                    filters.append(protofilter_item==protofilter['value'])
+                elif comp=='!=':
+                    filters.append(protofilter_item!=protofilter['value'])
+                elif comp=='>':
+                    filters.append(protofilter_item>protofilter['value'])
+                elif comp=='<':
+                    filters.append(protofilter_item<protofilter['value'])
+                elif comp=='>=':
+                    filters.append(protofilter_item>=protofilter['value'])
+                elif comp=='<=':
+                    filters.append(protofilter_item<=protofilter['value'])
+                elif comp=='~':
+                    filters.append(protofilter_item.like(protofilter['value']))
+                elif comp=='!~':
+                    filters.append(~protofilter_item.like(protofilter['value']))
+                elif comp=='#':
+                    for letter in protofilter['value']:
+                        filters.append(protofilter_item.like(f'%{letter}%'))
+                elif comp=='!#':
+                    for letter in protofilter['value']:
+                        filters.append(~protofilter_item.like(f'%{letter}%'))
+            else:
+                log.warning(f'Unknown protofilter {protofilter_string}')
     #return session.query(Flavor,FlavorMetrics
     fields = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction']
     flavors = [dict(zip(fields, object)) for object in session.query(

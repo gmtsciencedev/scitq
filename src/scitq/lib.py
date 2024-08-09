@@ -625,10 +625,10 @@ class Server:
         return tasks
 
     def flavors(self, min_cpu=0, min_ram=0, min_disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, limit=FLAVOR_DEFAULT_LIMIT,
-                provider=None, region=None):
+                provider=None, region=None, protofilters=None):
         """List all available flavors"""
         return self.get(f'/flavor/', min_cpu=min_cpu, min_ram=min_ram, min_disk=min_disk, max_eviction=max_eviction,
-                        limit=limit, provider=provider, region=region)
+                        limit=limit, provider=provider, region=region, protofilters=protofilters)
     
     def flavor_find(self, cpu=0, ram=0, disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, n=1):
         """Return a flavor or a list of flavor if n>0"""

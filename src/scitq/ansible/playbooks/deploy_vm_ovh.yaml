@@ -1,13 +1,13 @@
 - name: Launch a VM
   environment: "{{ proxy_env }}"
   openstack.cloud.server:
-          image: Ubuntu 20.04
+          image: "{{ 'Baremetal - Ubuntu 20.04' if flavor.startswith('bm') else 'Ubuntu 20.04' }}"
           name: "{{ nodename }}"
           key_name: "{{ keyname }}"
           availability_zone: nova
           flavor: "{{ flavor }}"
           state: present
-          network: "Ext-Net"
+          network: "{{ 'Ext-Net-Baremetal' if flavor.startswith('bm') else 'Ext-Net' }}"
           region_name: "{{ region }}"
   register: vm
 - name: Add VM to inventory
