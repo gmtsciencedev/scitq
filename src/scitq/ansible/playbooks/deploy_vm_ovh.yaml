@@ -9,6 +9,7 @@
           state: present
           network: "{{ 'Ext-Net-Baremetal' if flavor.startswith('bm') else 'Ext-Net' }}"
           region_name: "{{ region }}"
+          meta: "{{ 'soft_raid=0' if flavor.startswith('bm') else 'x=0' }}"
   register: vm
 - name: Add VM to inventory
   add_host:
