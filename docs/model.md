@@ -234,7 +234,7 @@ Most of the time, using `shell=True` is harmless if not useful. However, first, 
 
 While scitq.lib offers an excellent way of executing a simple command at a large scale, implementing a complete chain of small steps can become tedious. You can of course execute a more elaborate script chaining different commands in a task but this has several drawbacks:
 
-- First, this means you will not be able to use ready made dockers, you will have to write (and maintain) your specific dedicated docker,
+- First, this means you will not be able to use ready made dockers, you will have to write (and maintain) your own specific docker,
 - Second, you will have two codes to maintain: the script that run within the task, and the code that distribute the tasks,
 - Third, some steps within your script may have specific hardware requirements while other may not, which may lead to unoptimal use of worker nodes for certain steps.
 
@@ -352,7 +352,9 @@ To recruit, scitq need to know what kind of worker you need, how many of them, a
 
 - the kind of worker is set by the `flavor` argument available at Workflow or Step level: this is the same argument that is expected in `worker_deploy()` call that we have seen before. There is one novelty in v1.2, now even manually deployed worker have a flavor, which by default is `'local'`, but can be changed notably in `/etc/scitq-worker.conf` with `SCITQ_FLAVOR=...`
 (this value is overriden by the one in scitq database if it exists, so to change the flavor of a manually deployed worker, change its /etc/scitq-worker.conf and its scitq database value with `scitq-manage worker update -n ... -f <newflavor>`).
+- (new in v1.2.3) `flavor` can also start with `auto:...` and uses the protofilters syntax (see [protofilters](manage.md#using-protofilters-new-in-v123)), which offers more flexibility in terms of recycling, and adapt automatically to availability issues *if region is set to auto*,
 - where to recruit is set by the `provider` and `region` parameters. If both of those are set, it triggers the possibility to deploy new workers (but it does not make that automatic), if either is missing, no new deploy will occur, but recycling an already present worker remains possible.
+- (new in v1.2.3) if `flavor` uses the new `auto:...` syntax, `region` and `provider` can be set to `auto`. This is strongly recommanded for `region`, as it will enable to adapt to `availability`, and not necessarily for `provider` where specifying `auto` may generate extra costs.
 
 The last thing to know is to specify how many workers are needed, which is computed using the following rules:
 

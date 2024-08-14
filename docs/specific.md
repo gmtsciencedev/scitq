@@ -216,6 +216,79 @@ Now go to the `Compute` : `Key pairs` section on [Horizon](https://horizon.clou
 
 This must be done for all the opened regions, so once you've imported the key for one region, change the region as explained in the note above and import the key to this new region, keeping the same key name. Do that iteratively for all the regions - there are not so many of them.
 
+#### OVH Availability
+
+Contrarily to flavor lists, see below [OVH updater](#ovh-updater), availability is set manually in scitq. Do not worry, availability is of course updated when deploying new workers. There are two reasons for which availability is not completely dynamic, first as scitq do not look for instances that were not deployed internally, it could be inaccurate, second, it gives the opportunity to split availability quotas for different solutions, scitq and others.
+
+This done adding two variables in `/etc/scitq.conf`, on the server instance, `OVH_REGIONS` and `OVH_CPUQUOTAS` (for now, availability is only computed after the CPU quotas, which is very often the bottleneck). 
+
+These CPU quotas appear in OVH manager, Public Cloud, in your project, in Project Management, Quota and Regions. 
+
+You should set a first variable called `OVH_REGIONS` with a space separated list of region short names (like GRA7, GRA9, ...), and a second variable, `OVH_CPUQUOTAS`, with a space separated list of CPU quotas, respective to the first list, taken from the page above (or less if it is splitted between solutions, or if you want to keep a reserve in some region). Availability is not mandatory, you may always bypass availability if the instance is deployed with a specific flavor and region asked (e.g. not using [protofilters](manage.md#using-protofilters-new-in-v123)). If some CPU quotas are partly used because some permanent instances are there, remember to remove the permanent instances CPUs from the quotas.
+
+Remember to only list here region where the ssh key of scitq has been deployed, see [ssh-key](#ssh-key).
+
+As an example, this is our setup:
+
+```sh
+OVH_REGIONS="GRA11 GRA7 DE1 BHS5 RBX-A SBG5 UK1 WAW1"
+OVH_CPUQUOTAS="2044 2048 2048 2048 2048 2048 2048 2048"
+```
+
+NB: the only quota that is not 2048 is the first one, corresponding to region GRA11, where 4 CPU are used by a permanent instance. 
+
+
+#### OVH updater
+
+**New in v1.2.3**
+Since v1.2.3, a new utility, `scitq-ovh-updater` is proposed. It calls specific OVH APIs to update flavor list, so that protofilters may be used, see [protofilters](manage.md#using-protofilters-new-in-v123). It should be called periodically on scitq server instance, using linux `cron` system for instance. Unfortunately, OVH needs specific credentials for these APIs and, as the updater is called in batch mode, these credentials should added in `/etc/scitq.conf`.
+
+Before anything you must ask for these credentials to be created. Go to:
+
+https://api.ovh.com/createToken/index.cgi?GET=/*
+
+Which will provide you with:
+- an Application Key, which should be used to set OVH_APPLICATIONKEY,
+- an Application Secret, which should be used to set OVH_APPLICATIONSECRET,
+- a Consumer Key, which should be used to set OVH_CONSUMERKEY
+
+Once these variables are added in `/etc/scitq.conf`, you should manually call the updater once to test the settings. Simply type `scitq-ovh-updater`, it should print an output describing what it discovers. 
+
+The [availability](#ovh-availability) should also be set up in `/etc/scitq.conf` before launching the script.
+
+Next, the updater must be called periodically. We recommand to create a file, `/etc/cron.d/scitq` which should contain the following:
+
+```sh
+# scitq cron
+PATH=/usr/local/bin
+
+# update ovh
+30 * * * * root scitq-ovh-updater >> /var/log/scitq/cron.log 2>&1
+```
+(this setup executes the updater hourly, at 30 minutes, which is adapted for OVH)
+
+Next, you should apply this file with `systemctl restart cron`, and check in `/var/log/scitq/cron.log` that you see the updater properly running.
+
+
+#### OVH Preferred region
+
+While OVH is nicer than most providers when considering what traffic is internal or external (and if some traffic fees should apply - contrarily to Azure there are no inter-regional fees), it is still a good idea to be closer to your data. 
+
+For this reason, it is a good idea to specify a preferred region.
+
+This should be set in `/etc/scitq.conf` as before in `PREFERRED_REGIONS` with the syntax:
+```ini
+PREFERRED_REGIONS="...,ovh:<preferred region pattern>"
+```
+
+`PREFERRED_REGIONS` is shared with all providers (notably with azure), so it is a comma separated `key:value` list, where keys are provider names, and value are region pattern, that is a single region name. The region name may contain the % wide character. For instance Graveline region is very big at OVH, with GRA7, GRA9 and GRA11 regions available for instances, and GRA region for storage. A good performence is observed for all three Graveline instance region when the storage is in GRA region. In that condition, the OVH preferred region would be GRA%, that is any region starting by GRA, which can be set this way:
+
+```sh
+PREFERRED_REGIONS="ovh:GRA%"
+```
+
+`PREFERRED_REGIONS` is not mandatory.
+
 ### Azure
 
 #### Enabling the connection
@@ -242,27 +315,67 @@ az account show
 az logout
 ```
 
-You will need to add the details in `/etc/scitq.conf` as shown in [Azure parameters](parameters.md#azure-provider-specific-variables).
+You will need to add the details in `/etc/scitq.conf`, using the variables `AZURE_SUBSCRIPTION_ID`, `AZURE_CLIENT_ID`, `AZURE_SECRET`, and `AZURE_TENANT`, as shown in [Azure parameters](parameters.md#azure-provider-specific-variables).
 
+#### Azure availability
 
-#### Other things
+While not mandatory, setting up the availability will enable some automatic adjustment when deploying workers. Azure availaibility is estimated using Spot quotas (as already stated, scitq uses Spot by default), notably the CPU quotas.
 
-##### Regions
+First you should follow the recommandation on this help page:
 
-By default, OVH allow only a few regions when you open your project, so we advise to open as many as you can (as this is free), notably GRA7, GRA11, UK1, DE1 (these are the best regions with lots of instances). This is done under `Project Management` : `Quota and Regions`.
+https://learn.microsoft.com/en-us/azure/quotas/spot-quota
 
-Then we recommand to push your quotas, but this may require a cash deposit, just ask OVH support.
+Using the request below, going in my quotas and looking for spot quotas, we find quotas of two types, some extremely low, 3 (3 CPUs) and some more workable 350, with some quotas already partly consummed for some regions:
 
-##### SSH key
+![Azure quotas](azurequotas.png)
 
-You must deploy the SSH key that was created in [install](install.md#create-ssh-key). For that you will need to use Horizon console, as the SSH key deploy in OVH manager interface won't make the key available in OpenStack API which we use. Just login to your [Horizon console](https://horizon.cloud.ovh.net/) with the User we created before. 
+Spot availability depends upon Microsoft policy, and as it is stated in the above help page, Azure support should be able to increase these quotas. However, Azure customers depending on sponsored subscriptions should not expect much increase, which is logical for Microsoft: paying customers come first. Sponsored subscriptions are already very generous. 
 
-!!! note
+So here, we will exclude from the Azure regions all the regions where the quotas are extremely low, keeping only a relatively short region list.
 
+This should enable you to fill two variables in `/etc/scitq.conf`: `AZURE_REGIONS` and `AZURE_CPUQUOTAS`. 
 
-    When using OVH Horizon, when you connect you default to a specific region (shown in the top gray line of the console, on the right of your public cloud project id). This is remembered from one login to another but may not be the right one. If you get the wrong one like an non-opened region, you will have inactive interfaces for the `Compute` sections, don't forget to change, just click on the region name and you will be able to choose the right region.
+`AZURE_REGIONS` will hold a space separated region list (region should be specified with their technical name, that is all the strings that compose the human readable region name concatenated, in lower case, for instance `Sweden Central` -> `swedencentral`)
 
+In doubt, this page list all regions technical names: 
+https://azuretracks.com/2021/04/current-azure-region-names-reference/
 
-Now go to the `Compute` : `Key pairs` section on [Horizon](https://horizon.cloud.ovh.net/project/key_pairs), and choose `Import Public Key` and copy paste the content of scitq server `/root/.ssh/id_rsa.pub` file in SSH key, give it a name, the keyname that should be set in Ansible `/etc/ansible/inventory/common` file, as noted [here](install.md#adapt-etcansibleinventorycommon). If you change this parameter it will be automatically applied at next Ansible usage.
+`AZURE_CPUQUOTAS` should hold a space separated CPU quotas using the same order of `AZURE_REGIONS` (the first quota apply to the first region, etc.). Remember to decrease the quotas if there are permanent instances in that region of if you need to keep a CPU reserve in that region for any other reason.
 
-This must be done for all the opened regions, so once you've imported the key for one region, change the region as explained in the note above and import the key to this new region, keeping the same key name. Do that iteratively for all the regions - there are not so many of them.
+A typical setup would be:
+```sh
+AZURE_REGIONS="swedencentral eastasia"
+AZURE_CPUQUOTAS="340 350"
+```
+
+#### Azure updater
+
+Like for OVH, in order for [protofilters](manage.md#using-protofilters-new-in-v123) to work, there is a specific updater to run periodically `scitq-azure-updater`. Unlike OVH, the 4 above mentionned variables of Azure, `AZURE_SUBSCRIPTION_ID`, `AZURE_CLIENT_ID`, `AZURE_SECRET`, and `AZURE_TENANT`, will be sufficient to connect to the required API.
+
+The [availability](#azure-availability) should also be set up in `/etc/scitq.conf` before launching the script.
+
+You should run it once manually to see that the script discovers some Azure flavors. Then create (or complete) `/etc/cron.d/scitq` file:
+
+```sh
+# scitq cron
+PATH=/usr/local/bin
+
+# update azure
+1 * * * * root scitq-azure-updater >> /var/log/scitq/cron.log 2>&1
+```
+
+This will update Azure hourly, each time the time sets to X hour 01 minute. Be careful that Azure is quite dynamic with Spot availability, notably in some regions (some specific flavor, or instance types, may disappear during the day, or the other way around, or the eviction rate may change, see [protofilters detail](manage.md#protofilters-details) for more info on eviction). Spot is supposed to be proposed for instance less demanded, so it is logical that it may change depending on demand. In our usage, hourly update seems enough. Be careful that the updating time may get high when using long region lists (more than 10 minutes is possible, make a few test manually before requesting shorter update interval). 
+
+#### Azure Preferred region
+
+This is exactly like [OVH Preferred region](#ovh-preferred-region), with which the `PREFERRED_REGIONS` variable is shared. This `/etc/scitq.conf` variable is supposed to be a comma separated `key:value` list, with the key being other `azure` or `ovh` and the value is a region name pattern, with `%` as a wide character. 
+
+In our case and contrarily to OVH, we use a plain region name and not a pattern. Compared with OVH, this setting is more important for Azure as when using an instance in a region that is different from the StorageAccount region used to send the data, some traffic fees will apply. The performence consideration applies as for OVH: the nearest, the best.
+
+So a typical value for `PREFERRED_REGIONS` would be for instance (here we have included the OVH preference previously described, obviously only the part with `azure:...` applies to Azure):
+
+```sh
+PREFERRED_REGIONS="ovh:GRA%,azure:eastasia"
+```
+
+`PREFERRED_REGIONS` is not mandatory, but recommanded for Azure.

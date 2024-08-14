@@ -450,6 +450,12 @@ class Recruiter(db.Model):
                         elif comp=='#':
                             env['has_tag']=has_tag
                             eval_protofilter = f"has_tag({variable},{value})"
+                        elif comp=='!~':
+                            env['is_like']=is_like
+                            eval_protofilter = f"not(is_like({variable},{value}))"
+                        elif comp=='!#':
+                            env['has_tag']=has_tag
+                            eval_protofilter = f"not(has_tag({variable},{value}))"
                         else:
                             eval_protofilter = f"{variable}{comp}{value}"
                         try:
@@ -547,6 +553,7 @@ def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=N
 
     protofilters should be a string of PROTOFILTER_SEPARATOR (e.g. :) separated strings passing validate_protofilter() function
     """
+    # WATCH OUT When modifying this function, Recruiter.match_flavor() function (used for recycling) should be updated too
     filters = []
     order_by = (FlavorMetrics.cost,)
     if max_eviction is not None and not (protofilters and 'eviction' in protofilters):

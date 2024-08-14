@@ -20,6 +20,18 @@ class OVH(GenericProvider):
 
     def __init__(self, session):
         self.session = session
+
+        if config.OVH_APPLICATIONKEY == '' \
+            or config.OVH_APPLICATIONSECRET == '' \
+            or config.OVH_CONSUMERKEY == '':
+            raise RuntimeError('''OVH_APPLICATIONKEY, OVH_APPLICATIONSECRET and OVH_CONSUMERKEY *must* be set in /etc/scitq.conf 
+(or as shell variables) for the updater to work.
+You may have to visit the following website to create them:
+ https://api.ovh.com/createToken/index.cgi?GET=/* ''')
+        
+        if config.OVH_REGIONS == '':
+            raise RuntimeError('''OVH_REGIONS *must* be set in /etc/scitq.conf for the updater to work.''')
+
         self.client = ovh.Client(
             endpoint=OVH_ENDPOINT,               # Endpoint of API OVH (List of available endpoints: https://github.com/ovh/python-ovh#2-configure-your-application)
             application_key=config.OVH_APPLICATIONKEY,    # Application Key

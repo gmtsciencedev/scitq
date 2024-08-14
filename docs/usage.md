@@ -95,6 +95,9 @@ mysubcommand1 -db $RESOURCE/my.db *.fastq > $OUTPUT/myoutput.txt
 !!! note
     `$CPU` is the only special variable **available with or without docker**: it contains the number of CPU divided by the concurrency.
 
+!!! note
+    These variables are shell environment variables, which means they are only available when using the shell (or using specific libs like `os.environ` when using python), so this command will not output anything `scitq-launch 'echo $CPU'` while this command should  `scitq-launch sh -c 'echo $CPU'`.
+
 ### input (-i)
 As explained above this option let you specify some files that will be downloaded before the task is launched and available in `/input` folder or in the folder stored in `INPUT` environmental variable if you do not use docker.
 
@@ -203,14 +206,15 @@ This means you are likely to end up moving files back and forth S3 or Azure stor
 
 Some examples:
 - `scitq-fetch list s3://rnd/data/mylogin` : will list recursively all the content of `s3://rnd/data/mylogin`,
-- `scitq-fetch list --not-recursive azure://rnd/data/mylogin` : will list the immediate content of `azure://rnd/data/mylogin`, not recursively,
+- `scitq-fetch list --not-recursive azure://rnd/data/mylogin` : will list the immediate content of `azure://rnd/data/mylogin`, not recursively, 
+- as non recursive listing is common though not the cloud standard, `scitq-fetch nrlist` has been added, it is non-recursive **and** relative (e.g. answers path are relative to the path given, by default list give longer and complete URI) (new in v1.2.3)
 - `scitq-fetch sync myfolder azure://rnd/data/mylogin/myfolder` : will synchronize the content of `myfolder` to `azure://...` (so that `myfolder/rep/file1.data` is sent to `azure://rnd/data/mylogin/myfolder/rep/file1.data`),
 - `scitq-fetch sync --include '*.data' s3://rnd/data/mylogin/myfolder ./myfolder` : same as above, the other way around, get back some remote folder to some local folder, but only for `.data` files.
 - `scitq-fetch delete s3://rnd/data/mylogin/myfolder` : recursively delete the folder `s3://rnd/data/mylogin/myfolder`.
 
 See `scitq-fetch -h` for complete help.
 
-This utility can also be used out of scitq use context.
+This utility can also be used out of scitq context.
 
 ### scitq.fetch
 

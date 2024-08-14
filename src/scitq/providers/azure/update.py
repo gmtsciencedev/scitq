@@ -182,6 +182,8 @@ def run():
     session = get_session()
     regions = config.AZURE_REGIONS.split()
     quotas = config.AZURE_CPUQUOTAS.split()
+    if not regions or not quotas:
+        raise RuntimeError('AZURE_REGIONS and AZURE_CPUQUOTAS *must* be set in /etc/scitq.conf for the updater to work')
     subscription_id = config.AZURE_SUBSCRIPTION_ID
     client_id = config.AZURE_CLIENT_ID
     client_secret = config.AZURE_SECRET 
