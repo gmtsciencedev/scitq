@@ -380,3 +380,11 @@ PREFERRED_REGIONS="ovh:GRA%,azure:eastasia"
 ```
 
 `PREFERRED_REGIONS` is not mandatory, but recommanded for Azure.
+
+#### Support of GPU with Azure
+
+GPU instance requires a specific image so that GPU drivers install properly. These images are provided by Nvidia and not builtin, and thus requires the approbation of a specific software plan, even if this is a completely free plan. This is done with the following command:
+
+```sh
+az vm image terms accept --urn nvidia:ngc_azure_17_11:ngc-base-version-24_03_4_gen2:latest
+```
