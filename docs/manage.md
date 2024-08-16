@@ -20,6 +20,7 @@ The different objects are:
 - flavor (new in v1.2.3, it only accept the list action, see below)
 
 Three specific objects will be detailed later as they have very specific actions:
+
 - ansible (used when installing or debuging)
 - db (used when installing)
 - debug (used when debuging)
@@ -90,7 +91,7 @@ With `-f` being the flavor, `-r` the region of deployment for the provider, `-P`
 !!! note
     If updaters are not setup properly protofilters (or `flavor find`) will not find any available flavors as flavor list is empty by default.
 
-Protofilters is a new term coined to denote a system of filters intended to chose automatically the *best* available flavor available among the different providers (or within a provider, as the catalog of flavors may be quite long). This functionality requires a specific setup, see [updaters](specific.md#updaters), as it requires scitq to know about the different flavors available. Of course, *best* will largely depend on what are your requirements for the worker(s). This is where the filters come: they enable you to require a certain number of cpu (with an expression like `cpu>=10` for instance), or some memory size, using the `ram` (random access memory) keyword. Apart from this criteria, *best* in protofilters means *cheapest*, exactly as in [flavor list](#flavor) below (under the hood, protofilters and `flavor list` use the same function, `scitq.server.model.find_flavor()`).
+Protofilters is a new term coined to denote a system of filters intended to chose automatically the *best* available flavor available among the different providers (or within a provider, as the catalog of flavors may be quite long). This functionality requires a specific setup, see [OVH updater](specific.md#ovh-updater) and/or [Azure updater](specific.md#azure-updater), as it requires scitq to know about the different flavors available. Of course, *best* will largely depend on what are your requirements for the worker(s). This is where the filters come: they enable you to require a certain number of cpu (with an expression like `cpu>=10` for instance), or some memory size, using the `ram` (random access memory) keyword. Apart from this criteria, *best* in protofilters means *cheapest*, exactly as in [flavor list](#flavor) below (under the hood, protofilters and `flavor list` use the same function, `scitq.server.model.find_flavor()`).
 
 This is simply triggered by providing `auto:...` as the name of the flavor, with the three dots being a list of `:` separated filters. So for instance to get the best flavor with at least 10 CPUs (or vcores), the flavor would have to be set to `auto:cpu>=10`. If in addition, you need a minimal amount of memory, let's say 100 Gb, then add the requirement:
 `auto:cpu>=10:ram>=100`. If you have a certain amount of data that needs to be uploaded on the worker, let's say 200 Gb, remember to add a disk requirement, like this: `auto:cpu>=10:ram>=100:disk>=200`. This last example is a typical real-life protofilter chain. You can also specify other filters, see below [protofilters details](#protofilters-details).
@@ -126,7 +127,8 @@ For REGEXP lovers, protofilters python REGEXP is the following:
 Which roughly translate to:
 <item><comparator><value>
 
-Where 
+Where:
+
 - item would be a term within cpu, ram, disk, tags, gpumem, eviction, region, cost or provider,
 - comparator would be something very much like a python comparator: `==`, `!=`, `>=`, `<=`, `>`, `<` or two specific comparators:
   - `~` (coined *like*) which is an extension of `==` for string with a wide character (`%`) exactly like the SQL `LIKE` comparator, and ressembling shell/DOS expression where `*` is used as a wide character, as in `ls *.py` (remember than in SQL and scitq the wide characeter is `%` instead of `*`)
@@ -135,6 +137,7 @@ Where
 - value is a plain value, not quoted, thus the difference between a number and a string is that that the string is not expected to start with a number (or a dot).
 
 Item details:
+
 - `cpu`: value should be a number, the number of CPUs/vcores of the flavor,
 - `ram`: value should be a number, the size in Gb of the RAM memory of the flavor,
 - `disk`: value should be a number, the size in Gb of the disk of the flavor,

@@ -20,7 +20,7 @@ argcomplete==3.3.0
     #   knack
 attrs==24.2.0
     # via jsonschema
-awscli==1.33.36
+awscli==1.33.44
     # via
     #   -r requirements.in
     #   awscli-plugin-endpoint
@@ -353,7 +353,7 @@ azure-monitor-query==1.2.0
     # via azure-cli
 azure-multiapi-storage==1.2.0
     # via azure-cli
-azure-storage-blob==12.21.0
+azure-storage-blob==12.22.0
     # via -r requirements.in
 azure-storage-common==1.4.2
     # via azure-cli
@@ -369,9 +369,9 @@ bcrypt==4.2.0
     # via paramiko
 bidict==0.23.1
     # via python-socketio
-boto3==1.34.154
+boto3==1.34.162
     # via -r requirements.in
-botocore==1.34.154
+botocore==1.34.162
     # via
     #   awscli
     #   boto3
@@ -380,7 +380,7 @@ certifi==2024.7.4
     # via
     #   msrest
     #   requests
-cffi==1.16.0
+cffi==1.17.0
     # via
     #   azure-datalake-store
     #   cryptography
@@ -453,7 +453,7 @@ importlib-metadata==8.2.0
     # via
     #   alembic
     #   flask
-importlib-resources==6.4.0
+importlib-resources==6.4.2
     # via
     #   alembic
     #   flask-restx
@@ -517,7 +517,7 @@ jsonschema==4.17.3
     # via flask-restx
 knack==0.11.0
     # via azure-cli-core
-lxml==5.2.2
+lxml==5.3.0
     # via -r requirements.in
 mako==1.3.5
     # via alembic
@@ -601,7 +601,7 @@ packaging==24.1
     #   knack
 pandas==2.0.3
     # via -r requirements.in
-paramiko==3.4.0
+paramiko==3.4.1
     # via
     #   azure-cli-core
     #   fabric
@@ -665,7 +665,7 @@ pytz==2024.1
     # via
     #   flask-restx
     #   pandas
-pyyaml==6.0.1
+pyyaml==6.0.2
     # via
     #   awscli
     #   knack
@@ -758,7 +758,7 @@ wsproto==1.2.0
     # via simple-websocket
 xmltodict==0.13.0
     # via azure-cli
-zipp==3.19.2
+zipp==3.20.0
     # via
     #   importlib-metadata
     #   importlib-resources

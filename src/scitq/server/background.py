@@ -11,7 +11,7 @@ from time import sleep, time
 from signal import SIGKILL
 import re
 
-from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal, worker_delete, find_flavor
+from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal, worker_delete, find_flavor, Flavor
 from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY,\
     WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME, TERMINATE_TIMEOUT, KILL_TIMEOUT,\
     JOB_MAX_LIFETIME
@@ -295,12 +295,15 @@ def background(app):
                         change = True
                         log.warning(f'Launching creation process for worker {job.target}.')
                         worker = Namespace(**job.args)
+                        flavor = session.query(Flavor).filter(Flavor.provider==worker.provider, 
+                                                              Flavor.name==worker.flavor).one()
                         log.exception(f'Launching command is "'+WORKER_CREATE.format(
                             hostname=job.target,
                             concurrency=worker.concurrency,
                             flavor=worker.flavor,
                             region=worker.region,
                             provider=worker.provider,
+                            tags=flavor.tags
                         )+'"')
                         worker_create_process = Popen(
                             WORKER_CREATE.format(
@@ -308,7 +311,8 @@ def background(app):
                                 concurrency=worker.concurrency,
                                 flavor=worker.flavor,
                                 region=worker.region,
-                                provider=worker.provider
+                                provider=worker.provider,
+                                tags=flavor.tags
                             ),
                             stdout = PIPE,
                             stderr = PIPE,

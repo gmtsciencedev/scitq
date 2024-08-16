@@ -2,8 +2,9 @@
   hosts: localhost
   vars:
         provider: ovh
-        flavor: s1-2
+        flavor: d2-2
         region: GRA11
+        tags: ""
         target: "{{ ansible_host }}"
         proxy_env:
             OS_REGION_NAME: "{{ region }}"
@@ -48,6 +49,7 @@
             setup:
           - include_tasks: add_scratch.yaml            
           - include_tasks: add_docker.yaml
+          - include_tasks: add_drivers.yaml
           - include_tasks: add_nfs.yaml
           - include_tasks: add_s3authentication.yaml
           - name: Add swap

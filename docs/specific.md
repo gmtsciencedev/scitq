@@ -248,6 +248,7 @@ Before anything you must ask for these credentials to be created. Go to:
 https://api.ovh.com/createToken/index.cgi?GET=/*
 
 Which will provide you with:
+
 - an Application Key, which should be used to set OVH_APPLICATIONKEY,
 - an Application Secret, which should be used to set OVH_APPLICATIONSECRET,
 - a Consumer Key, which should be used to set OVH_CONSUMERKEY
@@ -281,7 +282,7 @@ This should be set in `/etc/scitq.conf` as before in `PREFERRED_REGIONS` with th
 PREFERRED_REGIONS="...,ovh:<preferred region pattern>"
 ```
 
-`PREFERRED_REGIONS` is shared with all providers (notably with azure), so it is a comma separated `key:value` list, where keys are provider names, and value are region pattern, that is a single region name. The region name may contain the % wide character. For instance Graveline region is very big at OVH, with GRA7, GRA9 and GRA11 regions available for instances, and GRA region for storage. A good performence is observed for all three Graveline instance region when the storage is in GRA region. In that condition, the OVH preferred region would be GRA%, that is any region starting by GRA, which can be set this way:
+`PREFERRED_REGIONS` is shared with all providers (notably with azure), so it is a comma separated `key:value` list, where keys are provider names, and value are region pattern, that is a single region name. The region name may contain the % wide character. For instance Graveline region is very big at OVH, with GRA7, GRA9 and GRA11 regions available for instances, and GRA region for storage. A good performance is observed for all three Graveline instance region when the storage is in GRA region. In that condition, the OVH preferred region would be GRA%, that is any region starting by GRA, which can be set this way:
 
 ```sh
 PREFERRED_REGIONS="ovh:GRA%"
@@ -323,9 +324,9 @@ While not mandatory, setting up the availability will enable some automatic adju
 
 First you should follow the recommandation on this help page:
 
-https://learn.microsoft.com/en-us/azure/quotas/spot-quota
+[https://learn.microsoft.com/en-us/azure/quotas/spot-quota](https://learn.microsoft.com/en-us/azure/quotas/spot-quota)
 
-Using the request below, going in my quotas and looking for spot quotas, we find quotas of two types, some extremely low, 3 (3 CPUs) and some more workable 350, with some quotas already partly consummed for some regions:
+Using the request above, going in my quotas and looking for spot quotas, we find quotas of two types, some extremely low, 3 (3 CPUs) and some more workable 350, with some quotas already partly consummed for some regions:
 
 ![Azure quotas](azurequotas.png)
 
@@ -370,7 +371,7 @@ This will update Azure hourly, each time the time sets to X hour 01 minute. Be c
 
 This is exactly like [OVH Preferred region](#ovh-preferred-region), with which the `PREFERRED_REGIONS` variable is shared. This `/etc/scitq.conf` variable is supposed to be a comma separated `key:value` list, with the key being other `azure` or `ovh` and the value is a region name pattern, with `%` as a wide character. 
 
-In our case and contrarily to OVH, we use a plain region name and not a pattern. Compared with OVH, this setting is more important for Azure as when using an instance in a region that is different from the StorageAccount region used to send the data, some traffic fees will apply. The performence consideration applies as for OVH: the nearest, the best.
+In our case and contrarily to OVH, we use a plain region name and not a pattern. Compared with OVH, this setting is more important for Azure as when using an instance in a region that is different from the StorageAccount region used to send the data, some traffic fees will apply. The performance consideration applies as for OVH: the nearest, the best.
 
 So a typical value for `PREFERRED_REGIONS` would be for instance (here we have included the OVH preference previously described, obviously only the part with `azure:...` applies to Azure):
 

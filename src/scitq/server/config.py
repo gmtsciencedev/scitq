@@ -19,7 +19,7 @@ SCITQ_SERVER = os.environ.get('SCITQ_SERVER',None)
 
 WORKER_CREATE = f'cd {package_path("ansible","playbooks")} && ansible-playbook deploy_one_vm.yaml --extra-vars \
 "nodename={{hostname}} concurrency={{concurrency}} status=running flavor={{flavor}} \
-region={{region}} provider={{provider}}"'
+region={{region}} provider={{provider}} tags={{tags}}"'
 
 if SCITQ_SERVER is not None:
     WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'

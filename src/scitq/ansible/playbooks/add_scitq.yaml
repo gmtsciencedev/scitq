@@ -13,10 +13,9 @@
   become: true
 - name: Upgrade pip
   ansible.builtin.shell:
-    cmd: pip3 install --upgrade pip setuptools
+    cmd: /usr/bin/python3 -m pip install --upgrade pip setuptools pyopenssl
     warn: no
   become: true
-  when: scitq_src is not defined
 - name: Copy scitq source
   ansible.posix.synchronize:
     src: "{{ scitq_src }}/"
@@ -27,7 +26,7 @@
 - name: Install scitq from source
   ansible.builtin.shell:
     chdir: /opt/scitq/
-    cmd: pip3 install .
+    cmd: /usr/bin/python3 -m pip install .
     warn: no
   become: true
   when: scitq_src is defined

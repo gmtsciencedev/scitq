@@ -55,6 +55,7 @@ class Database:
                 'ram': flavor.ram if flavor else None,
                 'gpu': flavor.gpu if flavor else None,
                 'target': SCITQ_SERVER,
+                'tags': flavor.tags if flavor else None,
             })
         return json.dumps(inventory,  indent=4)
 
@@ -72,6 +73,7 @@ class Database:
                     'ram': flavor.ram if flavor else None,
                     'gpu': flavor.gpu if flavor else None,
                     'target': SCITQ_SERVER,
+                    'tags': flavor.tags if flavor else None,
                     }),
                     indent=4)
         except NoResultFound:
