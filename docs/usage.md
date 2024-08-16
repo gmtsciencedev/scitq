@@ -202,7 +202,7 @@ Before the v1.2.3 version, you could already use GPU instances and tasks, but th
 
 GPU tasks requires three things:
 
-- A GPU worker (that is a worker with a flavor having tag G, something which you can find using `scitq-manage flavor list --protofilters 'tags#G'`, see [Flavor listing](manage.md#flavor)), you may need to apply certain settings for this type of instance, see [Support of GPU with Azure](specific.md#support-of-gpu-with-azure),
+- A GPU worker (that is a worker with a flavor having tag G, something which you can find using `scitq-manage flavor list --protofilters 'tags#G'`, see [Flavor listing](manage.md#flavor)), with Azure, you will need to apply certain settings for this type of instance, see [Support of GPU with Azure](specific.md#support-of-gpu-with-azure) (NB: OVH does not require any specific settings),
 - A GPU enabled container (or no container), such as [Nvidia NGC containers](https://catalog.ngc.nvidia.com/containers),
 - A specific docker option to provide access to hardware, the recommande option is `--gpus all`.
 

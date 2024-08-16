@@ -6,10 +6,11 @@ This is a somehow important reworking of v1.2.2 which introduces dynamic managem
 
 This was required notably to properly handle Azure deallocation event, now called `eviction`. `eviction` events are now properly detected and handled. Eviction is when Microsoft claim back the worker, which is a risk when using Spot (hence the discount granted for Spot). Under scitq v1.2.3 this risk is minimized as eviction rate are dynamically watched for, and if an evicion/deallocation occurs, the worker is automatically replaced (maybe in a more favorable region) and the lost tasks are redispatched.
 
-Some preliminary support for special flavors is also included, namely the G type instances (GPU, only fully tested with Azure for now) and the M type instance (Metal, e.g. physical server workers, available only with OVH for now). You can now filter for this type of instance. Metal instances are just plain workers, and should work for any task. For GPU instances, you'll need to accept Nvidia specific plan for the instances to deploy (even if the plan is free), which is done with this command:
+Some preliminary support for special flavors is also included, namely the G type instances (GPU, available with Azure and OVH) and the M type instance (Metal, e.g. physical server workers, available only with OVH for now). You can now filter for this type of instance. Metal instances are just plain workers, and should work for any task. For GPU instances to work with Azure, you'll need to accept Nvidia specific plan for the instances to deploy (even if the plan is free), which is done with this command:
 ```sh
 az vm image terms accept --urn nvidia:ngc_azure_17_11:ngc-base-version-24_03_4_gen2:latest
 ```
+NB: this is not required for OVH.
 
 For this early stage support, the image provided for GPU instances is based on Ubuntu 22.04 (whereas non-GPU instances still use Ubuntu 20.04 based images).
 

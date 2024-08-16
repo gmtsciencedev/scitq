@@ -10,6 +10,7 @@
     - unzip
     - aria2
     state: present
+    update_cache: true
   become: true
 - name: Upgrade pip
   ansible.builtin.shell:
