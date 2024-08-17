@@ -1,5 +1,31 @@
 <!-- CHANGELOG SPLIT MARKER -->
 
+# v1.2.3 (not yet released)
+
+This is a somehow important reworking of v1.2.2 which introduces dynamic management of flavors, that is adapt the worker instance size list, including availability directly querying providers APIs. This new feature is fully described in the documentation under the term `protofilters`. As a short example, instead of specifying `b3-128` (a well known OVH instance), you may say `auto:cpu>=32:ram>=128:disk>=400` which will find the best available instance sastisfying these criterias. This will enable the deploy mechanism (whereas `scitq-manage worker deploy`, `scitq.lib.recruiter_create` or `scitq.workflow.Workflow`) to pick the next best alternative if you choose another provider or if your OVH preferred region is depleted of that specific instance.
+
+This was required notably to properly handle Azure deallocation event, now called `eviction`. `eviction` events are now properly detected and handled. Eviction is when Microsoft claim back the worker, which is a risk when using Spot (hence the discount granted for Spot). Under scitq v1.2.3 this risk is minimized as eviction rate are dynamically watched for, and if an evicion/deallocation occurs, the worker is automatically replaced (maybe in a more favorable region) and the lost tasks are redispatched.
+
+Some preliminary support for special flavors is also included, namely the G type instances (GPU, available with Azure and OVH) and the M type instance (Metal, e.g. physical server workers, available only with OVH for now). You can now filter for this type of instance. Metal instances are just plain workers, and should work for any task. For GPU instances to work with Azure, you'll need to accept Nvidia specific plan for the instances to deploy (even if the plan is free), which is done with this command:
+```sh
+az vm image terms accept --urn nvidia:ngc_azure_17_11:ngc-base-version-24_03_4_gen2:latest
+```
+NB: this is not required for OVH.
+
+For this early stage support, the image provided for GPU instances is based on Ubuntu 22.04 (whereas non-GPU instances still use Ubuntu 20.04 based images).
+
+GPU tasks requires also two specific settings to run, beside being run on a GPU instance:
+
+- you must use a container adapted to GPU tasks, such as [Nvidia NGC containers](https://catalog.ngc.nvidia.com/containers),
+- you must pass a specific option to docker to provide access to the hardware, what has been tested is `--gpus all`.
+
+Here is an example satisfying both points:
+```sh
+scitq-launch -d nvcr.io/nvidia/pytorch:23.05-py3 -O '--gpus all' nvidia-smi
+```
+
+Last but not least, there was an increasing difficulty to co-maintain scitq main code depencies and scitq Ansible code dependencies. scitq Ansible code now lives in its own environment which uncouple dependencies and enable a more flexible dependencies management (using pip-tools pip-compile). **This requires to reinstall Ansible binaries (only one line of the conf is required to change), which is easy and quick, sorry about that, but this is all for the best.** (at least in one of our tests, not using venv for Ansible has lead to some issues with `scitq.fetch`). See Ansible install in the doc.
+
 # v1.2.2 (2024-06-01)
 
 This is a minor reworking of v1.2 which introduces specific options and performance optimizations:

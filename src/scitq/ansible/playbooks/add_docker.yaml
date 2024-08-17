@@ -31,6 +31,7 @@
     state: present
     update_cache: yes
   become: yes
+  when: tags is not search("G")
 - name: Add docker root config directory
   file:
     path: /root/.docker

@@ -30,7 +30,7 @@ So if the worker screen is empty, it is time we recruit one. Let us do that: at 
 :   leave that to 0, this is an optimisation setup, we do not need that for now.
 
 `flavor`
-:   this is OpenStack wording for the instance model (Azure call that size). `s1-2` is the smallest available instance for OVH (1 vcore, 2 GB mem and 5GB hard drive). Obviously not fit for production, that is enough for a test, so type in s1-2. This will cost you 6€ if you leave it like that for one month, and just the prorata temporis if you shut it down after a while (which we will do very shortly anyway). Azure equivalent is `Standard_DS1v2` (~5$/month in spot - there maybe some extra fees with the os hard drive (30Gb) and network traffic)
+:   this is OpenStack wording for the instance model (Azure call that size). `d2-2` is the smallest available instance for OVH (1 vcore, 2 GB mem and 25GB hard drive). Obviously not fit for production, that is enough for a test. Azure equivalent is `Standard_DS1v2`. You can also specify flavor using protofilters with something like `auto:cpu>2`, see [protofilters](manage.md#using-protofilters-new-in-v123).
 
 `region`
 :   when you set your provider up, you established a list of available regions (and you deployed your SSH key on them), pick one of them. For OVH, `GRA11` is a fine choice here if it is available for you, but really, any will do. For Azure, we suggest `swedencentral` which, as the time of this writing, is the cheapest region in Europe.

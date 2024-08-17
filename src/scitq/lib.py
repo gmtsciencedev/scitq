@@ -8,7 +8,8 @@ import queue
 from argparse import Namespace
 import logging as log
 import time
-
+from .util import filter_none as _clean, validate_protofilter
+from .constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT
 
 PUT_TIMEOUT = 30
 GET_TIMEOUT = 150
@@ -34,11 +35,6 @@ def _parse_date_andco(item):
         return _sub_parse(item)
     else:
         return item
-
-def _clean(d):
-    """filter out null value from a dict as well as key in remove list (default
-    to ['id'])"""
-    return dict([(k,v) for k,v in d.items() if v is not None])
 
 def _to_obj(d):
     """A simple recursive wrapper to convert JSON like objects in python objects"""
@@ -172,6 +168,7 @@ class Server:
             the server to come back. get operations are always synchronous"""
         self.ip=ip
         self.url=f'http://{ip}:5000'
+        self.style=style
         if style=='dict':
             self._wrap = lambda x: _parse_date_andco(_filter_non200(x))
         elif style=='object':
@@ -185,6 +182,8 @@ class Server:
                 args=(self.send_queue,put_timeout))
         self.get_timeout = get_timeout
         self.put_timeout = put_timeout
+
+
 
     def queue_size(self):
         """A method to estimate send queue size"""
@@ -539,6 +538,7 @@ class Server:
     def recruiter_create(self, batch, rank, tasks_per_worker, flavor, concurrency, region=None, provider=None,  
                          prefetch=None, minimum_tasks=None, maximum_workers=None,asynchronous=True):
         """Create a new recruiter (or update an existing recruiter of the same rank)"""
+        validate_protofilter(flavor)
         return self.post(f'/recruiter/', data=_clean({
             'batch': batch,'rank':rank,'tasks_per_worker':tasks_per_worker,'worker_flavor':flavor,
             'worker_region':region,'worker_provider':provider,'worker_concurrency':concurrency,
@@ -548,6 +548,8 @@ class Server:
     def recruiter_update(self, batch, rank, tasks_per_worker=None, flavor=None, region=None, provider=None, concurrency=None, 
                          prefetch=None, minimum_tasks=None, maximum_workers=None,asynchronous=True):
         """Update an existing recruiter"""
+        if flavor is not None:
+            validate_protofilter(flavor)
         return self.put(f'/recruiter/{batch}/{rank}', data=_clean({
             'tasks_per_worker':tasks_per_worker,'worker_flavor':flavor,
             'worker_region':region,'worker_provider':provider,'worker_concurrency':concurrency,
@@ -622,6 +624,32 @@ class Server:
         print('All tasks done!')
         return tasks
 
-
+    def flavors(self, min_cpu=0, min_ram=0, min_disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, limit=FLAVOR_DEFAULT_LIMIT,
+                provider=None, region=None, protofilters=None):
+        """List all available flavors"""
+        return self.get(f'/flavor/', min_cpu=min_cpu, min_ram=min_ram, min_disk=min_disk, max_eviction=max_eviction,
+                        limit=limit, provider=provider, region=region, protofilters=protofilters)
+    
+    def flavor_find(self, cpu=0, ram=0, disk=0, max_eviction=FLAVOR_DEFAULT_EVICTION, n=1):
+        """Return a flavor or a list of flavor if n>0"""
+        flavor_list = self.flavors(min_cpu=cpu, min_ram=ram, min_disk=disk, max_eviction=max_eviction)
+        if self.style=='dict':
+            flavor_list = map(_to_obj,flavor_list)
+        answer = []
+        initial_n=n
+        while n>0:
+            while len(flavor_list)>0 and flavor_list[0].available<=0:
+                flavor_list.pop(0)
+            if len(flavor_list)>0:
+                answer.append(flavor_list[0])
+                n-=1
+                flavor_list[0].available-=1
+            else:
+                if answer:
+                    log.warning(f'WARNING: shortage of VM only {len(answer)} out of {initial_n} could be found.')
+                else:
+                    raise RuntimeError('Could not find any suitable instance of that type')
+        return answer[0] if initial_n==1 else answer
+        
 if __name__=="__main__":
     s=Server('127.0.0.1',style='object')

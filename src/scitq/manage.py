@@ -1,23 +1,25 @@
 #!/usr/bin/env python
-from tabulate import tabulate 
 from .lib  import Server
 from subprocess import run
 import argparse
+import sys
 from datetime import datetime
 import os 
 from .util import package_path, package_version
-from .ansible.scitq.sqlite_inventory import inventory, decorate_parser
 import shutil
 import random
 from .debug import Debugger
-from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS, EXECUTION_STATUS
+from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS, EXECUTION_STATUS,\
+    FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION
 from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
 import dotenv
+from tabulate import tabulate
 
 MAX_LENGTH_STR=50
 DEFAULT_SERVER = os.getenv('SCITQ_SERVER','127.0.0.1')
 DEFAULT_ANSIBLE_INVENTORY = '/etc/ansible/inventory'
 DEFAULT_PROVIDER='ovh'
+OLD_SQLITE_INVENTORY_MD5='723562df744fc082fa7fc03a41d10c3c'
 
 def converter(x,long): 
     """A small conversion function for items in lists"""
@@ -28,17 +30,20 @@ def converter(x,long):
             x=x[:MAX_LENGTH_STR-1] +'...'
     elif type(x)==list:
         x=','.join([str(element) for element in x])
+    elif type(x)==bool:
+        x='X' if x else ''
+    elif x is None:
+        x=''
     return x
+
 
 def __list_print(item_list, retained_columns, headers, long=False):
     """A small internal function to format a list of items (i.e. tasks or workers)"""
-    print(
-        tabulate(
-            [[converter(item.get(key,None),long) for key in retained_columns]
-                for item in item_list],
-            headers=headers,tablefmt ="plain"
-            )
-        )
+    print(tabulate(
+        [[converter(item.get(key,None),long) for key in retained_columns]
+            for item in item_list],
+        headers=headers,tablefmt ="plain"
+        ))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -152,8 +157,7 @@ def main():
     ansible_install_parser=subsubparser.add_parser('install',help='Install scitq Ansible inventory files')
     ansible_install_parser.add_argument('-p','--path', help=f'specify install path (default to {DEFAULT_ANSIBLE_INVENTORY})',
          type=str, default=DEFAULT_ANSIBLE_INVENTORY)
-    ansible_inventory_parser=subsubparser.add_parser('inventory',help='Execute the internal inventory command')
-    decorate_parser(ansible_inventory_parser)
+    ansible_inventory_parser=subsubparser.add_parser('inventory',help='Deprecated, use worker list instead')
 
     debug_parser = subparser.add_parser('debug', help='The following options help debuging a new task')
     subsubparser=debug_parser.add_subparsers(dest='action')
@@ -237,6 +241,24 @@ def main():
     output_execution_parser.add_argument('-S','--status',help='Filter by the executions statuses',type=str,choices=EXECUTION_STATUS,default=None)
     output_execution_parser.add_argument('-C','--columns',help='A comma separated list of columns',type=str,default=None)
 
+    flavor_parser = subparser.add_parser('flavor', help='Get information on flavors (VM sizes)')
+    subsubparser=flavor_parser.add_subparsers(dest='action')
+
+    list_flavor_parser= subsubparser.add_parser('list',help='List available flavors')
+    list_flavor_parser.add_argument('-P','--provider',type=str,help='restrict to this provider',default=None)
+    list_flavor_parser.add_argument('-r','--region',type=str,help='restrict to this region',default=None)
+    list_flavor_parser.add_argument('--min-cpu',type=int,help='restrict to VM with this minimum of CPU',default=0)
+    list_flavor_parser.add_argument('--min-ram',type=int,help='restrict to VM with this minimum of RAM (Gb)',default=0)
+    list_flavor_parser.add_argument('--min-disk',type=int,help='restrict to VM with this minimum of disk (Gb)',default=0)
+    list_flavor_parser.add_argument('--max-eviction',type=int,
+                                    help=f'restrict to a maximum of eviction (default: {FLAVOR_DEFAULT_EVICTION})',
+                                    default=FLAVOR_DEFAULT_EVICTION)
+    list_flavor_parser.add_argument('--limit',type=int,
+                                    help=f'limit answer to that number of references (default: {FLAVOR_DEFAULT_LIMIT})',
+                                    default=FLAVOR_DEFAULT_LIMIT)  
+    list_flavor_parser.add_argument('--protofilters',type=str,
+                                    help=f'Add some : separated filters like cpu>1 or tags#G - do not forget to quote as shell like to intrepret > signs...',
+                                    default=None)    
 
     args=parser.parse_args()
 
@@ -249,7 +271,7 @@ def main():
         if args.action =='list':
             info_worker=['worker_id','name','status','concurrency','creation_date','last_contact_date','batch']
             if args.long:
-                info_worker+=['provider','region','flavor','prefetch','assigned','accepted','running','failed','succeeded']
+                info_worker+=['provider','region','flavor','ipv4','ansible-active','prefetch','assigned','accepted','running','failed','succeeded']
             if not args.no_header:
                 headers = info_worker
             else:
@@ -385,7 +407,7 @@ def main():
             elif args.error:
                 print(execution['error'])
             else:
-                print(tabulate([[execution['output'],execution['error']]],headers=["output",],tablefmt ="plain"))
+                print(tabulate([[execution['output'],execution['error']]],headers=["output","error"]))
         
         elif args.action == 'update':
             if args.id is not None:
@@ -428,20 +450,27 @@ def main():
             if not os.path.exists(args.path):
                 print('Creating directory', args.path)
                 os.makedirs(args.path)
+            if os.path.exists(os.path.join(args.path,'sqlite_inventory.py')):
+                import hashlib
+                with open(os.path.join(args.path,'sqlite_inventory.py'),'rb') as f:
+                    script_md5 = hashlib.md5(f.read()).hexdigest()
+                if script_md5==OLD_SQLITE_INVENTORY_MD5:
+                    print(f'Removing old script',os.path.join(args.path,'sqlite_inventory.py'))
+                    os.remove(os.path.join(args.path,'sqlite_inventory.py'))
+                else:
+                    print(f"WARNING: a file named {os.path.join(args.path,'sqlite_inventory.py')} was found, but it does not fit typical scitq inventory script, see if it should be removed manually.")
             print('Installing files')
-            shutil.copy(package_path('ansible','scitq','sqlite_inventory.py'), 
-                os.path.join(args.path,'sqlite_inventory.py') )
-            os.chmod(os.path.join(args.path,'sqlite_inventory.py'), 0o770)
+            my_path,_ = os.path.split(os.path.realpath(sys.argv[0]))          
+            shutil.copy(os.path.join(my_path, 'scitq-inventory'), 
+                os.path.join(args.path,'scitq-inventory') )
+            os.chmod(os.path.join(args.path,'scitq-inventory'), 0o770)
             shutil.copy(package_path('ansible','scitq','01-scitq-default'), 
                 os.path.join(args.path,'01-scitq-default') )
         elif args.action=='path':
             print(package_path('ansible','playbooks'))
-
-        #sql_inventory = package_path('ansible','scitq','sqlite_inventory.py')
         elif args.action=='inventory':
-            result=inventory(args)
-            if result:
-                print(result)
+            print('Deprecated use scitq-manage worker list -L instead')
+
     
     elif args.object=='debug':
 
@@ -610,6 +639,15 @@ def main():
             run('SCITQ_PRODUCTION=1 FLASK_APP=server flask db upgrade', shell=True, 
                 cwd=package_path(), check=True)
             print('DB migrated')
+
+    elif args.object == 'flavor':
+
+        if args.action=='list':
+            flavors = s.flavors(min_cpu=args.min_cpu, min_ram=args.min_ram, min_disk=args.min_disk,
+                        max_eviction=args.max_eviction, limit=args.limit, provider=args.provider,
+                        region=args.region, protofilters=args.protofilters)
+            headers = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction','available']
+            __list_print(flavors, headers, headers, long=True)
     
 
 

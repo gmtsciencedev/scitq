@@ -73,6 +73,9 @@ These variables are defined in Horizon rc file that is provided by OVH - when yo
 
 Only the password must be set up manually as it is not included in the file associated to OS_PASSWORD variable.
 
+In order to use dynamic flavor discovery, also known as [protofilters](manage.md#using-protofilters-new-in-v123), some specific variables must be added, notably some specific OVH API variables, see [availability variables](specific.md#ovh-availability), [OVH updater](specific.md#ovh-updater), and optionnally [preferred region](specific.md#ovh-preferred-region).
+
+
 ### Azure provider specific variables
 
 These variable are only to be set if you use scitq ansible part (i.e. automatic lifecycle management) and you use Azure.
@@ -87,6 +90,8 @@ AZURE_TENANT=000000-0000-0000-0000-000000000000
 ```
 
 The real values are given in [Azure connection procedure](specific.md#azure).
+
+In order to use dynamic flavor discovery, also known as [protofilters](manage.md#using-protofilters-new-in-v123), some specific variables must be added, see [availability variables](specific.md#azure-availability), [Azure updater](specific.md#azure-updater), and optionnally [preferred region](specific.md#azure-preferred-region).
 
 
 ## scitq-worker parameters
@@ -103,7 +108,7 @@ The IP address or name (not the URL) where scitq-server can be reached. This is 
 
 ## Ansible parameters
 
-These parameters are used when you deploy workers automatically using internal SCITQ ansible configuration. Two default files exists which should not be modified: `/etc/ansible/inventory/01-scitq-default` and `/etc/ansible/inventory/sqlite_inventory.py`. These files are copied from internal templates by `scitq-manage ansible install`. It always safe to retype this command when unsure. 
+These parameters are used when you deploy workers automatically using internal SCITQ ansible configuration. Two default files exists which should not be modified: `/etc/ansible/inventory/01-scitq-default` and `/etc/ansible/inventory/scitq-inventory`. These files are copied from internal templates by `scitq-manage ansible install`. It always safe to retype this command when unsure. 
 You should only modify another file, `/etc/ansible/inventory/02-scitq`. This organization will enable upgrades in a sage way.
 
 A typical `/etc/ansible/inventory/02-scitq` file could look like this:

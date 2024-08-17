@@ -1,14 +1,15 @@
 - name: Launch a VM
   environment: "{{ proxy_env }}"
   openstack.cloud.server:
-          image: Ubuntu 20.04
+          image: "{{ 'Baremetal - Ubuntu 20.04' if flavor.startswith('bm') else 'NVIDIA GPU Cloud (NGC)' if 'G' in tags else 'Ubuntu 20.04' }}"
           name: "{{ nodename }}"
           key_name: "{{ keyname }}"
           availability_zone: nova
           flavor: "{{ flavor }}"
           state: present
-          network: "Ext-Net"
+          network: "{{ 'Ext-Net-Baremetal' if flavor.startswith('bm') else 'Ext-Net' }}"
           region_name: "{{ region }}"
+          meta: "{{ 'soft_raid=0' if flavor.startswith('bm') else 'x=0' }}"
   register: vm
 - name: Add VM to inventory
   add_host:
@@ -18,7 +19,7 @@
 - name: Complete host related variables
   ansible.builtin.script:
       cmd: > 
-        /etc/ansible/inventory/sqlite_inventory.py
+        "{{ inventory_dir }}"/scitq-inventory
         --for-host "{{ nodename }}"
         --variable ansible_host --value "{{ vm.server.public_v4 }}"
         --variable ipv4 --value "{{ vm.server.public_v4 }}" 

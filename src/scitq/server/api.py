@@ -5,10 +5,13 @@ from sqlalchemy.sql.expression import label
 import logging as log
 import json as json_module
 
-from .model import Task, Execution, Signal, Requirement, Worker, create_worker_destroy_job, Job, Recruiter, delete_batch
+from .model import Task, Execution, Signal, Requirement, Worker,\
+    create_worker_destroy_job, Job, Recruiter, delete_batch, \
+    find_flavor, execution_update_status, worker_delete, \
+    ModelException, create_worker_create_job, worker_handle_eviction
 from .db import db
 from .config import IS_SQLITE
-from ..constants import TASK_STATUS, EXECUTION_STATUS
+from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, WORKER_STATUS
 
 
 api = Api(version='1.2', title='TaskMVC API',
@@ -265,7 +268,7 @@ ns = api.namespace('workers', description='WORKER operations')
 
 class WorkerDAO(BaseDAO):
     ObjectType = Worker
-    authorized_status = ['paused','running','offline','failed']
+    authorized_status = WORKER_STATUS
 
     def update_contact(self, id, load,memory,stats):
         db.engine.execute(
@@ -276,19 +279,37 @@ class WorkerDAO(BaseDAO):
         )
         db.session.commit()
 
+    def update(self, id, data):
+        object = self.get(id)
+        modified = False
+        for attr, value in data.items():
+            if hasattr(object,attr): 
+                if getattr(object,attr)!=value:
+                    if attr=='status':
+                        if value not in self.authorized_status:
+                            api.abort(500,
+                                f"Status {value} is not possible (only {' '.join(self.authorized_status)})")
+                        if object.status=='evicted' and value not in ['running']:
+                            log.warning(f'Evicted worker {object.worker_id} can only return to running')
+                            continue
+                    setattr(object, attr, value)
+                    if attr=='status' and value=='evicted':
+                        worker_handle_eviction(worker=object,session=db.session, commit=False)
+                    modified = True
+            else:
+                api.abort(500,f'Error: {object.__name__} has no attribute {attr}')
+        if modified:
+            if hasattr(object,'modification_date'):
+                object.modification_date = datetime.utcnow()
+            db.session.commit()
+        return object
+
     def delete(self,id,is_destroyed=False, session=db.session):
         """Delete a worker
         """
         worker=self.get(id)
         log.warning(f'Deleting worker {id} ({worker.permanent})')
-        if not worker.permanent and not is_destroyed:
-            create_worker_destroy_job(worker, session)
-            return worker
-        else:
-            object = self.get(id)
-            session.delete(object)
-            session.commit()
-            return object
+        return worker_delete(worker, session, is_destroyed=is_destroyed)
 
     def list(self, **args):
         return super().list(sorting_column='worker_id', **args)
@@ -460,22 +481,23 @@ class WorkerDeploy(Resource):
     def put(self):
         """Create and deploy one or several workers"""
         deploy_args = deploy_parser.parse_args()
-
-        for _ in range(deploy_args['number']):
-            db.session.add(
-                Job(target='', 
-                    action='worker_create', 
-                    args={
-                        'concurrency': deploy_args['concurrency'], 
-                        'prefetch':deploy_args['prefetch'],
-                        'flavor':deploy_args['flavor'],
-                        'region':deploy_args['region'],
-                        'provider':deploy_args['provider'],
-                        'batch':deploy_args['batch']
-                    }
-                )
-            )
-        db.session.commit()
+        create_worker_create_job(session=db.session, **deploy_args)
+        #for _ in range(deploy_args['number']):
+#
+        #    db.session.add(
+        #        Job(target='', 
+        #            action='worker_create', 
+        #            args={
+        #                'concurrency': deploy_args['concurrency'], 
+        #                'prefetch':deploy_args['prefetch'],
+        #                'flavor':deploy_args['flavor'],
+        #                'region':deploy_args['region'],
+        #                'provider':deploy_args['provider'],
+        #                'batch':deploy_args['batch']
+        #            }
+        #        )
+        #    )
+        #db.session.commit()
 
 
         return {'result':'ok'}
@@ -506,55 +528,14 @@ class ExecutionDAO(BaseDAO):
             if hasattr(execution,attr): 
                 if getattr(execution,attr)!=value:
                     if attr=='status':
-                        if value not in self.authorized_status:
-                            api.abort(500,
-                                f"Status {value} is not possible (only {' '.join(self.authorized_status)})")
-                        task=task_dao.get(execution.task_id)
-                        now = datetime.utcnow()
-                        if execution.status=='pending':
-                            if value=='running':
-                                task.status = 'running'
-                                task.modification_date = now
-                                task.status_date = now
-                            elif value=='accepted':
-                                task.status = 'accepted'
-                                task.modification_date = now
-                                task.status_date = now
-                            elif value in ['refused','failed']:
-                                task.status = 'pending'
-                                task.modification_date = now
-                                task.status_date = now
-                            elif value=='succeeded':
-                                task.status = 'succeeded'
-                                task.modification_date = now
-                                task.status_date = now
-                            else:
-                                api.abort(500, f"An execution cannot change status from pending to {value}")
-                        elif execution.status=='accepted':
-                            if value in ['running','failed','succeeded','pending']:
-                                task.status = value
-                                task.modification_date = now
-                                task.status_date = now
-                            else:
-                                log.exception(f"An execution cannot change status from accepted to {value}")
-                                api.abort(500, f"An execution cannot change status from accepted to {value}")
-                        elif execution.status=='running':
-                            if value in ['succeeded', 'failed']:
-                                task.status=value
-                                task.modification_date = now
-                                task.status_date = now
-                                if value=='failed' and task.retry>0:
-                                    log.warning(f'Failure of execution {execution.execution_id} trigger task {task.task_id} retry ({task.retry-1} retries left)')
-                                    task.retry -= 1
-                                    task.status = 'pending'
-                            else:
-                                log.exception(f"An execution cannot change status from running to {value}")
-                                api.abort(500, f"An execution cannot change status from running to {value}")
-                        else:
-                            api.abort(500, f"An execution cannot change status from {execution.status} (only from pending, running or accepted)")
-
-                    setattr(execution, attr, value)
-                    modified = True
+                        try:
+                            execution_update_status(execution, db.session, value, commit=False)
+                            modified = True
+                        except ModelException as model_exception:
+                            api.abort(500, model_exception.message)
+                    else:
+                        setattr(execution, attr, value)
+                        modified = True
             else:
                 raise Exception('Error: {} has no attribute {}'.format(
                     execution.__name__, attr))
@@ -1089,3 +1070,67 @@ class RecruiterObject(Resource):
         object=recruiter_dao.delete(batch, rank)
         return object 
 
+ns = api.namespace('flavor', description='Flavor querying')
+
+flavor_parser = api.parser()
+flavor_parser.add_argument('min_cpu', type=int, help='Minimum number of CPUs', 
+    required=False, location='json', default=0)
+flavor_parser.add_argument('min_ram', type=int, help='Minimum size of RAM (memory) in Gb', 
+    required=False, location='json', default=0)
+flavor_parser.add_argument('min_disk', type=int, help='Minimum size of disk (harddrive) in Gb', 
+    required=False, location='json', default=0)
+flavor_parser.add_argument('max_eviction', type=int, 
+    help=f'Maximal risk of eviction (default:{FLAVOR_DEFAULT_EVICTION})', 
+    required=False, location='json', default=FLAVOR_DEFAULT_EVICTION)
+flavor_parser.add_argument('limit', type=int, 
+    help=f'Maximal number or answer (default:{FLAVOR_DEFAULT_LIMIT})', 
+    required=False, location='json', default=FLAVOR_DEFAULT_LIMIT)
+flavor_parser.add_argument('provider', type=str, 
+    help=f'Specify provider', 
+    required=False, location='json', default=None)
+flavor_parser.add_argument('region', type=str, 
+    help=f'Specify region', 
+    required=False, location='json', default=None)
+flavor_parser.add_argument('protofilters', type=str, 
+    help=f'Add some : separated protofilters like cpu>10 or ram>=128', 
+    required=False, location='json', default=None)
+
+custom_flavor = api.model('Flavor', {
+    'name': fields.String(readonly=True, description='The flavor reference'),
+    'provider':  fields.String(readonly=True, description='Provider name'),
+    'region':  fields.String(readonly=True, description='Provider region name'),
+    'cpu': fields.Integer(readonly=True,
+        description='The number of CPUs (vcores) for this flavor'), 
+    'ram': fields.Float(readonly=True,
+        description='The size of the RAM (memory) in Gb'), 
+    'disk': fields.Float(readonly=True,
+        description='The size of the disk in Gb'),
+    'tags': fields.String(readonly=True, 
+        description='A custom string listing some specificity of the flavor (G=GPU, M=Metal, N=NVMe)'),
+    'gpu': fields.String(readonly=True,
+        description='A description of the GPU (if available)'),
+    'gpumem': fields.Float(readonly=True,
+        description='The size of the GPU memory in Gb (if available)'),
+    'cost': fields.Float(readonly=True, description='An indicative cost per hour in the unit of reference of the provider'),
+    'eviction': fields.Integer(readonly=True, description='An estimate of the hourly probability of eviction (VM shut down by provider)'), 
+    'available': fields.Integer(readonly=True, 
+        description='An estimate of the number of VM of this size one can create in this region and for this provider')
+})
+
+@ns.route("/")
+class FlavorList(Resource):
+    @ns.doc("list_flavor")
+    @ns.marshal_list_with(custom_flavor)
+    @ns.expect(flavor_parser)
+    def get(self):
+        """List the batches, their task statuses and workers"""
+        args = flavor_parser.parse_args()
+        return find_flavor(session=db.session, 
+                    min_cpu=args.min_cpu,
+                    min_ram=args.min_ram, 
+                    min_disk=args.min_disk,
+                    max_eviction=args.max_eviction,
+                    limit = args.limit,
+                    provider = args.provider,
+                    region = args.region,
+                    protofilters = args.protofilters)

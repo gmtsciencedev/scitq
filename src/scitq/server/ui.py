@@ -10,7 +10,7 @@ from ..util import package_version, tryupdate, to_dict, flat_list
 from .db import db
 from .config import IS_SQLITE, UI_OUTPUT_TRUNC, UI_MAX_DISPLAYED_ROW
 from ..constants import SIGNAL_CLEAN, SIGNAL_RESTART
-from .model import Worker, Signal, Job, Task, Execution, delete_batch
+from .model import Worker, Signal, Job, Task, Execution, delete_batch, create_worker_create_job
 from .api import worker_dao
 
 
@@ -285,21 +285,24 @@ def handle_create_worker():
     batch = json['batch'] or None
     prefetch = int(json['prefetch'])
     number = int(json['number'])
-    for _ in range(number):
-        db.session.add(
-            Job(target='', 
-                action='worker_create', 
-                args={
-                    'concurrency': concurrency, 
-                    'prefetch':prefetch,
-                    'flavor':flavor,
-                    'region':region,
-                    'provider': provider,
-                    'batch':batch
-                }
-            )
-        )
-    db.session.commit()
+    create_worker_create_job(concurrency=concurrency, prefetch=prefetch, batch=batch,
+                             flavor=flavor, region=region, provider=provider, session=db.session,
+                             number=number)
+    #for _ in range(number):
+    #    db.session.add(
+    #        Job(target='', 
+    #            action='worker_create', 
+    #            args={
+    #                'concurrency': concurrency, 
+    #                'prefetch':prefetch,
+    #                'flavor':flavor,
+    #                'region':region,
+    #                'provider': provider,
+    #                'batch':batch
+    #            }
+    #        )
+    #    )
+    #db.session.commit()
     return '"ok"'
 
 #@socketio.on('batch_action')

@@ -95,6 +95,9 @@ mysubcommand1 -db $RESOURCE/my.db *.fastq > $OUTPUT/myoutput.txt
 !!! note
     `$CPU` is the only special variable **available with or without docker**: it contains the number of CPU divided by the concurrency.
 
+!!! note
+    These variables are shell environment variables, which means they are only available when using the shell (or using specific libs like `os.environ` when using python), so this command will not output anything `scitq-launch 'echo $CPU'` while this command should  `scitq-launch sh -c 'echo $CPU'`.
+
 ### input (-i)
 As explained above this option let you specify some files that will be downloaded before the task is launched and available in `/input` folder or in the folder stored in `INPUT` environmental variable if you do not use docker.
 
@@ -191,6 +194,85 @@ scitq-launch -o 's3://results/test/' -d 'ubuntu:latest' touch /output/helloworld
 !!! note
     Be careful when you use quotes and variables with scitq-launch, see [using-variables-and-quote-with-scitq-launch](troubleshoot.md#using-variables-and-quote-with-scitq-launch).
 
+### GPU tasks
+
+**New in v1.2.3**
+
+Before the v1.2.3 version, you could already use GPU instances and tasks, but the GPU drivers had to be manually installed. Since v1.2.3, a minimal detection and support of GPU intances is provided and specific images with drivers are automatically installed.
+
+GPU tasks requires three things:
+
+- A GPU worker (that is a worker with a flavor having tag G, something which you can find using `scitq-manage flavor list --protofilters 'tags#G'`, see [Flavor listing](manage.md#flavor)), with Azure, you will need to apply certain settings for this type of instance, see [Support of GPU with Azure](specific.md#support-of-gpu-with-azure) (NB: OVH does not require any specific settings),
+- A GPU enabled container (or no container), such as [Nvidia NGC containers](https://catalog.ngc.nvidia.com/containers),
+- A specific docker option to provide access to hardware, the recommande option is `--gpus all`.
+
+Here is an example of deploying a (cheap) GPU worker:
+```sh
+scitq-manage worker deploy -f 'auto:tags#G' -r auto -P azure -b mygpubatch
+```
+
+Here is an example of a GPU task, using an NGC container, and the `--gpus all` docker option:
+```sh
+scitq-launch -b mygpubatch -d nvcr.io/nvidia/pytorch:23.05-py3 -O '--gpus all' nvidia-smi
+```
+
+Alternatively, you can use non-docker tasks, which is simpler but more restricted as the NGC instance image might not contain what you need:
+```sh
+scitq-launch nvidia-smi
+```
+
+The output should look like this:
+```
+=============
+== PyTorch ==
+=============
+
+NVIDIA Release 23.05 (build 60708168)
+PyTorch Version 2.0.0
+
+Container image Copyright (c) 2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+Copyright (c) 2014-2023 Facebook Inc.
+Copyright (c) 2011-2014 Idiap Research Institute (Ronan Collobert)
+Copyright (c) 2012-2014 Deepmind Technologies    (Koray Kavukcuoglu)
+Copyright (c) 2011-2012 NEC Laboratories America (Koray Kavukcuoglu)
+Copyright (c) 2011-2013 NYU                      (Clement Farabet)
+Copyright (c) 2006-2010 NEC Laboratories America (Ronan Collobert, Leon Bottou, Iain Melvin, Jason Weston)
+Copyright (c) 2006      Idiap Research Institute (Samy Bengio)
+Copyright (c) 2001-2004 Idiap Research Institute (Ronan Collobert, Samy Bengio, Johnny Mariethoz)
+Copyright (c) 2015      Google Inc.
+Copyright (c) 2015      Yangqing Jia
+Copyright (c) 2013-2016 The Caffe contributors
+All rights reserved.
+
+Various files include modifications (c) NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+Fri Aug 16 11:28:18 2024
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 535.161.07             Driver Version: 535.161.07   CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  Tesla T4                       On  | 00000001:00:00.0 Off |                    0 |
+| N/A   33C    P8               9W /  70W |      2MiB / 15360MiB |      0%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+```
+
 ## Managing your task executions
 
 Now that you have queued your tasks, the hard work is done, you can recruit your workers, distribute the work and watch it done, relaxing... You can do that either using the [GUI](gui.md) or using [scitq-manage utility](manage.md).
@@ -203,14 +285,15 @@ This means you are likely to end up moving files back and forth S3 or Azure stor
 
 Some examples:
 - `scitq-fetch list s3://rnd/data/mylogin` : will list recursively all the content of `s3://rnd/data/mylogin`,
-- `scitq-fetch list --not-recursive azure://rnd/data/mylogin` : will list the immediate content of `azure://rnd/data/mylogin`, not recursively,
+- `scitq-fetch list --not-recursive azure://rnd/data/mylogin` : will list the immediate content of `azure://rnd/data/mylogin`, not recursively, 
+- as non recursive listing is common though not the cloud standard, `scitq-fetch nrlist` has been added, it is non-recursive **and** relative (e.g. answers path are relative to the path given, by default list give longer and complete URI) (new in v1.2.3)
 - `scitq-fetch sync myfolder azure://rnd/data/mylogin/myfolder` : will synchronize the content of `myfolder` to `azure://...` (so that `myfolder/rep/file1.data` is sent to `azure://rnd/data/mylogin/myfolder/rep/file1.data`),
 - `scitq-fetch sync --include '*.data' s3://rnd/data/mylogin/myfolder ./myfolder` : same as above, the other way around, get back some remote folder to some local folder, but only for `.data` files.
 - `scitq-fetch delete s3://rnd/data/mylogin/myfolder` : recursively delete the folder `s3://rnd/data/mylogin/myfolder`.
 
 See `scitq-fetch -h` for complete help.
 
-This utility can also be used out of scitq use context.
+This utility can also be used out of scitq context.
 
 ### scitq.fetch
 

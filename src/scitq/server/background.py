@@ -9,14 +9,17 @@ from argparse import Namespace
 import math
 from time import sleep, time
 from signal import SIGKILL
+import re
 
-from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal
+from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal, worker_delete, find_flavor, Flavor
 from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY,\
     WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME, TERMINATE_TIMEOUT, KILL_TIMEOUT,\
     JOB_MAX_LIFETIME
 from .db import db
-from ..util import PropagatingThread
-from ..ansible.scitq.sqlite_inventory import scitq_inventory
+from ..util import PropagatingThread, to_obj, validate_protofilter
+from ..constants import PROTOFILTER_SEPARATOR, PROTOFILTER_SYNTAX
+
+protofilter_syntax=re.compile(PROTOFILTER_SYNTAX)
 
 def get_nodename(session):
     worker_names = list(map(lambda x: x[0], 
@@ -207,8 +210,8 @@ def background(app):
                             del(worker_process_queue[('create',job.target)])
                             session.query(Job).get(job_id).status='failed'
                     worker = Namespace(**job.args)
-                    host_exist_in_ansible = bool(json_module.loads(scitq_inventory(host=job.target)))
-                    if host_exist_in_ansible:
+                    real_worker = session.query(Worker).get(worker.worker_id)
+                    if real_worker.ansible_active:
                         if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
                             worker_destroy_command = WORKER_IDLE_CALLBACK.format(hostname=job.target)
                             log.warning(f'Launching destroy process for {job.target}, command is "{worker_destroy_command}"')
@@ -225,10 +228,10 @@ def background(app):
                     else:
                         #TODO: this should be a very rare event, we should do extra tests here
                         log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
-                        real_worker = session.query(Worker).get(worker.worker_id)
                         if real_worker is not None:
                             change = True
-                            session.delete(real_worker)
+                            worker_delete(real_worker, session, is_destroyed=True, commit=False)
+                            #session.delete(real_worker)
                             job.log='Deleting unmanaged worker.'
                             job.status='succeeded'            
                 
@@ -236,12 +239,52 @@ def background(app):
                     change = True
                     worker = create_worker_object(db_session=session,
                         **job.args)
-                    job.action = 'worker_deploy'
-                    job.target = worker.name
-                    job.args = dict(job.args)
-                    job.args['worker_id'] = worker.worker_id
-                    job.retry = WORKER_CREATE_RETRY
-                    job.status = 'pending'
+                    
+                    auto_deploy = False
+                    if worker.provider=='auto' or worker.region=='auto' or worker.flavor.startswith('auto'):
+                        try:
+                            log.warning(' -> Auto deploy detected')
+                            auto_deploy = True
+                            provider = None if worker.provider=='auto' else worker.provider
+                            region = None if worker.region=='auto' else worker.region
+                            protofilters=''
+                            if worker.flavor.startswith('auto'):
+                                validate_protofilter(worker.flavor)
+                                flavor=None
+                                if PROTOFILTER_SEPARATOR in worker.flavor:
+                                    protofilters = PROTOFILTER_SEPARATOR.join(
+                                            worker.flavor.split(PROTOFILTER_SEPARATOR)[1:])
+                            else:
+                                flavor=worker.flavor
+                            flavor_list=list(map(to_obj,find_flavor(session, provider=provider, region=region, 
+                                                                flavor=flavor, protofilters=protofilters, limit=None)))
+                            while flavor_list:
+                                current_flavor=flavor_list[0]
+                                if current_flavor.available is not None and current_flavor.available<=0:
+                                    flavor_list.pop(0)
+                                    continue
+                                else:
+                                    worker.flavor=current_flavor.name
+                                    worker.region=current_flavor.region
+                                    worker.provider=current_flavor.provider
+                                    break
+                            else:
+                                raise RuntimeError(f'Could not find a flavor satisfying provider={worker.provider},region={worker.region},flavor={worker.flavor}')
+                        except RuntimeError as re:
+                            job.status='failed'
+                            job.log=re.args[0]
+
+                    if job.status!='failed':
+                        job.action = 'worker_deploy'
+                        job.target = worker.name
+                        job.args = dict(job.args)
+                        job.args['worker_id'] = worker.worker_id
+                        if auto_deploy:
+                            job.args['flavor'] = worker.flavor
+                            job.args['provider'] = worker.provider
+                            job.args['region'] = worker.region
+                        job.retry = WORKER_CREATE_RETRY
+                        job.status = 'pending'
                 
                 if job.action == 'worker_deploy':
                     if ('create',job.target) not in worker_process_queue and len(
@@ -252,20 +295,24 @@ def background(app):
                         change = True
                         log.warning(f'Launching creation process for worker {job.target}.')
                         worker = Namespace(**job.args)
-                        log.warning(f'Launching command is "'+WORKER_CREATE.format(
-                                hostname=job.target,
-                                concurrency=worker.concurrency,
-                                flavor=worker.flavor,
-                                region=worker.region,
-                                provider=worker.provider,
-                            )+'"')
+                        flavor = session.query(Flavor).filter(Flavor.provider==worker.provider, 
+                                                              Flavor.name==worker.flavor).one()
+                        log.exception(f'Launching command is "'+WORKER_CREATE.format(
+                            hostname=job.target,
+                            concurrency=worker.concurrency,
+                            flavor=worker.flavor,
+                            region=worker.region,
+                            provider=worker.provider,
+                            tags=flavor.tags
+                        )+'"')
                         worker_create_process = Popen(
                             WORKER_CREATE.format(
                                 hostname=job.target,
                                 concurrency=worker.concurrency,
                                 flavor=worker.flavor,
                                 region=worker.region,
-                                provider=worker.provider
+                                provider=worker.provider,
+                                tags=flavor.tags
                             ),
                             stdout = PIPE,
                             stderr = PIPE,
@@ -298,7 +345,8 @@ def background(app):
                             log.warning(f'Deleting worker {worker.name} ({worker.worker_id}) after destruction')
                             real_worker = session.query(Worker).get(worker.worker_id)
                             if real_worker is not None:
-                                session.delete(real_worker)
+                                #session.delete(real_worker)
+                                worker_delete(real_worker, session, is_destroyed=True, commit=False)
                             else:
                                 log.error(f'Could not find a worker with worker_id {worker.worker_id}')
                             #worker_dao.delete(worker.worker_id, is_destroyed=True)
@@ -421,7 +469,7 @@ we already have {workers} workers')
                 if len(recyclable_worker_active_tasks.items())==0:
                     log.warning(f'  --> No recyclable workers {recyclable_worker_active_tasks}')
                 for worker, active_tasks  in recyclable_worker_active_tasks.items():  
-                    if worker.batch != recruiter.batch and worker.flavor == recruiter.worker_flavor \
+                    if worker.batch != recruiter.batch and recruiter.match_flavor(worker, session=session) \
                             and active_tasks<worker.concurrency and nb_workers>0 and worker not in newly_recruited_workers:
                         previous_batch = worker.batch
                         previous_concurrency = worker.concurrency
@@ -461,21 +509,66 @@ we already have {workers} workers')
                         log.warning(f'  --> {worker} not suitable because {reason} ')
                 
                 if recruiter.worker_provider is not None and recruiter.worker_region is not None and nb_workers>0:
-                    for _ in range(nb_workers):
-                        log.warning(f'-> Deploying one worker from {recruiter.worker_provider}')
-                        session.add(
-                            Job(target='', 
-                                action='worker_create', 
-                                args={
-                                    'concurrency': recruiter.worker_concurrency, 
-                                    'prefetch': recruiter.worker_prefetch,
-                                    'flavor': recruiter.worker_flavor,
-                                    'region': recruiter.worker_region,
-                                    'provider': recruiter.worker_provider,
-                                    'batch': recruiter.batch
-                                }
+                    if recruiter.worker_provider=='auto' or recruiter.worker_region=='auto' or recruiter.worker_flavor.startswith('auto'):
+                        log.warning(' -> Auto recruiter detected')
+                        worker_provider = None if recruiter.worker_provider=='auto' else recruiter.worker_provider
+                        worker_region = None if recruiter.worker_region=='auto' else recruiter.worker_region
+                        protofilters=''
+                        if recruiter.worker_flavor.startswith('auto'):
+                            worker_flavor=None
+                            if PROTOFILTER_SEPARATOR in recruiter.worker_flavor:
+                                protofilters = PROTOFILTER_SEPARATOR.join(
+                                        recruiter.worker_flavor.split(PROTOFILTER_SEPARATOR)[1:])
+                        else:
+                            worker_flavor=recruiter.worker_flavor
+                        worker_to_find=nb_workers
+                        flavor_list=list(map(to_obj,find_flavor(session, provider=worker_provider, region=worker_region, 
+                                                            flavor=worker_flavor, protofilters=protofilters, limit=None)))
+                        flavor_remaining_availability={(flavor.name,flavor.provider,flavor.region):flavor.available for flavor in flavor_list}
+                        while worker_to_find>0 and flavor_list:
+                            current_flavor=flavor_list[0]
+                            if flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)] is None or \
+                               flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]<=0:
+                                flavor_list.pop(0)
+                            else:
+                                flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]-=1
+                                worker_to_find-=1
+                                log.warning(f'-> Deploying one worker from {current_flavor.provider},{current_flavor.region} : {current_flavor.name}')
+                                session.add(
+                                    Job(target='', 
+                                        action='worker_create', 
+                                        args={
+                                            'concurrency': recruiter.worker_concurrency, 
+                                            'prefetch': recruiter.worker_prefetch,
+                                            'flavor': current_flavor.name,
+                                            'region': current_flavor.region,
+                                            'provider': current_flavor.provider,
+                                            'batch': recruiter.batch
+                                        }
+                                    )
+                                )
+                                change = True
+                        if worker_to_find>0:
+                            log.warning(f'-> Could not find enough available flavors of the right kind, missing {worker_to_find}')
+                                
+
+
+                    else:
+                        for _ in range(nb_workers):
+                            log.warning(f'-> Deploying one worker from {recruiter.worker_provider}')
+                            session.add(
+                                Job(target='', 
+                                    action='worker_create', 
+                                    args={
+                                        'concurrency': recruiter.worker_concurrency, 
+                                        'prefetch': recruiter.worker_prefetch,
+                                        'flavor': recruiter.worker_flavor,
+                                        'region': recruiter.worker_region,
+                                        'provider': recruiter.worker_provider,
+                                        'batch': recruiter.batch
+                                    }
+                                )
                             )
-                        )
                         change = True
                 
             if change:

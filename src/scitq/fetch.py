@@ -1278,6 +1278,9 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
     rlist_parser.add_argument('--not-recursive', action="store_true", help="Do not be recursive")
     rlist_parser.add_argument('uri', type=str, help='the remote folder uri')
 
+    nrlist_parser = subparser.add_parser('nrlist', help='List the content of a remote folder, like rlist but with --not-recursive as default')
+    nrlist_parser.add_argument('uri', type=str, help='the remote folder uri')
+
     sync_parser = subparser.add_parser('sync', help='Sync some file or folder to some folder (one of them must be local) (identity is checked using name and size)')
     sync_parser.add_argument('source_uri', type=str, help='the uri (can be a local file or a remote URI)')
     sync_parser.add_argument('destination_uri', type=str,
@@ -1322,7 +1325,9 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             headers=headers,
             tablefmt='plain'
         ))
-    elif args.command=='rlist':
+    elif args.command=='rlist' or args.command=='nrlist':
+        if args.command=='nrlist':
+            args.not_recursive=True
         if ':' not in args.uri:
             uri=f'file://{args.uri}'
         else:

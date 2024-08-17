@@ -1,0 +1,16 @@
+- name: Wait for automatic system updates
+  become: true
+  shell: timeout=300; while [ $timeout -gt 0 ] && sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do timeout=$(echo $timeout-1|bc); sleep 1; done;
+  when: 
+    - tags is search('G')
+    - provider == 'azure'
+- name: Add Nvidia drivers
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      bash /opt/nvidia/fm.sh
+      bash /opt/nvidia/nv_driver.sh
+  become: true
+  when: 
+   - tags is search('G')
+   - provider == 'azure'

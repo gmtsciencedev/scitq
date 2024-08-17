@@ -26,5 +26,8 @@
           - include_tasks: remove_from_etchosts.yaml
           - name: Remove from inventory
             ansible.builtin.script:
-                cmd: /etc/ansible/inventory/sqlite_inventory.py --del-host "{{ nodename }}" --change-etchosts
+                cmd: >
+                 "{{ inventory_dir }}"/scitq-inventory 
+                 --del-host "{{ nodename }}" 
+                 --change-etchosts
 

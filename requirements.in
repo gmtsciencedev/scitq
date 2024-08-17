@@ -1,0 +1,26 @@
+Flask<2.2
+flask-sqlalchemy<3.0.0
+Flask-Migrate
+flask-restx==1.2.0
+flask-socketio >= 5.2.0
+requests
+psutil
+tabulate
+psycopg2-binary
+awscli>=1.33
+awscli-plugin-endpoint
+boto3>=1.34
+python-dotenv
+urwid
+filelock
+azure-mgmt-subscription
+azure-mgmt-resourcegraph
+azure-identity
+azure-mgmt-compute 
+azure-core >= 1.28
+azure-keyvault
+azure-cli
+azure-storage-blob >= 12
+pandas<2.2
+ovh
+lxml

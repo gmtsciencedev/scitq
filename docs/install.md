@@ -48,12 +48,6 @@ You need simply the python setuptools. With a Ubuntu distribution just do that:
 apt install python3 python3-pip
 ```
 
-And make sure typing `python` launch python3, may be like this:
-```bash
-ln -s /usr/bin/python3 /usr/local/bin/python
-```
-(this is notably required for sqlite_inventory.py script in ansible)
-
 #### PostgreSQL
 
 `scitq-server` requires a relational database, sqlite or PostgreSQL are supported
@@ -173,14 +167,37 @@ You should edit it to change the `Environment=` lines and modify them (notably S
      Ansible is only needed if you deploy workers on the cloud automatically. If workers are deployed manually you can just bypass entirely Ansible configuration.
 
 If you installed scitq before the `1.0b3` version, this section is very different, see [upgrading](#upgrading) for details (and much cleaner now).
+
 ### install ansible itself
 
+It is now recommanded to have ansible in its own virtual environment to prevent package collision with scitq itself. 
+
 ```bash
-apt-add-repository ppa:ansible/ansible
-apt-get install -y ansible python3-pip python3-apt
-pip3 install openstacksdk==0.61
+apt-get install -y python3-pip python3-venv python3-apt
+python3 -m venv /root/ansibleenv
+source /root/ansibleenv/bin/activate
+pip install -y ansible
+ln -s /root/ansibleenv/bin/ansible* /usr/local/bin/
 ```
 
+!!! note
+
+    All ansible collections must be done within the virtualenv.
+
+### Install custom ansible collections
+
+Just type in those two lines to add some required ansible collections and roles (collections and roles are the two form of ansible plugins that exists, we happen to use one of each):
+
+Remember to activate ansible virtualenv before this install, in doubt activate it:
+```bash
+source /root/ansibleenv/bin/activate
+```
+
+```bash
+ansible-galaxy install rolehippie.mdadm
+pip install openstacksdk==0.61
+ansible-galaxy collection install openstack.cloud:1.8.0
+```
 !!! note
 
 
@@ -191,25 +208,19 @@ pip3 install openstacksdk==0.61
     Which is extremely frustrating as it is almost completely meaningless and very poorly 
     documented, except here: [http://lists.openstack.org/pipermail/openstack-i18n/2022-May.txt](http://lists.openstack.org/pipermail/openstack-i18n/2022-May.txt)
 
-### Install custom ansible collections
 
-Just type in those two lines to add some required ansible collections and roles (collections and roles are the two form of ansible plugins that exists, we happen to use one of each):
-
-```bash
-ansible-galaxy install rolehippie.mdadm
-ansible-galaxy collection install openstack.cloud:1.8.0
-```
 
 #### Azure ansible collection
 
-For Azure, the azure-cli and azure.azcollection are difficult to install without virtual env (see https://github.com/ansible-collections/azure/issues/477). However this recipe should do it:
+
+Remember to activate ansible virtualenv before this install, in doubt activate it:
+```bash
+source /root/ansibleenv/bin/activate
+```
 
 ```bash
-ansible-galaxy collection install azure.azcollection
-pip3 install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements-azure.txt
-pip3 install azure-mgmt-core==1.3.2
-pip3 install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements-azure.txt
-pip3 install azure-cli==2.0.34
+ansible-galaxy collection install azure.azcollection:1.19
+pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements-azure.txt
 ```
 
 ### Create ssh key
@@ -226,6 +237,9 @@ This will create `/root/.ssh/id_rsa` and `/root/.ssh/id_rsa.pub`. If you are unf
 First, you must attach scitq ansible configuration to ansible. You just need to add a specific inventory source, modifying the `inventory=...` line in `ansible.cfg` in the `[defaults]` section (by default, `/etc/ansible/ansible.cfg`), by adding a specific directory for scitq:
 `inventory=...,/etc/ansible/inventory`
 
+In the same `[defaults]` section you need to update the python interpreter to account for the virtual environment of ansible:
+`interpreter_python=/root/ansibleenv/bin/python`
+
 Also in `[inventory]` section, it is a good idea to enable the (normaly defaults) inventory plugins in the following order:
 ```ini
 [inventory]
@@ -237,6 +251,7 @@ In the end this simple `/etc/ansible/ansible.cfg` should be enough:
 ```ini
 [defaults]
 inventory=/etc/ansible/inventory
+interpreter_python=/root/ansibleenv/bin/python
 
 [inventory]
 enable_plugins=host_list, script, auto, ini, yaml, toml
@@ -300,11 +315,11 @@ docker_authentication=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 NB: remember not to set any variable you do not need, like the scitq_src variable which is only to deploy by source on workers. Also creating a `[managers]` section is not useful here if you do not use NFS.
 
-#### About `sqlite_inventory.py` 
+#### About `scitq-inventory` 
 
 If you are not interested in implementation details, just leave this file here and that will be fine.
 
-When we deploy a new worker there are a lot of information we must remember in Ansible to make a correct install, with some specificity as regards the worker configuration. This is called a `host var` in Ansible language, unfortunately Ansible default solution to store these values is very limited (and discouraged by Ansible itself), these `host var` are supposedly dynamically fetched from some dynamic code (likely from the provider itself), however this is a bit difficult if you have several providers (hence the requirement to have an Ansible host group per provider), and at least for some provider where the API are not so quick (or paid for) you do not wish to query them too frequently. This file maintains a small sqlite database with all the required information, it is extremely simple and quick.
+When we deploy a new worker there are a lot of information we must remember in Ansible to make a correct install, with some specificity as regards the worker configuration. This is called a `host var` in Ansible language, unfortunately Ansible default solution to store these values is very limited (and discouraged by Ansible itself), these `host var` are supposedly dynamically fetched from some dynamic code (likely from the provider itself), however this is a bit difficult if you have several providers (hence the requirement to have an Ansible host group per provider), and at least for some provider where the API are not so quick (or paid for) you do not wish to query them too frequently. This script use the database to store and manage these values and is simple and quick. It replaces the previous script `sqlite_inventory.py` which was using a separate dedicated sqlite database.
 
 ### What's next?
 

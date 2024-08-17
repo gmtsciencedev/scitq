@@ -1,10 +1,20 @@
 from datetime import datetime
 import json as json_module
-from sqlalchemy import DDL, event, func, delete, select, or_
+from sqlalchemy import DDL, event, func, delete, select, or_, and_
+from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy import func
 
-from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY
+from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_ACTION, EVICTION_COST_MARGIN, PREFERRED_REGIONS
 from .db import db
-from ..util import to_dict
+from ..util import to_dict, validate_protofilter, protofilter_syntax, PROTOFILTER_SEPARATOR, is_like, has_tag
+from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
+
+import logging as log
+
+class ModelException(Exception):
+    @property
+    def message(self):
+        return self.args[0]
 
 class Task(db.Model):
     __tablename__ = "task"
@@ -36,7 +46,9 @@ class Task(db.Model):
         self.creation_date = datetime.utcnow()
         self.modification_date = self.creation_date
         self.status_date = self.creation_date
-        self.batch = batch
+        self.batch = batch if batch is not None else DEFAULT_BATCH
+        if '/' in self.batch:
+            raise ModelException(f'Cannot accept / in batch name, chose a proper batch name: {self.batch}')
         self.input = input
         self.output = output
         self.container = container
@@ -67,6 +79,11 @@ class Worker(db.Model):
     flavor = db.Column(db.String, nullable=True)
     region = db.Column(db.String, nullable=True)
     provider = db.Column(db.String, nullable=True)
+    ipv4 = db.Column(db.String, nullable=True)
+    ipv6 = db.Column(db.String, nullable=True)
+    ansible_host = db.Column(db.String, nullable=True)
+    ansible_group = db.Column(db.String, nullable=True)
+    ansible_active = db.Column(db.Boolean, default=False)
     signals = db.relationship("Signal", cascade="all,delete")
 
     def __init__(self, name, concurrency, prefetch=0, hostname=None, 
@@ -83,7 +100,7 @@ class Worker(db.Model):
         self.region = region
         self.flavor = flavor
         self.provider = provider
-    
+     
 
 class Execution(db.Model):
     __tablename__ = "execution"
@@ -164,6 +181,62 @@ event.listen(
     trigger_latest_postgres.execute_if(dialect="postgresql")    
 )
 
+def execution_update_status(execution, session, status, commit=True):
+    """Change status of an execution, impacting on task if required"""
+    if status not in EXECUTION_STATUS:
+        raise ModelException(f"Status {status} is not possible (only {' '.join(EXECUTION_STATUS)})")
+    task=execution.task
+    now = datetime.utcnow()
+    if execution.status=='pending':
+        if status=='running':
+            task.status = 'running'
+            task.modification_date = now
+            task.status_date = now
+        elif status=='accepted':
+            task.status = 'accepted'
+            task.modification_date = now
+            task.status_date = now
+        elif status in ['refused','failed']:
+            task.status = 'pending'
+            task.modification_date = now
+            task.status_date = now
+        elif status=='succeeded':
+            task.status = 'succeeded'
+            task.modification_date = now
+            task.status_date = now
+        else:
+            raise ModelException(f"An execution cannot change status from pending to {status}")
+    elif execution.status=='accepted':
+        if status=='refused':
+            task.stats = 'pending'
+            task.modification_date = now
+            task.status_date = now
+        elif status in ['running','failed','succeeded','pending']:
+            task.status = status
+            task.modification_date = now
+            task.status_date = now
+        else:
+            log.exception(f"An execution cannot change status from accepted to {status}")
+            raise ModelException(f"An execution cannot change status from accepted to {status}")
+    elif execution.status=='running':
+        if status in ['succeeded', 'failed']:
+            task.status=status
+            task.modification_date = now
+            task.status_date = now
+            if status=='failed' and task.retry>0:
+                log.warning(f'Failure of execution {execution.execution_id} trigger task {task.task_id} retry ({task.retry-1} retries left)')
+                task.retry -= 1
+                task.status = 'pending'
+        else:
+            log.exception(f"An execution cannot change status from running to {status}")
+            raise ModelException(f"An execution cannot change status from running to {status}")
+    else:
+        raise ModelException(f"An execution cannot change status from {execution.status} (only from pending, running or accepted)")
+    execution.status=status
+    if commit:
+        session.commit()
+
+
 class Signal(db.Model):
     __tablename__ = "signal"
     #execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), primary_key=True, nullable=True)
@@ -171,6 +244,11 @@ class Signal(db.Model):
     execution_id = db.Column(db.Integer, db.ForeignKey("execution.execution_id"), nullable=True)
     worker_id = db.Column(db.Integer, db.ForeignKey("worker.worker_id"))
     signal = db.Column(db.Integer, nullable=False)    
+    execution = db.relationship(
+        Execution,
+        backref=db.backref('signals',
+                            uselist=True,
+                            cascade='delete,all'))
 
     def __init__(self, execution_id, worker_id, signal):
         self.execution_id = execution_id
@@ -197,6 +275,19 @@ class Job(db.Model):
         self.args = args
         self.retry = retry
 
+def worker_delete(worker, session, is_destroyed=False, commit=True):
+    """Handle worker delete, take care of launching the destroy job if needed."""
+    if not worker.permanent and not is_destroyed:
+        create_worker_destroy_job(worker, session)
+        return worker
+    else:
+        for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status=='running'):
+            execution_update_status(execution, session, 'failed')
+        for execution in session.query(Execution).filter(Execution.worker_id==worker.worker_id, Execution.status.in_(['pending','accepted'])):
+            execution_update_status(execution, session, 'refused')
+        session.delete(worker)
+        session.commit()
+        return worker
 
 def create_worker_destroy_job(worker, session, commit=True):
     job = Job(target = worker.name,
@@ -206,6 +297,71 @@ def create_worker_destroy_job(worker, session, commit=True):
     session.add(job)
     if commit:
         session.commit()
+
+def create_worker_create_job(concurrency, prefetch, batch, flavor, region, provider, session, number=1, commit=True):
+    for _ in range(number):
+        session.add(
+            Job(target='', 
+                action='worker_create', 
+                args={
+                    'concurrency': concurrency, 
+                    'prefetch': prefetch,
+                    'flavor': flavor,
+                    'region':region,
+                    'provider':provider,
+                    'batch':batch
+                }
+            )
+        )
+    if commit:
+        session.commit()
+
+def worker_handle_eviction(worker, session, commit=True):
+    "Handle worker eviction"
+    # Here we want to make an exception: Execution failure on worker eviction should be 
+    # immediately retried whatever the retry status
+    # NB could not make the SQLALchemy ORM work in that simple case... NotImplementedError: This backend does not support multiple-table criteria within UPDATE
+    session.execute(f"UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE worker_id={worker.worker_id} AND status IN ('running','pending','accepted'))")
+    session.execute(f"UPDATE execution SET status='failed' WHERE worker_id={worker.worker_id} AND status='running'")
+    session.execute(f"UPDATE execution SET status='refused' WHERE worker_id={worker.worker_id} AND status IN ('pending','accepted')")
+    
+    if commit:
+        session.commit()
+    if EVICTION_ACTION in ['delete', 'replace']:
+        create_worker_destroy_job(worker, session, commit=commit)
+    if EVICTION_ACTION=='replace':
+        pending_tasks=session.query(func.count(Task.task_id)).filter(Task.batch==worker.batch, Task.status=='pending').scalar()
+        if pending_tasks > 0:
+            flavor = worker.flavor_detail
+            try:
+                cost = session.query(FlavorMetrics.cost).filter(FlavorMetrics.flavor_name==flavor.name, 
+                                                                FlavorMetrics.provider==flavor.provider,
+                                                                FlavorMetrics.region_name==worker.region).one()
+                cost = cost[0]
+            except NoResultFound:
+                cost = 0
+            for new_flavor in find_flavor(session, 
+                                        min_cpu=flavor.cpu, 
+                                        min_ram=flavor.ram, 
+                                        min_disk=flavor.disk, 
+                                        limit=1000):
+                if new_flavor["available"]==0:
+                    continue
+                if cost==0 and new_flavor['cost']==0:
+                    break
+                elif new_flavor['cost']/cost<EVICTION_COST_MARGIN:
+                    break
+            else:
+                log.warning(f'Could not find any suitable replacement for flavor {flavor.name}')
+                return None
+            log.warning(f'Found a replacement flavor for {flavor.name}: {new_flavor["name"]} in {new_flavor["provider"]}:{new_flavor["region"]}')
+            create_worker_create_job(concurrency=worker.concurrency, prefetch=worker.prefetch,
+                                    batch=worker.batch, flavor=new_flavor["name"], region=new_flavor["region"],
+                                    provider=new_flavor["provider"], session=session, commit=commit)
+        
+
+
+
 
 class Requirement(db.Model):
     __tablename__="requirement"
@@ -250,6 +406,7 @@ class Recruiter(db.Model):
         self.batch = batch
         self.rank = rank
         self.tasks_per_worker = tasks_per_worker
+        validate_protofilter(worker_flavor)
         self.worker_flavor = worker_flavor
         self.worker_region = worker_region
         self.worker_provider = worker_provider
@@ -257,8 +414,59 @@ class Recruiter(db.Model):
         self.worker_prefetch = worker_prefetch
         self.minimum_tasks = minimum_tasks
         self.maximum_workers = maximum_workers
+
+    def match_flavor(self, worker, session):
+        """A function that says if protofilters (which may appear as auto:... in Recruiter.worker_flavor) validate a worker.flavor"""
+        if self.worker_flavor.startswith('auto'):
+            if PROTOFILTER_SEPARATOR in self.worker_flavor:
+                if worker.flavor_detail is None:
+                    return False
+                flavor_detail=worker.flavor_detail 
+                env={'cpu':flavor_detail.cpu, 'ram':flavor_detail.ram, 'disk':flavor_detail.disk,'tags':flavor_detail.tags, 
+                     'gpumem':flavor_detail.gpumem, 'region':worker.region,'provider':worker.provider}
+                if 'cost' in self.worker_flavor or 'eviction' in self.worker_flavor:
+                    try:
+                        metrics = session.query(FlavorMetrics).filter(FlavorMetrics.flavor_name==worker.flavor,
+                                                                    FlavorMetrics.provider==worker.provider,
+                                                                    FlavorMetrics.region_name==worker.region).one()
+                        env['cost']=metrics.cost
+                        env['eviction']=metrics.eviction
+                    except NoResultFound:
+                        return False
+                result = True
+                for protofilter in self.worker_flavor.split(PROTOFILTER_SEPARATOR):
+                    protofilter_match = protofilter_syntax.match(protofilter)
+                    if protofilter_match:
+                        protofilter_match = protofilter_match.groupdict()
+                        variable = protofilter_match['item']
+                        comp = protofilter_match['comparator']
+                        value = protofilter_match['value']
+                        if value[0] not in '0123456789.':
+                            # value is a string
+                            value=repr(value)
+                        if comp=='~':
+                            env['is_like']=is_like
+                            eval_protofilter = f"is_like({variable},{value})"
+                        elif comp=='#':
+                            env['has_tag']=has_tag
+                            eval_protofilter = f"has_tag({variable},{value})"
+                        elif comp=='!~':
+                            env['is_like']=is_like
+                            eval_protofilter = f"not(is_like({variable},{value}))"
+                        elif comp=='!#':
+                            env['has_tag']=has_tag
+                            eval_protofilter = f"not(has_tag({variable},{value}))"
+                        else:
+                            eval_protofilter = f"{variable}{comp}{value}"
+                        try:
+                            result = result and eval(eval_protofilter,env)
+                        except Exception as e:
+                            log.exception(f'Could not evaluate protofilter {protofilter} (compiled as {eval_protofilter}), eval to False')
+                            return False
+                return result
+        else:
+            return self.worker_flavor==worker.flavor
         
-    
     # NB Session.merge() seems the way to go with this object
     # cf https://docs.sqlalchemy.org/en/14/orm/session_api.html#sqlalchemy.orm.Session.merge
 
@@ -282,3 +490,172 @@ def delete_batch(name, session, commit=True):
              execution_options={'synchronize_session':False})
     if commit:
         session.commit()
+
+
+class Region(db.Model):
+    __tablename__="region"
+    name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    
+class Flavor(db.Model):
+    __tablename__="flavor"
+    name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    cpu = db.Column(db.Integer, nullable=False)
+    ram = db.Column(db.Float, nullable=False)
+    disk = db.Column(db.Float, nullable=False)
+    bandwidth = db.Column(db.Float, nullable=True)
+    gpu = db.Column(db.String, nullable=True)
+    gpumem = db.Column(db.Float, nullable=True)
+    tags = db.Column(db.String, nullable=True)
+    workers = db.relationship('Worker', 
+            primaryjoin=and_(name==Worker.flavor, provider==Worker.provider),
+            foreign_keys=[Worker.flavor,Worker.provider],
+            viewonly=True,
+            backref='flavor_detail', 
+            lazy=True)
+
+class FlavorMetrics(db.Model):
+    __tablename__='flavormetrics'
+    flavor_name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    region_name = db.Column(db.String, nullable=False, primary_key=True)
+    cost = db.Column(db.Float, nullable=False)
+    eviction = db.Column(db.Integer, nullable=True)
+    flavor = db.relationship('Flavor', 
+            primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),
+            foreign_keys=[Flavor.name, Flavor.provider],
+            viewonly=True,
+            backref='metrics', 
+            lazy=True)
+    region = db.relationship('Region', 
+            primaryjoin=and_(region_name==Region.name, provider==Flavor.provider), 
+            foreign_keys=[Region.name, Region.provider],
+            viewonly=True,
+            backref='metrics', 
+            lazy=True)
+
+def find_remaining_quotas(session):
+    """Return a dictionnary of (provider,region):cpus where cpus is the number of CPUs still available because of the quota"""
+    quotas = get_quotas()
+    if quotas:
+        for provider,region,cpus in session.query(Worker.provider, Worker.region, func.sum(Flavor.cpu))\
+                .select_from(Worker).join(Flavor,and_(Worker.flavor==Flavor.name,Worker.provider==Flavor.provider))\
+                .group_by(Worker.provider, Worker.region):
+            if (provider,region) in quotas:
+                quotas[(provider,region)]-=cpus
+    return quotas    
+
+def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=None, 
+                max_eviction=FLAVOR_DEFAULT_EVICTION, 
+                limit=FLAVOR_DEFAULT_LIMIT, provider=None, region=None, flavor=None):
+    """Return a list of Flavor fulfilling specific conditions
+
+    protofilters should be a string of PROTOFILTER_SEPARATOR (e.g. :) separated strings passing validate_protofilter() function
+    """
+    # WATCH OUT When modifying this function, Recruiter.match_flavor() function (used for recycling) should be updated too
+    filters = []
+    order_by = (FlavorMetrics.cost,)
+    if max_eviction is not None and not (protofilters and 'eviction' in protofilters):
+        filters.append(FlavorMetrics.eviction<=max_eviction)
+    if not (protofilters and 'tags' in protofilters):
+        filters.append(~Flavor.tags.like('%M%'))
+    if min_cpu is not None:
+        filters.append(Flavor.cpu>=min_cpu)
+    if min_ram is not None:
+        filters.append(Flavor.ram>=min_ram)
+    if min_disk is not None:
+        filters.append(Flavor.disk>=min_disk)
+    if provider is not None:
+        filters.append(Flavor.provider==provider)
+        if provider in PREFERRED_REGIONS and PREFERRED_REGIONS[provider]:
+            order_by = (FlavorMetrics.region_name.like(PREFERRED_REGIONS[provider])).desc(),*order_by
+    if region is not None:
+        filters.append(FlavorMetrics.region_name==region)
+    if flavor is not None:
+        filters.append(Flavor.name.like(flavor))
+    if protofilters:
+        for protofilter_string in protofilters.split(PROTOFILTER_SEPARATOR):
+            protofilter = protofilter_syntax.match(protofilter_string)
+            if protofilter:
+                protofilter=protofilter.groupdict()
+                protofilter_item = getattr(FlavorMetrics, 'region_name' if protofilter['item']=='region' else protofilter['item']) \
+                    if protofilter['item'] in ['region','cost','eviction'] else \
+                    getattr(Flavor, protofilter['item'])
+                comp = protofilter['comparator']
+                if comp=='==':
+                    filters.append(protofilter_item==protofilter['value'])
+                elif comp=='!=':
+                    filters.append(protofilter_item!=protofilter['value'])
+                elif comp=='>':
+                    filters.append(protofilter_item>protofilter['value'])
+                elif comp=='<':
+                    filters.append(protofilter_item<protofilter['value'])
+                elif comp=='>=':
+                    filters.append(protofilter_item>=protofilter['value'])
+                elif comp=='<=':
+                    filters.append(protofilter_item<=protofilter['value'])
+                elif comp=='~':
+                    filters.append(protofilter_item.like(protofilter['value']))
+                elif comp=='!~':
+                    filters.append(~protofilter_item.like(protofilter['value']))
+                elif comp=='#':
+                    for letter in protofilter['value']:
+                        filters.append(protofilter_item.like(f'%{letter}%'))
+                elif comp=='!#':
+                    for letter in protofilter['value']:
+                        filters.append(~protofilter_item.like(f'%{letter}%'))
+            else:
+                log.warning(f'Unknown protofilter {protofilter_string}')
+    #return session.query(Flavor,FlavorMetrics
+    fields = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction']
+    flavors = [dict(zip(fields, object)) for object in session.query(
+                  Flavor.name, Flavor.provider, FlavorMetrics.region_name, 
+                  Flavor.cpu, Flavor.ram, Flavor.tags, Flavor.gpu, Flavor.gpumem, 
+                  Flavor.disk, FlavorMetrics.cost, FlavorMetrics.eviction      
+            ).select_from(FlavorMetrics).join(FlavorMetrics.flavor)\
+                .filter(*filters)\
+                .order_by(*order_by).limit(limit)]
+    quotas = find_remaining_quotas(session)
+    for flavor in flavors:
+        if (flavor['provider'], flavor['region']) in quotas:
+            flavor['available']=quotas[(flavor['provider'], flavor['region'])]//flavor['cpu']
+        else:
+            flavor['available']=None
+    return flavors
+
+class FlavorStats(db.Model):
+    __tablename__='flavorstats'
+    flavor_name = db.Column(db.String, nullable=False, primary_key=True)
+    provider = db.Column(db.String, nullable=False, primary_key=True)
+    region_name = db.Column(db.String, nullable=False, primary_key=True)
+    rank = db.Column(db.Integer, nullable=False, primary_key=True)
+    failure_rate = db.Column(db.Float, default=0)
+    eviction_rate = db.Column(db.Float, default=0)
+    event_number = db.Column(db.Integer, default=0)
+    flavor = db.relationship('Flavor', 
+            primaryjoin=and_(flavor_name==Flavor.name, provider==Flavor.provider),
+            foreign_keys=[Flavor.name, Flavor.provider],
+            viewonly=True,
+            backref='stats', 
+            lazy=True)
+    region = db.relationship('Region', 
+            primaryjoin=and_(region_name==Region.name, provider==Flavor.provider), 
+            foreign_keys=[Region.name, Region.provider],
+            viewonly=True,
+            backref='stats', 
+            lazy=True)
+
+    def deploy_success(self):
+        self.failure_rate = self.failure_rate * self.event_number / (self.event_number + 1)
+        self.event_number+=1
+
+    def deploy_failure(self):
+        self.failure_rate = (self.failure_rate * self.event_number + 1) / (self.event_number + 1)
+        self.event_number+=1
+
+    def eviction_event(self):
+        self.eviction_rate = (self.eviction_rate * (self.event_number-1) + 1) / self.event_number
+
+    def destroy_success(self):
+        self.eviction_rate = (self.eviction_rate * (self.event_number-1) ) / self.event_number
