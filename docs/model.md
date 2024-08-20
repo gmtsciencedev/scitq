@@ -358,8 +358,8 @@ To recruit, scitq need to know what kind of worker you need, how many of them, a
 
 The last thing to know is to specify how many workers are needed, which is computed using the following rules:
 
-1) There must be some Tasks with status `pending` for this Step (that is tasks not running yet, but with their requirements (a.k.a. `required_tasks`) fulfilled), also scitq know that each worker can do `Step.concurrency` tasks in parallel so basically `# pending tasks / Step.concurrency` is the right base figure,
-2) An upper limit is set to avoid renting half Azure or half OVH because the Workflow went berseck, this is the `Step.maximum_workers` attribute.
+* There must be some Tasks with status `pending` for this Step (that is tasks not running yet, but with their requirements (a.k.a. `required_tasks`) fulfilled), also scitq know that each worker can do `Step.concurrency` tasks in parallel so basically `# pending tasks / Step.concurrency` is the right base figure,
+* An upper limit is set to avoid renting half Azure or half OVH because the Workflow went berseck, this is the `Step.maximum_workers` attribute.
 
 This is the minimal setup, but there are several refinement:
 
