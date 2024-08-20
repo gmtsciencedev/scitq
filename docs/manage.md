@@ -253,6 +253,7 @@ This will list available flavor matching some criteria. Thus only `list` is avai
 ### list
 
 The only action possible with flavor. It accepts several parameters, all optional, like:
+
 - `--min-cpu` : only flavor with at least this CPU number are listed,
 - `--min-ram` : only flavor with at least this size of RAM memory (in Gb) are listed,
 - `--min-disk` : same as above with disk size (in Gb),
