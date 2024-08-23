@@ -196,7 +196,8 @@ def handle_get():
 
 @ui.route('/flavors/')
 def flavors():
-    print(request.args)
+    """Provide flavor list to the UI to make worker deployment through the UI more user friendly.
+    Take a object with a .date attribute containing the last time of refresh with an epoch (int in seconds)"""
     date = int(request.args['date'])
     epoch = int(time())
     if epoch-date>REFRESH_FLAVOR:
