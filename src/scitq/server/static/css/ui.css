@@ -192,3 +192,15 @@ width: 15%;
   margin-bottom: 20px;
   background-image: -webkit-linear-gradient(top, #ffffff, #e6e6e6);
 }
+
+.information-tip {
+    float: left;
+    margin: 20px 10px 10px 278px;
+    background: lightblue;
+    border: solid;
+    padding: 4px;
+    border-color: #00BFFF;
+    border-width: 2px;
+    color: grey;
+    font-size: small;
+}

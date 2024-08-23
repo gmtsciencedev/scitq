@@ -1,3 +1,10 @@
+var flavors = {date:0};
+var flavor_names = [];
+var regions = [];
+var providers = [];
+var flavor_detail = new Map();
+var flavor_region = new Map();
+var flavor_provider = new Map();
 
 function worker_concurrency_change(worker_id, change,i) {
     //socket.emit('concurrency_change', {object: 'worker', id: worker_id, change:change})
@@ -190,7 +197,90 @@ async function get_workers() {
         document.getElementById("worker-table-body").innerHTML = worker_table;
         await get_jobs();
     });
+    await update_flavors(flavors);
 };
+
+function push_unique(item, l) {
+    if (l.indexOf(item) === -1 && item !== '') {
+        l.push(item);
+        return(true);
+    }
+    else return(false);
+}
+
+function array2datalist(name, ar) {
+    datalist = document.getElementById(name);
+    datalist.textContent = '';
+    //var datalist = document.createElement('datalist');
+    //datalist.id = name;
+    //document.body.appendChild(datalist);
+    ar.forEach(function(data) {
+        var option = document.createElement('option')
+        option.value = data
+        datalist.appendChild(option)
+    });
+}  
+
+async function update_flavors(flavors) {
+    await $.getJSON('/ui/flavors/', {date:flavors.date}, function(data) {
+        if (data.list!==undefined) {
+            console.log('Refreshing flavors');
+            flavors.list=data.list;
+            flavors.date=data.date;
+            flavor_names.length = 0;
+            regions.length = 0;
+            providers.length = 0;
+            regions.push('auto');
+            providers.push('auto');
+            flavors.list.forEach( function(flavor) {
+                if (push_unique(flavor.name, flavor_names)) {
+                    flavor_detail[flavor.name]=flavor;
+                    flavor_region[flavor.name]=[flavor.region];
+                    flavor_provider[flavor.name]=[flavor.provider];
+                } else {
+                    push_unique(flavor.region, flavor_region[flavor.name]);
+                    push_unique(flavor.provider, flavor_provider[flavor.name]);                    
+                };
+                push_unique(flavor.region, regions);
+                push_unique(flavor.provider, providers);
+            });
+            array2datalist('flavor_names',flavor_names);
+            array2datalist('regions', regions);
+            array2datalist('providers', providers);
+            update_with_flavor(document.getElementById('awf-flavor'));
+        }
+    });
+}
+
+function update_with_flavor(element) {
+    info=document.getElementById('flavor-detail');
+    region_input=document.getElementById('awf-region');
+    provider_input=document.getElementById('awf-provider');
+    if (flavor_names.includes(element.value)) {
+        flavor = flavor_detail[element.value];
+        info.removeAttribute('style');
+        info.textContent=`${flavor.name} : cpu:${flavor.cpu} ram:${flavor.ram} disk:${flavor.disk}`+(flavor.tags!=''?` tags:${flavor.tags}`:'')+(flavor.gpu?` gpu:${flavor.gpu}`:'');
+        array2datalist('regions', flavor_region[flavor.name]);
+        array2datalist('providers', flavor_region[flavor.name]);
+        if (flavor_region[flavor.name].length==1) {
+            region_input.value=flavor_region[flavor.name][0];
+        } else if (region_input.value!='' && region_input.value!='auto' && !flavor_region[flavor.name].contains(region_input.value)) {
+            region_input.value='';
+        };
+        if (flavor_provider[flavor.name].length==1) {
+            provider_input.value=flavor_provider[flavor.name][0];
+        } else if (provider_input.value!='' && provider_input.value!='auto' && !flavor_provider[flavor.name].contains(provider_input.value)) {
+            provide_input.value='';
+        }
+
+    }
+    else {
+        info.setAttribute('style', 'display:none');
+        info.textContent='';
+        array2datalist('regions', regions);
+        array2datalist('providers', providers);
+    }
+}
 
 //send an order to server to delete in db the worker
 function DeleteWorker(worker_id){

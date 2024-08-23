@@ -1,5 +1,5 @@
 from flask import render_template, request, jsonify, current_app, Blueprint
-from time import sleep
+from time import sleep, time
 import logging as log
 import json as json_module
 from sqlalchemy import select, func, and_, delete, distinct, union, alias
@@ -10,10 +10,10 @@ from ..util import package_version, tryupdate, to_dict, flat_list
 from .db import db
 from .config import IS_SQLITE, UI_OUTPUT_TRUNC, UI_MAX_DISPLAYED_ROW
 from ..constants import SIGNAL_CLEAN, SIGNAL_RESTART
-from .model import Worker, Signal, Job, Task, Execution, delete_batch, create_worker_create_job
+from .model import Worker, Signal, Job, Task, Execution, delete_batch, create_worker_create_job, find_flavor
 from .api import worker_dao
 
-
+REFRESH_FLAVOR=60
 
 ui = Blueprint('ui', __name__, url_prefix='/ui')
 
@@ -192,6 +192,18 @@ def handle_get():
 ) AS b ORDER BY batch, status'''
         return jsonify({'batches':list([dict(row) for row in db.session.execute(batch_query)]),
                         'workers': list([dict(row) for row in db.session.execute(worker_query)])})
+    
+
+@ui.route('/flavors/')
+def flavors():
+    print(request.args)
+    date = int(request.args['date'])
+    epoch = int(time())
+    if epoch-date>REFRESH_FLAVOR:
+        return jsonify({'list':find_flavor(session=db.session,limit=None),'date':epoch})
+    else:
+        return '"up to date"'
+
 
 #@socketio.on('change_batch')
 @ui.route('/change_batch')
