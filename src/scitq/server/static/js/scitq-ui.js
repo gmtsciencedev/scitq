@@ -258,24 +258,24 @@ function update_with_flavor(element) {
     provider_input=document.getElementById('awf-provider');
     if (flavor_names.includes(element.value)) {
         flavor = flavor_detail[element.value];
-        info.removeAttribute('style');
+        info.setAttribute('style', 'clear:both');
         info.textContent=`${flavor.name} : cpu:${flavor.cpu} ram:${flavor.ram} disk:${flavor.disk}`+(flavor.tags!=''?` tags:${flavor.tags}`:'')+(flavor.gpu?` gpu:${flavor.gpu}`:'');
         array2datalist('regions', flavor_region[flavor.name]);
         array2datalist('providers', flavor_region[flavor.name]);
         if (flavor_region[flavor.name].length==1) {
             region_input.value=flavor_region[flavor.name][0];
-        } else if (region_input.value!='' && region_input.value!='auto' && !flavor_region[flavor.name].contains(region_input.value)) {
+        } else if (region_input.value!='' && region_input.value!='auto' && !flavor_region[flavor.name].includes(region_input.value)) {
             region_input.value='';
         };
         if (flavor_provider[flavor.name].length==1) {
             provider_input.value=flavor_provider[flavor.name][0];
-        } else if (provider_input.value!='' && provider_input.value!='auto' && !flavor_provider[flavor.name].contains(provider_input.value)) {
+        } else if (provider_input.value!='' && provider_input.value!='auto' && !flavor_provider[flavor.name].includes(provider_input.value)) {
             provide_input.value='';
         }
 
     }
     else {
-        info.setAttribute('style', 'display:none');
+        info.setAttribute('style', 'display:none; clear:both');
         info.textContent='';
         array2datalist('regions', regions);
         array2datalist('providers', providers);
