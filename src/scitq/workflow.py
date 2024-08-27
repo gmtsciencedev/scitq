@@ -413,7 +413,9 @@ class Workflow:
                 for task in tasks:
                     task_stats[task.batch][task.status]+=1
                 for worker in workers:
-                    worker_stats[worker.batch][worker.status]+=1
+                    if worker.status in worker_stats[worker.batch]:
+                        # avoid crash in case of rare statuses like evicted
+                        worker_stats[worker.batch][worker.status]+=1
 
                 remaining_tasks = 0
                 for short,batch in zip(short_batches,batches):
