@@ -300,6 +300,7 @@ def _container_get(container, blob_name, file_name):
         stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
         with open(file=file_name, mode="wb") as download_file:
             for chunk in stream.chunks():
+                log.warning(f'... {blob_name}: chunk {len(chunk)} downloaded ...')
                 download_file.write(chunk)
             #download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
             #download_file.write(download_stream.readall())
