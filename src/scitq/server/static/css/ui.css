@@ -203,4 +203,16 @@ width: 15%;
     border-width: 2px;
     color: grey;
     font-size: small;
+    clear: both;
+}
+
+.information-tip-light {
+    margin: 0px 5px 0px 5px;
+    background: lightblue;
+    border: solid;
+    padding: 2px;
+    border-color: #00BFFF;
+    border-width: 1px;
+    color: grey;
+    font-size: 8pt;
 }

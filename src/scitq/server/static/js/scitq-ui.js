@@ -67,6 +67,7 @@ async function get_workers() {
                 <input type="hidden" name="worker_filter" value="${workers[i].name}">
                 <input type="submit" id="worker-${i}-tasks" value="${workers[i].name}" class="btn btn-outline-dark border-0">
             </form>
+            <div title="${flavor_names.includes(workers[i].flavor)?disp_flavor(flavor_detail[workers[i].flavor]):''}" class="information-tip-light">${workers[i].flavor}</div>
         </td>
         <td class="" id="batch-name-${workers[i].worker_id}" style="padding:0">
             <form target="_blank" method="post" action='/ui/task/'>
@@ -252,14 +253,18 @@ async function update_flavors(flavors) {
     });
 }
 
+function disp_flavor(flavor) {
+    return `${flavor.name} : cpu:${flavor.cpu} ram:${flavor.ram} disk:${flavor.disk}`+(flavor.tags!=''?` tags:${flavor.tags}`:'')+(flavor.gpu?` gpu:${flavor.gpu}`:'');
+}
+
 function update_with_flavor(element) {
     info=document.getElementById('flavor-detail');
     region_input=document.getElementById('awf-region');
     provider_input=document.getElementById('awf-provider');
     if (flavor_names.includes(element.value)) {
         flavor = flavor_detail[element.value];
-        info.setAttribute('style', 'clear:both');
-        info.textContent=`${flavor.name} : cpu:${flavor.cpu} ram:${flavor.ram} disk:${flavor.disk}`+(flavor.tags!=''?` tags:${flavor.tags}`:'')+(flavor.gpu?` gpu:${flavor.gpu}`:'');
+        info.removeAttribute('style');
+        info.textContent=disp_flavor(flavor);
         array2datalist('regions', flavor_region[flavor.name]);
         array2datalist('providers', flavor_region[flavor.name]);
         if (flavor_region[flavor.name].length==1) {
@@ -275,7 +280,7 @@ function update_with_flavor(element) {
 
     }
     else {
-        info.setAttribute('style', 'display:none; clear:both');
+        info.setAttribute('style', 'display:none');
         info.textContent='';
         array2datalist('regions', regions);
         array2datalist('providers', providers);

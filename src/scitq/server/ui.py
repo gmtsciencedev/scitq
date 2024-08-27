@@ -83,7 +83,8 @@ def handle_get():
                     (SELECT count(execution_id) FROM execution WHERE execution.worker_id=worker.worker_id) as total,
                     load,
                     memory,
-                    stats
+                    stats,
+                    flavor
                 FROM worker
                 ORDER BY worker.batch,worker.name''')]),
             'tasks_per_status': dict([row for row in db.session.execute(
