@@ -1,4 +1,6 @@
 import threading
+import multiprocessing
+import traceback
 import os
 import boto3
 from configparser import ConfigParser
@@ -35,6 +37,47 @@ class PropagatingThread(threading.Thread):
         if self.exc:
             raise self.exc
         return super(PropagatingThread, self).is_alive()
+
+class PropagatingProcess(multiprocessing.Process):
+    """Same as above but for a process: this is a process that propagate exceptions.
+    """
+    def __init__(self, *args, **kwargs):
+        super(PropagatingProcess, self).__init__(*args, **kwargs)
+        self._pconn, self._cconn = multiprocessing.Pipe()
+        self._exception = None
+
+    def run(self):
+        try:
+            super(PropagatingProcess, self).run()
+            self._cconn.send(None)
+        except Exception as e:
+            tb = traceback.format_exc()
+            self._cconn.send((e, tb))
+
+    @property
+    def exception(self):
+        if self._pconn.poll():
+            self._exception = self._pconn.recv()
+        return self._exception
+
+    def join(self, timeout=None):
+        """This version of join throw an exception if the process joined did
+        throw an exception"""
+        ret=super(PropagatingProcess, self).join(timeout)
+        if self.exception:
+            error, tb = self.exception
+            print(tb)
+            raise error
+        return ret
+
+    def is_alive(self):
+        """This version of is_alive throw an exception if the process ended
+        with an exception"""
+        if self.exception:
+            error, tb = self.exception
+            print(tb)
+            raise error
+        return super(PropagatingProcess, self).is_alive()
 
 def package_path(*subdirs):
     """A very stupid hack to point to actual package data"""

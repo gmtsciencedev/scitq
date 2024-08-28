@@ -26,7 +26,7 @@ import json
 import datetime
 import sys
 from uuid import uuid1
-from .util import isfifo, force_hard_link
+from .util import isfifo, force_hard_link, PropagatingProcess
 from .clientenvents import monitor_events
 
 CPU_MAX_VALUE =10
@@ -77,6 +77,10 @@ STATUS_TXT = ['LAUNCHING', 'DOWNLOADING', 'WAITING', 'RUNNING', 'UPLOADING',
 CLIENT_STATUS_RUNNING = 1
 CLIENT_STATUS_PAUSED = 2
 CLIENT_STATUS_UNKNOWN = 0
+
+DOWNLOAD_TIMEOUT_SEC_PER_GB = 600
+DOWNLOAD_TIMEOUT_NO_INFO = 1800
+DOWNLOAD_LOOP_TIME = 60
 
 def client_status_code(status):
     """A small wrapper to translate status string to a int code"""
@@ -203,6 +207,45 @@ def speed(before, after, duration):
 def relative(q, ref):
     """Return a list relative to a list of reference value (zeros)"""
     return [(qx-refx) for qx,refx in zip(q,ref)]
+
+class DownloadTimeoutException(Exception):
+    pass
+
+def _get(data, folder, data_info=None, timeout=None, execution_queue=None):
+    """A thin wrapper above scitq.fetch.get to handle timeout and task interuption"""
+    if timeout is None:
+        if data_info is None:
+            try:
+                data_info = info(data)
+            except:
+                timeout = DOWNLOAD_TIMEOUT_NO_INFO
+        if timeout is None:                
+            timeout = data_info.size / 1024**3 * DOWNLOAD_TIMEOUT_SEC_PER_GB
+    p = PropagatingProcess(target=get, args=[data,folder])
+    p.start()
+    start_time = time()
+    later_signals=[]
+    while p.is_alive():
+        if execution_queue is not None:
+            try:
+                signal=execution_queue.get(block=False)
+                if signal in [SIGTERM, SIGKILL]:
+                    p.kill()
+                    break
+                else:
+                    later_signals.append(signal)
+            except queue.Empty:
+                pass
+        if time()-start_time>timeout:
+            p.kill()
+            break
+        p.join(timeout=DOWNLOAD_LOOP_TIME)
+    else:
+        later_signals.reverse()
+        for signal in later_signals:
+            execution_queue.put(signal)
+        return True
+    raise DownloadTimeoutException(f'Download of {data} took longer than {timeout}, bailing out')
 
 class Executor:
     """Executor represent the process in which the task is launched, it is also
@@ -502,7 +545,6 @@ class Executor:
 
         return self.process.returncode
 
-
     def download_resource(self, data, data_info):
         """A method to properly download resource"""
         self.resources_db[data]={'status':'lock'}
@@ -511,7 +553,7 @@ class Executor:
         while True:
             try:
                 log.warning(f'Downloading resource {data}...')
-                get(data, current_resource_dir)
+                _get(data, current_resource_dir, data_info=data_info, execution_queue=self.execution_queue)
                 if data_info is not None:
                     log.warning(f'Modification date is {repr(data_info.modification_date)}')
                     self.resources_db[data]={'status':'loaded',
@@ -557,13 +599,15 @@ class Executor:
             resource = self.resource.split() if self.resource else []
         current_input = list(input)
         retry=RETRY_DOWNLOAD
+        last_exception = None
         while current_input and retry>0:
             failed_input = []
             for data in current_input:
                 try:
-                    get(data, self.input_dir)
+                    _get(data, self.input_dir, execution_queue=self.execution_queue)
                 except Exception as e:
                     log.exception(e)
+                    last_exception=e
                     failed_input.append(data)
             if failed_input:
                 current_input=failed_input
@@ -571,7 +615,10 @@ class Executor:
                 if retry>0:
                     continue
                 else:
-                    raise RuntimeError(f'Cannot download these data {failed_input}')
+                    if last_exception is not None:
+                        raise last_exception
+                    else:
+                        raise RuntimeError(f'Cannot download these data {failed_input}')
             else:
                 break
         if resource:
