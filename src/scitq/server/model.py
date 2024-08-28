@@ -321,7 +321,7 @@ def worker_handle_eviction(worker, session, commit=True):
     # Here we want to make an exception: Execution failure on worker eviction should be 
     # immediately retried whatever the retry status
     # NB could not make the SQLALchemy ORM work in that simple case... NotImplementedError: This backend does not support multiple-table criteria within UPDATE
-    session.execute(f"UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE worker_id={worker.worker_id} AND status IN ('running','pending','accepted'))")
+    session.execute(f"UPDATE task SET status='pending' WHERE task_id IN (SELECT task_id FROM execution WHERE worker_id={worker.worker_id} AND status IN ('running','pending','accepted','assigned'))")
     session.execute(f"UPDATE execution SET status='failed' WHERE worker_id={worker.worker_id} AND status='running'")
     session.execute(f"UPDATE execution SET status='refused' WHERE worker_id={worker.worker_id} AND status IN ('pending','accepted')")
     
