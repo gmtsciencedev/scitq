@@ -28,6 +28,7 @@ import sys
 from uuid import uuid1
 from .util import isfifo, force_hard_link, PropagatingProcess
 from .clientenvents import monitor_events
+import math
 
 CPU_MAX_VALUE =10
 POLLING_TIME = 4
@@ -220,7 +221,7 @@ def _get(data, folder, data_info=None, timeout=None, execution_queue=None):
             except:
                 timeout = DOWNLOAD_TIMEOUT_NO_INFO
         if timeout is None:                
-            timeout = data_info.size / 1024**3 * DOWNLOAD_TIMEOUT_SEC_PER_GB
+            timeout = math.ceil(data_info.size / 1024**3) * DOWNLOAD_TIMEOUT_SEC_PER_GB
     p = PropagatingProcess(target=get, args=[data,folder])
     p.start()
     start_time = time()
