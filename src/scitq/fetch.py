@@ -10,7 +10,7 @@ import requests
 import glob
 import hashlib
 import subprocess
-from .util import PropagatingThread, xboto3, if_is_not_None
+from .util import PropagatingThread, xboto3, if_is_not_None, bytes_to_hex, get_md5
 import concurrent.futures
 import argparse
 import datetime
@@ -223,25 +223,31 @@ def s3_put(source, destination):
     expressed as a s3 URI s3://bucket/path_to_file"""
     log.info(f'S3 uploading {source} to {destination}')
     destination=complete_if_ends_with_slash(source, destination)
+    md5 = get_md5(source)
     uri_match = S3_REGEXP.match(destination).groupdict()
     xboto3().client('s3').upload_file(source,uri_match['bucket'],
-        uri_match['path'])
+        uri_match['path'],ExtraArgs={'Metadata':{'md5':md5}})
 
 @retry_if_it_fails(RETRY_TIME)
-def s3_info(uri):
+def s3_info(uri, md5=False):
     """S3 info fetcher: get some info on a blob specified with s3://bucket/path_to_file"""
     log.info(f'S3 getting info for {uri}')
     uri_match = S3_REGEXP.match(uri).groupdict()
     try:
-        bucket=get_s3().Bucket(uri_match['bucket'])
+        s3_client = get_s3()
+        bucket_name = uri_match['bucket']
+        bucket=s3_client.Bucket(bucket_name)
         object = next(iter(bucket.objects.filter(Prefix=uri_match['path'])))
+        if md5:
+            metadata = s3_client.head_object(Bucket=bucket_name, Key=object.key)
         return argparse.Namespace(size=object.size, 
                                   creation_date=object.last_modified,
-                                  modification_date=object.last_modified)
+                                  modification_date=object.last_modified,
+                                  md5=None if not md5 else metadata.get('md5',None))
     except StopIteration:
         raise FetchError(f'{uri} was not found')
 
-def s3_list(uri, no_rec = False):
+def s3_list(uri, no_rec = False, md5=False):
     """List content of an s3 folder in the form s3://bucket/path
     if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
     log.info(f'S3 getting listing for {uri}')
@@ -257,20 +263,30 @@ def s3_list(uri, no_rec = False):
                                    rel_name=os.path.relpath(prefix['Prefix'], uri_match['path'])+'/',
                                    size=0,
                                    creation_date=None,
+                                   md5=None if (not(md5) or prefix['Prefix'].endswith('/')) else \
+                                            s3_client.head_object(Bucket=bucket_name, Key=prefix["Prefix"]
+                                                ).get('Metadata').get('md5',None),
                                    modification_date=None) for prefix in query['CommonPrefixes']
                 ] if 'CommonPrefixes' in query else [] + [
                 argparse.Namespace(name=f's3://{bucket_name}/{object["Key"]}',
                             rel_name=os.path.relpath(object['Key'], uri_match['path']),
                             size=object['Size'], 
                             creation_date=object['LastModified'],
+                            md5=None if (not(md5) or object["Key"].endswith('/')) else \
+                                    s3_client.head_object(Bucket=bucket_name, Key=object["Key"]
+                                            ).get('Metadata').get('md5',None),
                             modification_date=object['LastModified'])
                 for object in query['Contents']] if 'Contents' in query else []
     else:
+        s3_client = xboto3().client('s3')
         bucket=get_s3().Bucket(uri_match['bucket'])
         return [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
                                 rel_name=os.path.relpath(object.key, uri_match['path']),
                                 size=object.size, 
                                 creation_date=object.last_modified,
+                                md5=None if (not(md5) or object.key.endswith('/')) else \
+                                        s3_client.head_object(Bucket=bucket.name, Key=object.key
+                                            ).get('Metadata').get('md5',None),
                                 modification_date=object.last_modified)
                 for object in bucket.objects.filter(Prefix=uri_match['path'])]
 
@@ -427,7 +443,7 @@ class AzureClient:
                 blob_client.upload_blob(data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE)
 
     @retry_if_it_fails(RETRY_TIME)
-    def info(self,uri):
+    def info(self,uri,md5=False):
         """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
         log.info(f'Azure getting info for {uri}')
         uri_match = AZURE_REGEXP.match(uri).groupdict()
@@ -436,11 +452,12 @@ class AzureClient:
             object = next(iter(container.list_blobs(name_starts_with=uri_match['path'])))
             return argparse.Namespace(size=object.size, 
                                     creation_date=object.creation_time,
-                                    modification_date=object.last_modified)
+                                    modification_date=object.last_modified,
+                                    md5=None if not md5 else bytes_to_hex(object.content_settings.content_md5))
         except StopIteration:
             raise FetchError(f'{uri} was not found')
 
-    def list(self,uri, no_rec=False):
+    def list(self,uri, no_rec=False, md5=False):
         """List the content of an azure storage folder  azure://container/path
         if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
         log.info(f'Azure getting listing for {uri}')
@@ -451,14 +468,16 @@ class AzureClient:
                                     rel_name=os.path.relpath(object.name, uri_match['path'])+('/' if object.name.endswith('/') else ''),
                                     size=object.get('size',0), 
                                     creation_date=object.get('creation_time',None),
-                                    modification_date=object.get('last_modified',None))
+                                    modification_date=object.get('last_modified',None),
+                                    md5=None if not md5 else bytes_to_hex(object.get('content_settings',{}).get('content_md5',None)))
                     for object in container.walk_blobs(name_starts_with=uri_match['path'],delimiter='/')]
         else:
             return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
                                     rel_name=os.path.relpath(object.name, uri_match['path']),
                                     size=object.size, 
                                     creation_date=object.creation_time,
-                                    modification_date=object.last_modified)
+                                    modification_date=object.last_modified,
+                                    md5=bytes_to_hex(object.content_settings.content_md5))
                     for object in container.list_blobs(name_starts_with=uri_match['path'])]
 
     def delete(self, uri):
@@ -1127,7 +1146,7 @@ def info(uri):
         else:
             raise UnsupportedError(f"This URI protocol is not supported: {m['proto']}")
 
-def list_content(uri, no_rec=False):
+def list_content(uri, no_rec=False, md5=False):
     """Return the recursive listing of folder specified as a URI
     each item of the list should contains at least name (complete URI), rel_name (the name of the object relative to the provided uri), creation_date, modification_date and size
     if no_rec is True, then the listing is non recursive -> MEANS SOME "FOLDERS" WILL APPEAR IN LISTING, eventually with None attribute (in dates)
@@ -1138,9 +1157,9 @@ def list_content(uri, no_rec=False):
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
         if m['proto']=='s3':
-            return s3_list(source, no_rec=no_rec)
+            return s3_list(source, no_rec=no_rec, md5=md5)
         elif m['proto']=='azure':
-            return AzureClient().list(source, no_rec=no_rec) 
+            return AzureClient().list(source, no_rec=no_rec, md5=md5) 
         elif m['proto']=='ftp':
             return ftp_list(source, no_rec=no_rec)
         elif m['proto']=='file':
@@ -1273,13 +1292,16 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
     
     list_parser = subparser.add_parser('list', help='List the content of a remote folder (outputs some absolute URI)')
     list_parser.add_argument('--not-recursive', action="store_true", help="Do not be recursive")
+    list_parser.add_argument('--md5', action="store_true", help="Fetch also md5")
     list_parser.add_argument('uri', type=str, help='the remote folder uri')
     
     rlist_parser = subparser.add_parser('rlist', help='List the content of a remote folder (outputs some relative path to the URI)')
     rlist_parser.add_argument('--not-recursive', action="store_true", help="Do not be recursive")
+    rlist_parser.add_argument('--md5', action="store_true", help="Fetch also md5")
     rlist_parser.add_argument('uri', type=str, help='the remote folder uri')
 
     nrlist_parser = subparser.add_parser('nrlist', help='List the content of a remote folder, like rlist but with --not-recursive as default')
+    nrlist_parser.add_argument('--md5', action="store_true", help="Fetch also md5")
     nrlist_parser.add_argument('uri', type=str, help='the remote folder uri')
 
     sync_parser = subparser.add_parser('sync', help='Sync some file or folder to some folder (one of them must be local) (identity is checked using name and size)')
@@ -1321,8 +1343,12 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             check_uri(args.uri)
             uri=args.uri
         headers=['name','creation_date','modification_date','size']
+        if args.md5:
+            headers.append('md5')
         print(tabulate(
-            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri, no_rec=args.not_recursive)],
+            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri, 
+                                                                                                        no_rec=args.not_recursive,
+                                                                                                        md5=args.md5)],
             headers=headers,
             tablefmt='plain'
         ))
@@ -1335,8 +1361,12 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             check_uri(args.uri)
             uri=args.uri
         headers=['rel_name','creation_date','modification_date','size']
+        if args.md5:
+            headers.append('md5')
         print(tabulate(
-            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri, no_rec=args.not_recursive)],
+            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri,
+                                                                                                                no_rec=args.not_recursive,
+                                                                                                                md5=args.md5)],
             headers=headers,
             tablefmt='plain'
         ))

@@ -10,6 +10,7 @@ import shutil
 from argparse import Namespace
 from .constants import PROTOFILTER_SYNTAX, PROTOFILTER_SEPARATOR
 from functools import reduce
+import hashlib
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -279,3 +280,12 @@ def is_like(a,b):
 def has_tag(a,b):
     """A small helper to simulate protofilter # sign, e.g. a#b == a contain tags b"""
     return reduce(lambda x,y: x and y, [c in a for c in b], True)
+
+def bytes_to_hex(byte_array):
+    """Convert a byte array to hex"""
+    return None if byte_array is None else byte_array.hex()
+
+def get_md5(path):
+    """Return the md5 of a local file"""
+    with open(path, "rb") as f:
+        return hashlib.file_digest(f, "md5").hexdigest()
