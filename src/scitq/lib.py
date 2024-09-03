@@ -9,7 +9,7 @@ from argparse import Namespace
 import logging as log
 import time
 from .util import filter_none as _clean, validate_protofilter
-from .constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT
+from .constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, TASK_STATUS_ID_REVERSE, TASK_STATUS
 
 PUT_TIMEOUT = 30
 GET_TIMEOUT = 150
@@ -189,13 +189,14 @@ class Server:
         """A method to estimate send queue size"""
         return self.send_queue.qsize()        
 
-    def get(self, url, **args):
+    def get(self, url, wrap=None, **args):
         """A wrapper used for all get operations.
         - url: extra string to add after base server URL
+        - wrap: an optional argument for use in special case
         
         return the objects according to Server style (see style in class doc)"""
         try:
-            return self._wrap(requests.get(
+            return (wrap or self._wrap)(requests.get(
                 self.url+url, timeout=self.get_timeout, json=args
             ))
         except (ConnectionError,Timeout,HTTPException) as e:
@@ -480,6 +481,13 @@ class Server:
         - name: str
         """
         return self.get(f'/tasks/', **args)
+    
+    def task_status(self, task_id_list):
+        """Get a list of tasks'status
+        Only one mandatory argument, a list of task.task_id:
+        - task_id_list: list(int)
+        """
+        return [TASK_STATUS_ID_REVERSE[status_id] for status_id in self.get(f'/tasks/status', wrap=_filter_non200, task_id=task_id_list)]
 
     def task_delete(self,id, asynchronous=True):
         """delete a specific task"""
@@ -568,7 +576,9 @@ class Server:
         """
         if not task_list:
             raise RuntimeError('task_list should not be empty')
-        task_ids = [task['task_id'] if type(task)==dict else task.task_id for task in task_list]
+        if type(task_list[0])==dict:
+            task_list = [Namespace(**task) for task in task_list]
+        task_ids = [task.task_id for task in task_list]
         task_retries = dict([(task_id,0) for task_id in task_ids])
 
         all_task_done = False
@@ -579,11 +589,9 @@ class Server:
         while not all_task_done:
             all_task_done = True
             old_tasks = tasks
-            tasks = {'assigned':0,'failed':0, 'running':0, 'accepted':0, 'pending':0,'succeeded':0, 'paused':0}
-            for task in self.tasks(task_id=task_ids):
-                if type(task)==dict:
-                    task = Namespace(**task)
-                if task.status=='failed':
+            tasks = {status:0 for status in TASK_STATUS}
+            for task,task_status in zip(task_list,self.task_status(task_id_list=task_ids)):
+                if task_status=='failed':
                     if task_retries[task.task_id]<retry:
                         print(f'Retrying task {task.name or task.task_id} [{task_retries[task.task_id]+1}/{retry}]...')
                         self.task_update(task.task_id, status='pending')
@@ -595,11 +603,11 @@ class Server:
                         if task.task_id not in failed_tasks:
                             print(f'Task {task.name or task.task_id} failed too many times giving up')
                             failed_tasks.append(task.task_id)
-                elif task.status in ['running','accepted','pending','assigned']:
+                elif task_status in ['running','accepted','pending','assigned']:
                     all_task_done = False
-                    tasks[task.status]+=1
+                    tasks[task_status]+=1
                 else:
-                    tasks[task.status]+=1
+                    tasks[task_status]+=1
             print(f"Remaining tasks pending : {tasks['pending']}, assigned: {tasks['assigned']}, accepted: {tasks['accepted']}, running: {tasks['running']}, failed: {tasks['failed']}, succeeded: {tasks['succeeded']}")
             
             # sleeping if needed

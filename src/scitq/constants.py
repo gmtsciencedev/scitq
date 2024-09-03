@@ -16,3 +16,6 @@ PROTOFILTER_SEPARATOR=':'
 
 FLAVOR_DEFAULT_LIMIT=10
 FLAVOR_DEFAULT_EVICTION=5
+
+TASK_STATUS_ID = {status:i for i,status in enumerate(TASK_STATUS)}
+TASK_STATUS_ID_REVERSE = {i:status for i,status in enumerate(TASK_STATUS)}

@@ -1,4 +1,5 @@
 from flask_restx import Api, Resource, fields
+from flask import jsonify
 from datetime import datetime
 from sqlalchemy import and_, delete, select, func
 from sqlalchemy.sql.expression import label
@@ -11,7 +12,7 @@ from .model import Task, Execution, Signal, Requirement, Worker,\
     ModelException, create_worker_create_job, worker_handle_eviction
 from .db import db
 from .config import IS_SQLITE
-from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, WORKER_STATUS
+from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, WORKER_STATUS, TASK_STATUS_ID
 
 
 api = Api(version='1.2', title='TaskMVC API',
@@ -231,6 +232,24 @@ class TaskList(Resource):
         for r in requirements:
             requirement_dao.create({'task_id':task.task_id, 'other_task_id':r})
         return task, 201
+
+
+task_status_filter = api.model('TaskStatusFilter', {
+    'task_id': fields.List(fields.Integer(),required=True,decription='A list of ids to restrict listing'),
+})
+
+@ns.route('/status')
+class TaskStatusList(Resource):
+    '''Shows a list of all tasks, and lets you POST to add new tasks'''
+    @ns.doc('list_task_statuses')
+    @ns.expect(task_status_filter)
+    def get(self):
+        '''List all task status'''
+        task_id_list = api.payload['task_id']
+        task_status = db.session.query(Task.task_id,Task.status).filter(Task.task_id.in_(task_id_list)).all()
+        task_to_status = { task_id:TASK_STATUS_ID[status] for task_id,status in task_status }
+        return jsonify([task_to_status[id] for id in task_id_list])
+
 
 
 @ns.route("/<id>")
