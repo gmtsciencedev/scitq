@@ -10,7 +10,7 @@ import requests
 import glob
 import hashlib
 import subprocess
-from .util import PropagatingThread, xboto3, if_is_not_None, bytes_to_hex, get_md5
+from .util import PropagatingThread, xboto3, if_is_not_None, bytes_to_hex, get_md5, split_list
 import concurrent.futures
 import argparse
 import datetime
@@ -24,6 +24,7 @@ import dotenv
 from tabulate import tabulate 
 from fnmatch import fnmatch
 import hashlib
+import multiprocessing
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -31,6 +32,8 @@ RETRY_SLEEP_TIME = 10
 MAX_SLEEP_TIME = 900
 PUBLIC_RETRY_TIME = 20
 MAX_PARALLEL_S3 = 5
+MAX_PARALLEL_S3_LIST = 30
+
 
 # position in FTP dir command
 # typical output is: '-rw-rw-r--    1 ftp      ftp       1088322 Jul 15  2019 MGYG-HGUT-00001.faa' 
@@ -248,48 +251,64 @@ def s3_info(uri, md5=False):
     except StopIteration:
         raise FetchError(f'{uri} was not found')
 
+def _s3_add_md5(bucket_name, objects):
+    """A small wrapper to parallelize metadata retrieval"""
+    s3_client = xboto3().client('s3')
+    md5s = []
+    for obj in objects:
+        md5s.append(s3_client.head_object(Bucket=bucket_name, Key=obj.key).get('Metadata').get('md5',None))
+    return md5s
+
 def s3_list(uri, no_rec = False, md5=False):
     """List content of an s3 folder in the form s3://bucket/path
     if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
     log.info(f'S3 getting listing for {uri}')
     uri_match = S3_REGEXP.match(uri).groupdict()
+    bucket_name=uri_match['bucket']
     if no_rec:
         s3_client=xboto3().client('s3')
-        bucket_name=uri_match['bucket']
         query = s3_client.list_objects_v2(
                 Bucket=bucket_name,
                 Delimiter='/',
                 Prefix=uri_match['path'])
-        return [argparse.Namespace(name=f's3://{bucket_name}/{prefix["Prefix"]}',
+        answer = [argparse.Namespace(name=f's3://{bucket_name}/{prefix["Prefix"]}',
                                    rel_name=os.path.relpath(prefix['Prefix'], uri_match['path'])+'/',
                                    size=0,
                                    creation_date=None,
-                                   md5=None if (not(md5) or prefix['Prefix'].endswith('/')) else \
-                                            s3_client.head_object(Bucket=bucket_name, Key=prefix["Prefix"]
-                                                ).get('Metadata').get('md5',None),
+                                   md5=None,
+                                   key=prefix["Prefix"],
                                    modification_date=None) for prefix in query['CommonPrefixes']
                 ] if 'CommonPrefixes' in query else [] + [
                 argparse.Namespace(name=f's3://{bucket_name}/{object["Key"]}',
                             rel_name=os.path.relpath(object['Key'], uri_match['path']),
                             size=object['Size'], 
                             creation_date=object['LastModified'],
-                            md5=None if (not(md5) or object["Key"].endswith('/')) else \
-                                    s3_client.head_object(Bucket=bucket_name, Key=object["Key"]
-                                            ).get('Metadata').get('md5',None),
+                            md5=None,
+                            key=object["Key"],
                             modification_date=object['LastModified'])
                 for object in query['Contents']] if 'Contents' in query else []
     else:
         s3_client = xboto3().client('s3')
-        bucket=get_s3().Bucket(uri_match['bucket'])
-        return [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
+        bucket=get_s3().Bucket(bucket_name)
+        answer = [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
                                 rel_name=os.path.relpath(object.key, uri_match['path']),
                                 size=object.size, 
                                 creation_date=object.last_modified,
-                                md5=None if (not(md5) or object.key.endswith('/')) else \
-                                        s3_client.head_object(Bucket=bucket.name, Key=object.key
-                                            ).get('Metadata').get('md5',None),
+                                md5=None,
+                                key=object.key,
                                 modification_date=object.last_modified)
                 for object in bucket.objects.filter(Prefix=uri_match['path'])]
+    
+    if md5:
+        p=multiprocessing.Pool(MAX_PARALLEL_S3_LIST)
+        sublists = list(split_list(answer, MAX_PARALLEL_S3_LIST))
+        
+        md5_sublists = p.starmap(_s3_add_md5, zip([bucket_name]*len(sublists),sublists))
+        for obj_list,md5_list in zip(sublists, md5_sublists):
+            for obj,md5value in zip(obj_list, md5_list):
+                obj.md5 = md5value
+
+    return answer
 
 def s3_delete(uri):
     """Delete an s3 blob"""

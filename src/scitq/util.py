@@ -11,6 +11,9 @@ from argparse import Namespace
 from .constants import PROTOFILTER_SYNTAX, PROTOFILTER_SEPARATOR
 from functools import reduce
 import hashlib
+import sys
+
+MAX_MD5_BLOCK_SIZE=1024**2
 
 class PropagatingThread(threading.Thread):
     """Taken from https://stackoverflow.com/questions/2829329/catch-a-threads-exception-in-the-caller-thread
@@ -288,4 +291,21 @@ def bytes_to_hex(byte_array):
 def get_md5(path):
     """Return the md5 of a local file"""
     with open(path, "rb") as f:
-        return hashlib.file_digest(f, "md5").hexdigest()
+        if sys.version_info>=(3,11):
+            return hashlib.file_digest(f, "md5").hexdigest()
+        else:
+            md5=hashlib.md5()
+            while True:
+                chunk=f.read(MAX_MD5_BLOCK_SIZE)
+                if not chunk:
+                    break
+                md5.update(chunk)
+            return md5.hexdigest()
+
+
+def split_list(l, n):
+    """Split list l in n parts of approximately the same size"""
+    # avoid creating empty sublist
+    n = min(n, len(l))
+    k, m = divmod(len(l), n)
+    return (l[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
