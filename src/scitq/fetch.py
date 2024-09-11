@@ -16,13 +16,14 @@ import argparse
 import datetime
 import pytz
 import io
-from azure.storage.blob import BlobServiceClient, BlobBlock, BlobClient
+from azure.storage.blob import BlobServiceClient, BlobBlock, BlobClient, ContentSettings
 import uuid
 import azure.core.exceptions
 from .constants import DEFAULT_WORKER_CONF
 import dotenv
 from tabulate import tabulate 
 from fnmatch import fnmatch
+import hashlib
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -415,6 +416,7 @@ class AzureClient:
         uri_match = AZURE_REGEXP.match(destination).groupdict()
         blob_client = self.client.get_blob_client(container=uri_match['container'],
                                                 blob=uri_match['path'])
+        md5=hashlib.md5()
         with open(file=source, mode="rb") as data:
             if os.path.getsize(source)>=AZURE_CHUNK_SIZE:
                 if blob_client.exists():
@@ -424,6 +426,7 @@ class AzureClient:
                     read_data = data.read(AZURE_CHUNK_SIZE)
                     if not read_data:
                         break # done
+                    md5.update(read_data)
                     blk_id = str(uuid.uuid4())
                     retry = RETRY_TIME
                     while retry>=0:
@@ -437,10 +440,16 @@ class AzureClient:
                             if retry >= 0:
                                 retry-=1
                             else: 
-                                raise FetchError(f'Failed to upload {source} to {destination} because of {e}')                            
-                blob_client.commit_block_list(block_list)
+                                raise FetchError(f'Failed to upload {source} to {destination} because of {e}')                           
+                blob_client.commit_block_list(block_list, content_settings=ContentSettings(content_md5=md5.digest()))
             else:
-                blob_client.upload_blob(data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE)
+                # MD5 computation is not required for *small* files but it is unclear how small that is
+                # it should be given by the maxSingleShotSize property yet this property is hidden in lower layers of the API
+                # given that md5 computation is inexpensive with small file anyway, better compute it for all
+                read_data=data.read()
+                md5.update(read_data)
+                blob_client.upload_blob(read_data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE,
+                                        content_settings=ContentSettings(content_md5=md5.digest()))
 
     @retry_if_it_fails(RETRY_TIME)
     def info(self,uri,md5=False):
