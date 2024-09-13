@@ -3,14 +3,14 @@ from ftplib import FTP
 import re
 import logging as log
 from functools import wraps, cached_property
-from time import sleep
+from time import sleep, time
 import shutil
 import os
 import requests
 import glob
 import hashlib
 import subprocess
-from .util import PropagatingThread, xboto3, if_is_not_None, bytes_to_hex, get_md5, split_list
+from .util import PropagatingThread, xboto3, if_is_not_None, bytes_to_hex, get_md5, split_list, package_version
 import concurrent.futures
 import argparse
 import datetime
@@ -25,6 +25,8 @@ from tabulate import tabulate
 from fnmatch import fnmatch
 import hashlib
 import multiprocessing
+import json
+import tempfile
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -1199,6 +1201,51 @@ def list_content(uri, no_rec=False, md5=False):
         else:
             raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
+def ncdu(uri, output_file):
+    """Return a JSON list in the format that ncdu accept with -f"""
+
+    class File:
+        def __init__(self, name, size, time):
+            self.name = name
+            self.size = size
+            self.time = time
+        def ncdu_object(self):
+            return {"name":self.name,"dsize":self.size,"mtime":int(self.time.timestamp())}
+
+    class Folder:
+        def __init__(self, name):
+            self.name = name
+            self.content = {}
+        def add_folder(self, name):
+            self.content[name]=Folder(name)
+        def has(self,name):
+            return name in self.content
+        def add_file(self, name, size, time):
+            self.content[name]=File(name, size, time)
+        def ncdu_object(self):
+            return [ {'name': self.name} ] + [ c.ncdu_object() for c in self.content.values() ]
+        def get(self, name):
+            return self.content[name]
+
+    top_folder = Folder(uri)
+
+    for item in list_content(uri):
+        folder,file=os.path.split(item.rel_name)
+        current_folder=top_folder
+        if folder!='':
+            for subfolder in folder.split('/'):
+                if not current_folder.has(subfolder):
+                    current_folder.add_folder(subfolder)
+                current_folder=current_folder.get(subfolder)
+        current_folder.add_file(file, item.size, item.modification_date)
+
+    json.dump([1,
+                0,
+                {"progname":"scitq",
+                "progver":package_version(),
+                "timestamp":int(time())},
+                top_folder.ncdu_object()],
+              output_file)
 
 def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC):
     """Sync two URI, one must be local
@@ -1347,6 +1394,11 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
     delete_parser.add_argument('--dryrun',action='store_true',
                         help="Do not really delete, just print what it would delete")
 
+    ncdu_parser = subparser.add_parser('ncdu', help='Create an ncdu output to audit data volume comsumption in a folder arborescence')
+    ncdu_parser.add_argument('uri', type=str, help='the uri (can be a local file or a remote URI)')
+    ncdu_parser.add_argument('--run', action='store_true', help='directly launch ncdu with the results')
+    
+    
     args = parser.parse_args()
 
     if args.verbose:
@@ -1402,6 +1454,20 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
         sync(args.source_uri, args.destination_uri, include=args.include, process=args.process)
     elif args.command=='delete':
         recursive_delete(args.uri, include=args.include, dryrun=args.dryrun)
+    elif args.command=='ncdu':
+        if ':' not in args.uri:
+            uri=f'file://{args.uri}'
+        else:
+            check_uri(args.uri)
+            uri=args.uri
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as output_file:
+            ncdu(uri=uri, output_file=output_file)
+            output_file.close()
+            if args.run:
+                os.system(f'ncdu -f "{output_file.name}"')
+                os.remove(output_file.name)
+            else:
+                print(f'ncdu json file was stored in {output_file.name}')
 
 if __name__=='__main__':
     main()
