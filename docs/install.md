@@ -176,7 +176,7 @@ It is now recommanded to have ansible in its own virtual environment to prevent 
 apt-get install -y python3-pip python3-venv python3-apt
 python3 -m venv /root/ansibleenv
 source /root/ansibleenv/bin/activate
-pip install -y ansible
+pip install ansible
 ln -s /root/ansibleenv/bin/ansible* /usr/local/bin/
 ```
 
@@ -221,6 +221,12 @@ source /root/ansibleenv/bin/activate
 ```bash
 ansible-galaxy collection install azure.azcollection:1.19
 pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements-azure.txt
+```
+
+#### Other ansible collections
+
+```bash
+ansible-galaxy collection install community.general
 ```
 
 ### Create ssh key

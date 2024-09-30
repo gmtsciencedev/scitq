@@ -1,20 +1,17 @@
 - name: Update the firewall with node IPv4
-  ansible.builtin.iptables:
-    chain: INPUT
-    source: "{{ hostvars[nodename].ipv4 }}"
-    jump: ACCEPT
-    protocol: all
-    action: insert
-    comment: "scitq : {{ nodename }}"
+  ansible.builtin.command:
+    cmd: "/usr/sbin/iptables -A INPUT -p all -s {{ hostvars[nodename].ipv4 }}/32 -j ACCEPT  -w 5 -m comment --comment 'scitq : {{ nodename }}'"
+  retries: 5
+  delay: 2
+  register: iptables_result
+  until: iptables_result is succeeded
   become: yes
 - name: Update the firewall with node IPv6
-  ansible.builtin.iptables:
-    chain: INPUT
-    source: "{{ hostvars[nodename].ipv6 }}"
-    jump: ACCEPT
-    protocol: all
-    action: insert
-    comment: "scitq : {{ nodename }}"
-    ip_version: ipv6
+  ansible.builtin.command:
+    cmd: "/usr/sbin/ip6tables -A INPUT -p all -s {{ hostvars[nodename].ipv6 }}/128 -j ACCEPT  -w 5 -m comment --comment 'scitq : {{ nodename }}'"
+  retries: 5
+  delay: 2
+  register: ip6tables_result
+  until: ip6tables_result is succeeded
   become: yes
   when: hostvars[nodename].ipv6 is defined
