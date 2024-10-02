@@ -1,5 +1,6 @@
 from sqlalchemy import select, and_, func, distinct
 from sqlalchemy.orm import Session, aliased
+from sqlalchemy.exc import NoResultFound
 import logging as log
 import os
 from subprocess import run, Popen, PIPE, TimeoutExpired
@@ -72,6 +73,7 @@ def background(app):
 
     while True:
         log.warning('Starting main loop')
+        pending_job = None
         try:
 
             # ########    ###     ######  ##    ##    ########  ########   #######   ######  ########  ######   ######  #### ##    ##  ######   
@@ -183,6 +185,7 @@ def background(app):
 
             change = False
             for job in list(session.query(Job).filter(Job.status == 'pending')):
+                pending_job = job
 
                 if job.action == 'worker_destroy':
                     change=True
@@ -295,8 +298,18 @@ def background(app):
                         change = True
                         log.warning(f'Launching creation process for worker {job.target}.')
                         worker = Namespace(**job.args)
-                        flavor = session.query(Flavor).filter(Flavor.provider==worker.provider, 
-                                                              Flavor.name==worker.flavor).one()
+                        try:
+                            flavor = session.query(Flavor).filter(Flavor.provider==worker.provider, 
+                                                                Flavor.name==worker.flavor).one()
+                        except NoResultFound:
+                            log_message = f'Could not find flavor {worker.flavor} in {worker.provider}: worker {job.target} deploy failed.'
+                            log.exception(log_message)
+                            job.status='failed'
+                            job.log=log_message
+                            session.query(Worker).filter(Worker.worker_id==worker.worker_id).update(
+                                {'status':'failed'}
+                            )
+                            continue
                         log.exception(f'Launching command is "'+WORKER_CREATE.format(
                             hostname=job.target,
                             concurrency=worker.concurrency,
@@ -326,6 +339,7 @@ def background(app):
 
             if change:
                 session.commit()                
+            pending_job = None
 
             change = False
             for ((action,worker_name),(worker,worker_process,job_id,start_time)) in list(worker_process_queue.items()):
@@ -612,15 +626,20 @@ we already have {workers} workers')
 
 
                 
-        except Exception:
+        except Exception as e1:
             log.exception('An exception occured during server main loop:')
             while True:
                 sleep(MAIN_THREAD_SLEEP)
                 try:
                     log.warning('Trying to reconnect...')
+                    session.close()
                     with app.app_context():
                         session = Session(db.engine)
                     break
-                except Exception:
-                    pass
+                except Exception as e2:
+                    log.exception(f'Error while trying to reconnect: {e2}')
+            if pending_job is not None:
+                session.query(Job).filter(Job.job_id==job.job_id).update(
+                    {'status':'failed', 'log':f'Job failed due to exception {e1}, see logs for details'})
+                session.commit()
         sleep(MAIN_THREAD_SLEEP)
