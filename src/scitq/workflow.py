@@ -184,7 +184,7 @@ class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
     def __init__(self, name: str, max_step_workers=None, 
                  server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
-                 provider: Optional[str] =None, region: Optional[str] =None,
+                 provider: Optional[str] =None, region: Optional[str] ='auto',
                  flavor: Optional[str] =None, shell=False, max_workflow_workers=None, 
                  retry=None, rounds=None, prefetch = None, container=None, container_options='', 
                  download_timeout=None, run_timeout=None):
