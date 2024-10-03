@@ -1,5 +1,17 @@
 <!-- CHANGELOG SPLIT MARKER -->
 
+# v1.2.4 (2024-10-02)
+
+This is a minor update of v1.2.3, with a serie of minor but convinient enhancements:
+- UI is now more user friendly with some field with automated completion when deploying a new worker and a representation of flavor details,
+- Downloads can now timeout depending on the size of data (so as to fail when some Azure downloads are stuck or some download from NCBI/EBI get too slow)
+- Each file copied with scitq to Azure/AWS has now an MD5 info which can be retrieved with `--md5` using `scitq-fetch [list,nlist,nrlist]` or with `scitq.fetch.list_content()` with `md5=True` option. This is not native (native only for small files), so it is locally estimated and added in optionnal metadata on those clouds (that is transparent when using scitq), so files transfered with previous versions of scitq (or transfered not by scitq) will lack the info in most cases. The efficient retrieval of the info was touchy for AWS, and use a relatively new multiprocess paradigm in Python, `multiprocessing.Pool.starmap()` (it is reported in several place and was confirmed here that multiprocessing parallelizing is efficient for AWS but not multithread)
+- `scitq-fetch` command has a new verb, `ncdu` which generate ncdu data (like NCurse Data Usage, an excellent software in text mode to see how much data is used in different folders). It requires the `ncdu` program to parse the generated data (scitq can even run it directly with the generated data when launched with `ncdu --run`), which is available on all distros. `ncdu` is usually restricted to local data but here it works with any folder on Azure or AWS (or ftp or any scitq acceptable URI). Note that the `delete` operation available locally with `ncdu` does not work in this context.
+- Workflow now defaults to `region='auto'` which means that as soon as you specify a provider and a flavor when creating the workflow object, workers are automatically deployed. If flavor is present and provider is None (default), this switch to a 'recycle only' behavior, that is only worker deployed by other people or in other contexts that are currently idle can be recruited. This is particularly adapted when using the protofilters introduced in v1.2.3 version.
+
+Several minor bugs were fixed.
+
+
 # v1.2.3 (2024-08-17)
 
 This is a somehow important reworking of v1.2.2 which introduces dynamic management of flavors, that is maintain and update the worker instance size list, including availability directly querying providers APIs. This new feature is fully described in the documentation under the term `protofilters`. As a short example, instead of specifying `b3-128` (a well known OVH instance), you may say `auto:cpu>=32:ram>=128:disk>=400` which will find the best available instance sastisfying these criterias. This will enable the deploy mechanism (whereas `scitq-manage worker deploy`, `scitq.lib.recruiter_create` or `scitq.workflow.Workflow`) to pick the next best alternative if you choose another provider or if your OVH preferred region is depleted of that specific instance.
