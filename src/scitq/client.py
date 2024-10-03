@@ -14,7 +14,7 @@ import psutil
 import platform
 import queue
 import tempfile
-from .fetch import get,put,pathjoin, info, FetchError, UnsupportedError
+from .fetch import get,put,pathjoin, info, FetchError, UnsupportedError, list_content
 import traceback
 import shutil
 import subprocess
@@ -217,11 +217,14 @@ def _get(data, folder, data_info=None, timeout=None, execution_queue=None):
     if timeout is None:
         if data_info is None:
             try:
-                data_info = info(data)
+                data_size = sum([item.size for item in list_content(data)])
             except:
+                log.exception(f'Could not estimate data size for {data}')
                 timeout = DOWNLOAD_TIMEOUT_NO_INFO
+        else:
+            data_size=data_info.size
         if timeout is None:                
-            timeout = math.ceil(data_info.size / 1024**3) * DOWNLOAD_TIMEOUT_SEC_PER_GB
+            timeout = math.ceil(data_size / 1024**3) * DOWNLOAD_TIMEOUT_SEC_PER_GB
     p = PropagatingProcess(target=get, args=[data,folder])
     p.start()
     start_time = time()
