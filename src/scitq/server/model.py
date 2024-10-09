@@ -1,6 +1,6 @@
 from datetime import datetime
 import json as json_module
-from sqlalchemy import DDL, event, func, delete, select, or_, and_
+from sqlalchemy import DDL, event, func, delete, select, or_, and_, tuple_
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy import func
 
@@ -544,6 +544,18 @@ def find_remaining_quotas(session):
                 .group_by(Worker.provider, Worker.region):
             if (provider,region) in quotas:
                 quotas[(provider,region)]-=cpus
+        create_jobs=list(map(lambda x: x[0],session.query(Job.args).select_from(Job).filter(Job.action=='worker_create')))
+        if create_jobs:
+            flavors=[]
+            for job_args in create_jobs:
+                if (job_args['flavor'],job_args['provider']) not in flavors:
+                    flavors.append((job_args['flavor'],job_args['provider']))
+            flavors_cpu = { (name, provider):cpu for name, provider, cpu in
+                session.query(Flavor.name, Flavor.provider, Flavor.cpu).select_from(Flavor).filter(
+                    tuple_(Flavor.name, Flavor.provider).in_(flavors))
+            }
+            for job_args in create_jobs:
+                quotas[(job_args['provider'],job_args['region'])]-=flavors_cpu.get((job_args['flavor'],job_args['provider']),0)
     return quotas    
 
 def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=None, 

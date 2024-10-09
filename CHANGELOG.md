@@ -1,5 +1,12 @@
 <!-- CHANGELOG SPLIT MARKER -->
 
+# v1.2.5 (2024-10-09)
+
+This is a quick fix for v1.2.4, that makes workers deploy more robust:
+- recruiters using `auto:...` syntax (protofilters) are more dynamically evaluated which should avoid deployment failures when a single recruitment depletes a region from its instance quota (the previous code had an incorrect method of refreshing the quotas, the new code is a lot more generic and take account of other users concurrent deployments): this impacts in cascade scitq.workflow.Workflow which should now have a much better recruitment strategy.
+- notably worker deploy should fail less because of ssh timeout (which was a not so common defect)
+
+
 # v1.2.4 (2024-10-02)
 
 This is a minor update of v1.2.3, with a series of minor but convenient enhancements:

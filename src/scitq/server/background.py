@@ -536,34 +536,35 @@ we already have {workers} workers')
                         else:
                             worker_flavor=recruiter.worker_flavor
                         worker_to_find=nb_workers
-                        flavor_list=list(map(to_obj,find_flavor(session, provider=worker_provider, region=worker_region, 
-                                                            flavor=worker_flavor, protofilters=protofilters, limit=None)))
-                        flavor_remaining_availability={(flavor.name,flavor.provider,flavor.region):flavor.available for flavor in flavor_list}
-                        while worker_to_find>0 and flavor_list:
-                            current_flavor=flavor_list[0]
-                            if flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)] is None or \
-                               flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]<=0:
-                                flavor_list.pop(0)
+                        
+                        while worker_to_find>0:
+                            flavor_list=find_flavor(session, provider=worker_provider, region=worker_region, 
+                                                            flavor=worker_flavor, protofilters=protofilters, limit=None)
+                            for current_flavor in flavor_list:
+                                if current_flavor['available']>0:
+                                    break
                             else:
-                                flavor_remaining_availability[(current_flavor.name,current_flavor.provider,current_flavor.region)]-=1
-                                worker_to_find-=1
-                                log.warning(f'-> Deploying one worker from {current_flavor.provider},{current_flavor.region} : {current_flavor.name}')
-                                session.add(
-                                    Job(target='', 
-                                        action='worker_create', 
-                                        args={
-                                            'concurrency': recruiter.worker_concurrency, 
-                                            'prefetch': recruiter.worker_prefetch,
-                                            'flavor': current_flavor.name,
-                                            'region': current_flavor.region,
-                                            'provider': current_flavor.provider,
-                                            'batch': recruiter.batch
-                                        }
-                                    )
+                                break
+                            worker_to_find-=1
+                            current_flavor=to_obj(current_flavor)
+                            log.warning(f'-> Deploying one worker from {current_flavor.provider},{current_flavor.region} : {current_flavor.name}')
+                            session.add(
+                                Job(target='', 
+                                    action='worker_create', 
+                                    args={
+                                        'concurrency': recruiter.worker_concurrency, 
+                                        'prefetch': recruiter.worker_prefetch,
+                                        'flavor': current_flavor.name,
+                                        'region': current_flavor.region,
+                                        'provider': current_flavor.provider,
+                                        'batch': recruiter.batch
+                                    }
                                 )
-                                change = True
+                            )
+                            change = True
                         if worker_to_find>0:
                             log.warning(f'-> Could not find enough available flavors of the right kind, missing {worker_to_find}')
+                            
                                 
 
 

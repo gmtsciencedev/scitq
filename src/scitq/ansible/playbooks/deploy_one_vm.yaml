@@ -45,6 +45,8 @@
           - name: Wait for ssh
             wait_for_connection:
               timeout: 300
+            retries: 3
+            delay: 60
           - name: Gather facts
             setup:
           - include_tasks: add_scratch.yaml            
