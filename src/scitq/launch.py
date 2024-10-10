@@ -22,7 +22,8 @@ def check_unique(variable, value, default_value=None):
 
 def launch(docker, docker_option, uid, gid, 
             command, server, test, name, batch, input, output, resource, 
-            required_task_ids, retry, download_timeout, run_timeout):
+            required_task_ids, retry, download_timeout, run_timeout,
+            use_cache):
     """A launching function for scitq tasks
     """
 
@@ -45,7 +46,7 @@ def launch(docker, docker_option, uid, gid,
         task=s.task_create(command, name=name, batch=batch, container=docker,
             container_options=docker_option, input=input, output=output,
             resource=resource, required_task_ids=required_task_ids,retry=retry,
-            download_timeout=download_timeout, run_timeout=run_timeout)
+            download_timeout=download_timeout, run_timeout=run_timeout, use_cache=use_cache)
         print(f'Task queued with task id: {task["task_id"]}')
 
 def command_join(command_list):
@@ -72,6 +73,7 @@ def main():
     retry = None
     run_timeout = None
     download_timeout = None
+    use_cache = False
     try:
         while True:
             if len(argv)==0 or argv[0] in ['-h','--help']:
@@ -170,6 +172,9 @@ def main():
                 if len(argv)==0:
                     raise SyntaxError(f'{option} requires one argument: DOWNLOADTIMEOUT, an integer in seconds')
                 download_timeout = int(argv.pop(0))    
+            elif argv[0]=='--use-cache':
+                option = argv.pop(0)
+                use_cache=True
             elif argv[0]=='--':
                 argv.pop(0)
                 command = command_join(argv)
@@ -190,7 +195,8 @@ def main():
             command=command, server=server, test=test, name=name, batch=batch,
             input=input, output=output, resource=resource, 
             required_task_ids=required_task_ids, retry=retry,
-            download_timeout=download_timeout, run_timeout=run_timeout)
+            download_timeout=download_timeout, run_timeout=run_timeout, 
+            use_cache=use_cache)
     except SyntaxError as e:
         if e.args[0]!='help':
             print('Syntax error : {}'.format(e.args[0]), file=sys.stderr)

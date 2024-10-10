@@ -3,11 +3,14 @@ import json as json_module
 from sqlalchemy import DDL, event, func, delete, select, or_, and_, tuple_
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy import func
+import hashlib
+import os
 
 from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_ACTION, EVICTION_COST_MARGIN, PREFERRED_REGIONS
 from .db import db
 from ..util import to_dict, validate_protofilter, protofilter_syntax, PROTOFILTER_SEPARATOR, is_like, has_tag
 from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
+from ..fetch import list_content, info
 
 import logging as log
 
@@ -34,12 +37,13 @@ class Task(db.Model):
     status_date = db.Column(db.DateTime)
     download_timeout = db.Column(db.Integer, nullable=True)
     run_timeout = db.Column(db.Integer, nullable=True)
+    use_cache = db.Column(db.Boolean, default=False)
 
     def __init__(self, command, name=None, status='pending', batch=None, 
                     input=None, output=None, container=None, 
                     container_options=None, resource=None,
                     download_timeout=None, run_timeout=None,
-                    retry=None):
+                    retry=None, use_cache=False):
         self.name = name
         self.command = command
         self.status = status
@@ -57,6 +61,7 @@ class Task(db.Model):
         self.retry = retry
         self.download_timeout = download_timeout
         self.run_timeout = run_timeout
+        self.use_cache = use_cache
 
 
 class Worker(db.Model):
@@ -128,11 +133,19 @@ class Execution(db.Model):
     pid = db.Column(db.String)
     output_files = db.Column(db.String, nullable=True)
     command = db.Column(db.String, nullable=True)
+    container = db.Column(db.String, nullable=True)
+    container_options = db.Column(db.String, nullable=True)
+    input = db.Column(db.String, nullable=True)
+    output_folder = db.Column(db.String, nullable=True)
+    resource = db.Column(db.String, nullable=True)
+    input_hash = db.Column(db.String, index=True, nullable=True)
+    output_hash = db.Column(db.String, nullable=True)
     latest = db.Column(db.Boolean, default=True)
-    
+
 
     def __init__(self, worker_id, task_id, status='pending', pid=None, 
-                    return_code=None, command=None):
+                    return_code=None, command=None, container=None, container_options=None,
+                    input=None, output_folder=None, resource=None):
         self.worker_id = worker_id
         self.task_id = task_id
         self.status = status
@@ -141,6 +154,44 @@ class Execution(db.Model):
         self.creation_date = datetime.utcnow()
         self.modification_date = self.creation_date
         self.command = command
+        self.container = container
+        self.container_options = container_options
+        self.input = input
+        self.output_folder = output_folder
+        self.resource = resource
+
+    def get_input_hash(self):
+        """Return an MD5 that guarrantees that this is a unique Experience"""
+        h = hashlib.md5(f"""command:{self.command}
+container:{self.container}
+container_options:{self.container_options}
+""".encode("utf-8"))
+        if self.input:
+            inputs = []
+            for data in self.input.split(' '):
+                inputs.extends(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
+            h.update(f'input:{",".join(inputs)}\n'.encode('utf-8'))
+        if self.resource:
+            resources = []
+            for data in self.resource.split(' '):
+                if '|' in data:
+                    data=data.split('|')[0]
+                resources.extends(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
+            h.update(f'resource:{",".join(resources)}'.encode('utf-8'))
+        return h.hexdigest()
+
+    def get_output_hash(self):
+        """Return an MD5 that guarrantees that the output of the step is untouched"""
+        output_files=[] if self.output_files is None else [
+                f'{of}:{info(os.path.join(self.output_folder, of), md5=True).md5}'
+                    for of in self.output_files.split(' ')
+            ]
+        h = hashlib.md5(f'output:{",".join(output_files)}'.encode('utf-8'))
+        return h.hexdigest()
+    
+    def check_output(self):
+        """Return True if output_hash is unchanged"""
+        return self.get_output_hash()==self.output_hash
 
 trigger_latest_sqlite = DDL("""
         CREATE TRIGGER is_latest BEFORE INSERT ON execution FOR EACH ROW 

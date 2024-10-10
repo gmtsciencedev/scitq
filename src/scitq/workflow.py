@@ -7,8 +7,8 @@ from signal import SIGTSTP, SIGCONT
 import urwid
 from threading import Event,Thread
 import logging as log
+from .constants import DEFAULT_SERVER
 
-DEFAULT_SERVER='127.0.0.1'
 DEFAULT_REFRESH=30
 TASK_STATUS=['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
 WORKER_STATUS=['paused','running','offline','failed']
@@ -187,7 +187,7 @@ class Workflow:
                  provider: Optional[str] =None, region: Optional[str] ='auto',
                  flavor: Optional[str] =None, shell=False, max_workflow_workers=None, 
                  retry=None, rounds=None, prefetch = None, container=None, container_options='', 
-                 download_timeout=None, run_timeout=None):
+                 download_timeout=None, run_timeout=None, use_cache=False):
         """Workflow init:
         Mandatory:
         - name [str]: name of workflow
@@ -211,6 +211,7 @@ class Workflow:
         self.container = container
         self.download_timeout = download_timeout
         self.run_timeout = run_timeout
+        self.use_cache = use_cache
         self.__steps__ = []
         self.__batch__ = {}
         self.__input__ = None
@@ -224,7 +225,7 @@ class Workflow:
     def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
              tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
              required_tasks=None, container=Unset, container_options=Unset, retry=Unset,
-             download_timeout=Unset, run_timeout=Unset):
+             download_timeout=Unset, run_timeout=Unset, use_cache=Unset):
         """Add a step to workflow
         - batch: batch for this step (all the different tasks and workers for this step will be grouped into that batch)
                 NB batch is mandatory and is defined by at least concurrency and flavor (either at workflow or step level) 
@@ -238,6 +239,7 @@ class Workflow:
         region = coalesce(region, self.region)
         flavor = coalesce(flavor, self.flavor)
         rounds = coalesce(rounds, self.rounds)
+        use_cache = coalesce(use_cache, self.use_cache)
         maximum_workers = coalesce(maximum_workers, self.max_step_workers)
         if maximum_workers is None and batch not in self.__batch__:
             raise WorkflowException(f'maximum_workers is mandatory if workflow.max_step_workers is unset and batch {batch} is not already defined')
@@ -307,6 +309,7 @@ class Workflow:
             required_task_ids = None if required_tasks is None \
                 else [t if type(t)==int else t.task_id for t in required_tasks] if type(required_tasks)==list \
                 else [required_tasks] if type(required_tasks)==int else [required_tasks.task_id],
+            use_cache=use_cache
         )
 
 

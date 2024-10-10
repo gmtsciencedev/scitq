@@ -8,8 +8,9 @@ import queue
 from argparse import Namespace
 import logging as log
 import time
+import os
 from .util import filter_none as _clean, validate_protofilter
-from .constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, TASK_STATUS_ID_REVERSE, TASK_STATUS
+from .constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, TASK_STATUS_ID_REVERSE, TASK_STATUS, DEFAULT_SERVER
 
 PUT_TIMEOUT = 30
 GET_TIMEOUT = 150
@@ -155,7 +156,7 @@ class Server:
         'object', dict are passed to Namespace to produce real Python objects.
     """
 
-    def __init__(self, ip, style='dict', asynchronous=True, 
+    def __init__(self, ip=os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), style='dict', asynchronous=True, 
             put_timeout=PUT_TIMEOUT, get_timeout=GET_TIMEOUT):
         """initialise the object with IP or name of the server
         
@@ -166,6 +167,7 @@ class Server:
         - asynchronous: if True (default) then put and post operations are 
             asynchronous, if False then all operations will wait (forever) for 
             the server to come back. get operations are always synchronous"""
+        
         self.ip=ip
         self.url=f'http://{ip}:5000'
         self.style=style
@@ -388,13 +390,14 @@ class Server:
 
     def execution_update(self, id, status=None, pid=None, return_code=None, 
                         output=None, error=None, output_files=None, command=None,
+                        freeze=False,
                         asynchronous=True):
         """Update a specific execution, return the updated execution
         """
         return self.put(f'/executions/{id}', data=_clean(
             {'status':status, 'pid':pid, 'return_code':return_code, 
                 'output':output, 'error':error, 'output_files':output_files, 
-                'command':command}
+                'command':command, 'freeze':freeze}
         ), asynchronous=asynchronous)
 
     def execution_output_write(self, id, output, asynchronous=True):
@@ -425,7 +428,7 @@ class Server:
     def task_create(self, command, name=None, status=None,batch=None, 
             input=None, output=None, container=None, container_options='',
             resource=None, required_task_ids=None, shell=False, retry=None,
-            download_timeout=None, run_timeout=None,
+            download_timeout=None, run_timeout=None, use_cache=None,
             asynchronous=True):
         """Create a new task, return the newly created task
         """
@@ -446,12 +449,13 @@ class Server:
             'container_options':container_options, 'resource':resource, 
             'required_task_ids': required_task_ids, 'retry': retry,
             'download_timeout':download_timeout, 'run_timeout':run_timeout,
+            'use_cache':use_cache,
         }), asynchronous=asynchronous)
 
     def task_update(self, id, command=None, name=None, status=None, batch=None, 
             input=None, output=None, container=None, container_options=None,
             resource=None, required_task_ids=None, retry=None, 
-            download_timeout=None, run_timeout=None,
+            download_timeout=None, run_timeout=None, use_cache=None,
             asynchronous=True):
         """Update a specific execution, return the updated execution
         """
@@ -465,12 +469,18 @@ class Server:
             'container_options':container_options, 'resource':resource, 
             'required_task_ids': required_task_ids, 'retry': retry,
             'download_timeout':download_timeout, 'run_timeout':run_timeout,
+            'use_cache':use_cache,
         }), asynchronous=asynchronous)
 
     def task_get(self, id):
         """get a specific task with task_id equal to id
         return the task"""
         return self.get(f'/tasks/{id}')
+    
+    def task_freeze(self, id, execution_id):
+        """get a specific task with task_id equal to id - and copy values to execution execution_id
+        return the task"""
+        return self.get(f'/tasks/{id}/freeze/{execution_id}')
 
     def tasks(self, **args):
         """Get a list of all tasks

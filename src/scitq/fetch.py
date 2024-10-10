@@ -554,7 +554,7 @@ def ftp_put(source, destination):
             ftp.storbinary(f"STOR {uri_match['path']}", local_file.read)
 
 @retry_if_it_fails(RETRY_TIME)
-def ftp_info(uri):
+def ftp_info(uri, md5=False):
     """FTP info: get some information on a FTP object"""
     log.info(f'FTP get info for {uri}')
     uri_match = FTP_REGEXP.match(uri).groupdict()
@@ -576,7 +576,8 @@ def ftp_info(uri):
                 '%b %d %Y').replace(tzinfo=pytz.utc)
             return argparse.Namespace(size=obj[FTP_DIR_SIZE_POSITION],
                                     creation_date=obj_date, 
-                                    modification_date=obj_date)
+                                    modification_date=obj_date,
+                                    md5=None)
         else:
             raise FetchError(f'{uri} was not found')
 
@@ -919,7 +920,7 @@ def file_put(source, destination):
         raise FetchError(f"Local URL did not match file://<path> pattern {destination}")
 
 @retry_if_it_fails(RETRY_TIME)
-def file_info(uri):
+def file_info(uri, md5=False):
     """Same as above except that source is this time a plain local path
     and destination is in the form file://... As above just some plain
     syntaxic sugar above shutil.copyfile """
@@ -930,7 +931,8 @@ def file_info(uri):
         stat = os.stat(complete_path)
         return argparse.Namespace(size=stat.st_size, 
                                   creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
-                                  modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc))
+                                  modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc),
+                                  md5=get_md5(complete_path) if md5 else None)
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
@@ -1150,7 +1152,7 @@ def get_file_uri(uri):
     else:
         return None
 
-def info(uri):
+def info(uri, md5=False):
     """Return an info object from a URI, which should contains at least creation_date, modification_date and size
     WARNING: with s3 or ftp URI, creation_date and modification_date are the same."""
     m = GENERIC_REGEXP.match(uri)
@@ -1162,13 +1164,13 @@ def info(uri):
             # get rid of protocol options like @aria2
             proto = proto.split('@')[0]
         if proto=='s3':
-            return s3_info(source)
+            return s3_info(source, md5=md5)
         elif proto=='azure':
-            return AzureClient().info(source) 
+            return AzureClient().info(source, md5=md5) 
         elif proto=='ftp':
-            return ftp_info(source)
+            return ftp_info(source,md5=md5)
         elif proto=='file':
-            return file_info(source) 
+            return file_info(source, md5=md5) 
         #elif m['proto']=='fasp':
         #    fasp_get(source, destination)
         #elif m['proto']=='run+fastq':

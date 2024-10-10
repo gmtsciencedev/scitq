@@ -86,9 +86,9 @@ def background(app):
 
 
             task_list = list(session.query(Task).filter(
-                    Task.status=='pending').with_entities(Task.task_id, Task.batch))
+                    Task.status=='pending').with_entities(Task.task_id, Task.batch, Task.use_cache))
             if task_list:
-                task_attributions = False
+
                 worker_list = list(session.query(Worker).filter(
                             Worker.status=='running').with_entities(
                             Worker.worker_id,Worker.batch,Worker.concurrency,Worker.prefetch,Worker.task_properties))
@@ -108,8 +108,35 @@ def background(app):
                         execution_per_worker[worker_id] += weight
                     else:
                         execution_per_worker[worker_id] += 1
-                
+
+                changed = False             
                 for task in task_list:
+                    if task.use_cache:
+                        completed_by_cached=False
+                        complete_task = session.query(Task).get(task.task_id)
+                        execution = Execution(worker_id=None, task_id=task.task_id, 
+                                              command=complete_task.command, container=complete_task.container,
+                                              container_options=complete_task.container_options, input=complete_task.input,
+                                              output_folder=complete_task.output, resource=complete_task.resource)
+                        hash = execution.get_input_hash()
+                        for other_execution in session.query(Execution).filter(Execution.input_hash==hash, Execution.status=='succeeded'):
+                            if other_execution.output_folder==execution.output_folder and other_execution.check_output():
+                                log.warning(f'Using cache to execute {task.task_id}')
+                                execution.status=complete_task.status='succeeded'
+                                execution.creation_date=execution.modification_date=complete_task.modification_date=complete_task.status_date=datetime.utcnow() 
+                                execution.output_files=other_execution.output_files
+                                execution.output=f'Cached from execution {other_execution.execution_id}'
+                                session.add(execution)
+                                completed_by_cached=True
+                                changed=True
+                                break
+                            elif other_execution.output_folder!=execution.output_folder:
+                                log.warning(f'Cannot cache task with different Task.output folder for now')
+                            else:
+                                log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: output seems corrupted')
+                        if completed_by_cached:
+                            continue
+
                     for worker in worker_list:
                         if worker.batch != task.batch:
                             continue
@@ -121,9 +148,9 @@ def background(app):
                             )
                             execution_per_worker[worker.worker_id] = execution_per_worker.get(worker.worker_id,0)+1
                             log.info(f'Execution of task {task.task_id} proposed to worker {worker.worker_id}')
-                            task_attributions = True
+                            changed = True
                             break
-                if task_attributions:
+                if changed:
                     session.commit()
             now = datetime.utcnow()
 

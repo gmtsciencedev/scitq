@@ -1,7 +1,7 @@
 from flask_restx import Api, Resource, fields
 from flask import jsonify
 from datetime import datetime
-from sqlalchemy import and_, delete, select, func
+from sqlalchemy import and_, delete, select, func, update
 from sqlalchemy.sql.expression import label
 import logging as log
 import json as json_module
@@ -198,6 +198,8 @@ task = api.model('Task', {
         description="If set, the task will timeout and fail if the download time exceeds this number in seconds"),
     'run_timeout': fields.Integer(required=False,
         description="If set, the task will timeout and fail if the run time exceeds this number in seconds"),
+    'use_cache': fields.Boolean(required=False,
+        description="If set, scitq will try to find an identical task already done and reuse the output if possible"),
 })
 
 task_filter = api.model('TaskFilter', {
@@ -280,6 +282,35 @@ class WorkerObject(Resource):
     def delete(self, id):
         """Delete a task"""
         return task_dao.delete(id)
+
+@ns.route("/<id>/freeze/<execution_id>")
+@ns.param("id", "The task identifier")
+@ns.param("execution_id", "The execution identifier")
+@ns.response(404, "Task not found")
+class WorkerObjectFreeze(WorkerObject):
+    @ns.doc("get_task_and_freeze_execution")
+    @ns.marshal_with(task)
+    def get(self, id, execution_id):
+        """Fetch a task given its identifier"""
+        task = db.session.query(Task).get(id)
+        execution = db.session.query(Execution).get(execution_id)
+
+        if execution.task_id!=task.task_id:
+            api.abort(404, f"Execution {execution_id} is not linked to Task {id}")
+
+        for obj,obj_id in [(task,id), (execution,execution_id)]:
+            if obj is None:
+                api.abort(404, "{} {} doesn't exist".format(
+                        self.obj.__class__.__name__,obj_id))
+        
+        for attr in ['command','container','container_options','output','input','resource']:
+            setattr(execution, 'output_folder' if attr=='output' else attr, 
+                    getattr(task, attr))
+
+        execution.input_hash = execution.get_input_hash()
+
+        db.session.commit()
+        return task
 
 ns = api.namespace('workers', description='WORKER operations')
 
@@ -543,8 +574,12 @@ class ExecutionDAO(BaseDAO):
     def update(self, id, data):
         execution = self.get(id)
         modified = False
+        freeze=False
         for attr, value in data.items():
-            if hasattr(execution,attr): 
+            if attr=='freeze':
+                if value:
+                    freeze=True
+            elif hasattr(execution,attr): 
                 if getattr(execution,attr)!=value:
                     if attr=='status':
                         try:
@@ -557,7 +592,10 @@ class ExecutionDAO(BaseDAO):
                         modified = True
             else:
                 raise Exception('Error: {} has no attribute {}'.format(
-                    execution.__name__, attr))
+                    execution.__class__.__name__, attr))
+        if freeze and execution.status=='succeeded':
+            execution.output_hash = execution.get_output_hash()
+            modified=True
         if modified:
             execution.modification_date = datetime.utcnow()
             db.session.commit()
@@ -640,6 +678,7 @@ execution = api.model('Execution', {
     'error': fields.String(readonly=False, required=False, description='The standard error of the execution (if any)'),
     'output_files': fields.String(readonly=True, description='A list of output files transmitted (if any)'),
     'command': fields.String(required=False, description='The command that was really launched for this execution (it case Task.execution is modified)'),
+    'freeze': fields.Boolean(required=False, description='Freeze execution to compute output hash'),
     'latest': fields.Boolean(readonly=True, description='Latest or current execution for the related task')
 })
 

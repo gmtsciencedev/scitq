@@ -373,9 +373,9 @@ class Executor:
                             status='succeeded' if self.status==STATUS_SUCCEEDED else 'failed',
                             output=output,
                             error=error,
-                            command=self.command,
                             return_code=return_code,
-                            output_files=output_files
+                            output_files=output_files,
+                            freeze=self.status==STATUS_SUCCEEDED
                         )
                         self.process = None
 
@@ -418,14 +418,13 @@ class Executor:
                 #self.run_slots.value -= 1
                 #self.status = STATUS_RUNNING
                 #self.run_slots_semaphore.release()
-                self.s.execution_update(execution_id, pid=self.process.pid, status='running',
-                                        command=self.command)
+                self.s.execution_update(execution_id, pid=self.process.pid, status='running')
             except Exception as e:
                 self.status = STATUS_FAILED
                 #self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
-                self.s.execution_update(execution_id, status='failed', command=self.command)
+                self.s.execution_update(execution_id, status='failed')
         else:
             # this is the safe way to keep docker process attached while still getting its container id
             try:
@@ -447,8 +446,7 @@ class Executor:
                 #self.run_slots.value -= 1
                 #self.run_slots_semaphore.release()
                 if not self.recover:
-                    self.s.execution_update(execution_id, pid=self.container_id, 
-                                            command=self.command, status='running')
+                    self.s.execution_update(execution_id, pid=self.container_id, status='running')
             except subprocess.CalledProcessError as e:
                 log.warning('Could not attach docker process')
                 #self.run_slots_semaphore.release()
@@ -461,7 +459,7 @@ class Executor:
                     log.error('Finally there was no clue why the execution failed')
                     self.status = STATUS_FAILED
                     self.s.execution_error_write(execution_id,e.stderr.decode('utf-8'))
-                    self.s.execution_update(execution_id, status='failed', command=self.command)
+                    self.s.execution_update(execution_id, status='failed')
 
             except Exception as e:
                 log.error('Could not launch docker and attach it for some reason')
@@ -470,7 +468,7 @@ class Executor:
                 #self.run_slots_semaphore.release()
                 self.s.execution_error_write(execution_id,
                         traceback.format_exc())
-                self.s.execution_update(execution_id, status='failed', command=self.command)
+                self.s.execution_update(execution_id, status='failed')
 
                 
 
@@ -781,12 +779,14 @@ class Executor:
                 self.status = STATUS_RUNNING
                 log.warning(f'Execution {self.execution_id} is now running')
 
-                task = self.s.task_get(self.task_id)
+                task = self.s.task_freeze(self.task_id, self.execution_id)
 
                 # let check our command
                 self.command = task.command
                 self.output = task.output
                 self.container = task.container
+                self.container_options = task.container_options
+                
 
             except HTTPException:
                 # the task was deleted so we bail out
@@ -879,7 +879,8 @@ class Executor:
                     else:
                         self.s.execution_update(self.execution_id, 
                             status='succeeded' if returncode==0 else 'failed', 
-                            return_code=returncode, output_files=output_files)
+                            return_code=returncode, output_files=output_files,
+                            freeze=returncode==0)
                     
                         if returncode!=0:
                             log.error(f'... task failed with error code {returncode}')
