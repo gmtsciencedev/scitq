@@ -169,7 +169,7 @@ container_options:{self.container_options}
         if self.input:
             inputs = []
             for data in self.input.split(' '):
-                inputs.extends(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
+                inputs.extend(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
             h.update(f'input:{",".join(inputs)}\n'.encode('utf-8'))
         if self.resource:
             resources = []
@@ -182,10 +182,12 @@ container_options:{self.container_options}
 
     def get_output_hash(self):
         """Return an MD5 that guarrantees that the output of the step is untouched"""
-        output_files=[] if self.output_files is None else [
-                f'{of}:{info(os.path.join(self.output_folder, of), md5=True).md5}'
-                    for of in self.output_files.split(' ')
-            ]
+        output_files=[] 
+        if self.output_files:
+            for of in self.output_files.split(' '):
+                of_info=info(os.path.join(self.output_folder, of), md5=True)
+                md5=None if of_info is None else of_info.md5
+                output_files.append(f'{of}:{md5}')
         h = hashlib.md5(f'output:{",".join(output_files)}'.encode('utf-8'))
         return h.hexdigest()
     

@@ -225,6 +225,8 @@ def _get(data, folder, data_info=None, timeout=None, execution_queue=None):
             data_size=data_info.size
         if timeout is None:                
             timeout = math.ceil(data_size / 1024**3) * DOWNLOAD_TIMEOUT_SEC_PER_GB
+    if timeout < DOWNLOAD_TIMEOUT_SEC_PER_GB:
+        timeout = DOWNLOAD_TIMEOUT_SEC_PER_GB
     p = PropagatingProcess(target=get, args=[data,folder])
     p.start()
     start_time = time()
@@ -879,7 +881,8 @@ class Executor:
                     else:
                         self.s.execution_update(self.execution_id, 
                             status='succeeded' if returncode==0 else 'failed', 
-                            return_code=returncode, output_files=output_files,
+                            return_code=returncode, 
+                            output_files=' '.join([os.path.relpath(of, self.output_dir) for of in output_files.split(' ')]),
                             freeze=returncode==0)
                     
                         if returncode!=0:
