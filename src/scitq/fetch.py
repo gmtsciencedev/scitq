@@ -67,6 +67,9 @@ class FetchError(Exception):
 class UnsupportedError(FetchError):
     pass
 
+class FetchErrorNoRepeat(FetchError):
+    pass
+
 def pathjoin(*items):
     """Like os.path.join but always with '/' even with Windows and no double '/'
         in the middle of the path 
@@ -95,6 +98,8 @@ def retry_if_it_fails(n):
                 try:
                     retval = function(*args, **kwargs)
                     break
+                except FetchErrorNoRepeat:
+                    raise
                 except Exception:
                     log.exception('Something went bad')
                     iteration += 1
@@ -205,7 +210,7 @@ def s3_get(source, destination):
                     pass
         except botocore.exceptions.ClientError as error:
             if 'Not Found' in error.response.get('Error',{}).get('Message',None):
-                raise FetchError(f'{source} was not found') from error
+                raise FetchErrorNoRepeat(f'{source} was not found') from error
             else:
                 raise
         
@@ -251,7 +256,7 @@ def s3_info(uri, md5=False):
                                   modification_date=object.last_modified,
                                   md5=None if not md5 else metadata.get('md5',None))
     except StopIteration:
-        raise FetchError(f'{uri} was not found')
+        raise FetchErrorNoRepeat(f'{uri} was not found')
 
 def _s3_add_md5(bucket_name, objects):
     """A small wrapper to parallelize metadata retrieval"""
@@ -416,7 +421,7 @@ class AzureClient:
                     except:
                         pass
             except azure.core.exceptions.ResourceNotFoundError as error:
-                raise FetchError(f'{source} was not found') from error
+                raise FetchErrorNoRepeat(f'{source} was not found') from error
             
             if failed:
                 raise FetchError(f"These objects could not be downloaded: {','.join([obj.key for obj in failed_objects])}")
@@ -485,7 +490,7 @@ class AzureClient:
                                     modification_date=object.last_modified,
                                     md5=None if not md5 else bytes_to_hex(object.content_settings.content_md5))
         except StopIteration:
-            raise FetchError(f'{uri} was not found')
+            raise FetchErrorNoRepeat(f'{uri} was not found')
 
     def list(self,uri, no_rec=False, md5=False):
         """List the content of an azure storage folder  azure://container/path
@@ -579,7 +584,7 @@ def ftp_info(uri, md5=False):
                                     modification_date=obj_date,
                                     md5=None)
         else:
-            raise FetchError(f'{uri} was not found')
+            raise FetchErrorNoRepeat(f'{uri} was not found')
 
 def ftp_list(uri, no_rec=False):
     """list recursively the content of a FTP folder

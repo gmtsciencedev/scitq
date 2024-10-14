@@ -119,9 +119,21 @@ def background(app):
                                               container_options=complete_task.container_options, input=complete_task.input,
                                               output_folder=complete_task.output, resource=complete_task.resource)
                         hash = execution.get_input_hash()
-                        for other_execution in session.query(Execution).filter(Execution.input_hash==hash, Execution.status=='succeeded'):
-                            if other_execution.output_folder==execution.output_folder and other_execution.check_output():
-                                log.warning(f'Using cache to execute {task.task_id}')
+                        for other_execution in session.query(Execution).filter(
+                                Execution.input_hash==hash, Execution.status=='succeeded', Execution.output_hash!=None
+                                ).order_by(Execution.output_folder!=execution.output_folder):
+                            if other_execution.output_folder!=execution.output_folder:
+                                log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: cannot use a task with different Task.output folder for now')
+                                continue
+                            elif not other_execution.check_output():
+                                log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: output seems corrupted')
+                                # this will prevent querying output files for nothing
+                                other_execution.output_hash=None
+                                session.commit()
+                                changed=False
+                                continue
+                            else:
+                                log.warning(f'Using cache of {other_execution.execution_id} to execute {task.task_id}')
                                 execution.status=complete_task.status='succeeded'
                                 execution.creation_date=execution.modification_date=complete_task.modification_date=complete_task.status_date=datetime.utcnow() 
                                 execution.output_files=other_execution.output_files
@@ -130,10 +142,7 @@ def background(app):
                                 completed_by_cached=True
                                 changed=True
                                 break
-                            elif other_execution.output_folder!=execution.output_folder:
-                                log.warning(f'Cannot cache task with different Task.output folder for now')
-                            else:
-                                log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: output seems corrupted')
+                                
                         if completed_by_cached:
                             continue
 

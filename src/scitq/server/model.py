@@ -10,7 +10,7 @@ from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_AC
 from .db import db
 from ..util import to_dict, validate_protofilter, protofilter_syntax, PROTOFILTER_SEPARATOR, is_like, has_tag
 from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
-from ..fetch import list_content, info
+from ..fetch import list_content, info, FetchError
 
 import logging as log
 
@@ -182,19 +182,25 @@ container_options:{self.container_options}
 
     def get_output_hash(self):
         """Return an MD5 that guarrantees that the output of the step is untouched"""
-        output_files=[] 
-        if self.output_files:
-            for of in self.output_files.split(' '):
-                of_info=info(os.path.join(self.output_folder, of), md5=True)
-                md5=None if of_info is None else of_info.md5
-                output_files.append(f'{of}:{md5}')
-        h = hashlib.md5(f'output:{",".join(output_files)}'.encode('utf-8'))
-        return h.hexdigest()
+        output_files=[]
+        try: 
+            if self.output_files:
+                for of in self.output_files.split(' '):
+                    of_info=info(os.path.join(self.output_folder, of), md5=True)
+                    md5=None if of_info is None else of_info.md5
+                    output_files.append(f'{of}:{md5}')
+            h = hashlib.md5(f'output:{",".join(output_files)}'.encode('utf-8'))
+            return h.hexdigest()
+        except FetchError:
+            return None
     
     def check_output(self):
         """Return True if output_hash is unchanged"""
-        return self.get_output_hash()==self.output_hash
-
+        if self.output_hash is None:
+            return False
+        else:
+            return self.output_hash==self.get_output_hash()
+ 
 trigger_latest_sqlite = DDL("""
         CREATE TRIGGER is_latest BEFORE INSERT ON execution FOR EACH ROW 
         BEGIN
