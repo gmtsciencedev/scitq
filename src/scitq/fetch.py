@@ -27,6 +27,8 @@ import hashlib
 import multiprocessing
 import json
 import tempfile
+from rclone_python import rclone
+import sys
 
 # how many time do we retry
 RETRY_TIME = 3
@@ -64,11 +66,13 @@ MAX_PARALLEL_SYNC = 10
 class FetchError(Exception):
     pass
 
-class UnsupportedError(FetchError):
-    pass
 
 class FetchErrorNoRepeat(FetchError):
     pass
+
+class UnsupportedError(FetchErrorNoRepeat):
+    pass
+
 
 def pathjoin(*items):
     """Like os.path.join but always with '/' even with Windows and no double '/'
@@ -522,8 +526,121 @@ class AzureClient:
         container=self.client.get_container_client(uri_match['container'])
         container.delete_blob(uri_match['path'])
 
+def older_python_fromisoformat(d):
+    """This is a script to add minimal support to Z date (eg ISO 8601 strings) that were not supported before 3.11"""
+    if '.' in d:
+        d,ext=d.split('.')
+        if ext.endswith('Z'):
+            d+='+00:00'
+        elif '+' in ext:
+            tz=ext.split('+')[1]
+            d=f"{d}+{tz}"
+    if d.endswith('Z'):
+        d=d.split('.')[0]+'+00:00'
+    
+    return datetime.datetime.fromisoformat(d)
+
+RCLONE_REGEXP=re.compile(r'^(?P<remote>[^:]*)://(?P<path>.*)$')
+
+class RcloneClient:
+    """A small wrapper above rclone client to integrate with scitq"""
+    def __init__(self):
+        """Just check that rclone is there"""
+        self.is_installed=rclone.is_installed()
+        if self.is_installed:
+            self.remotes=[remote[:-1] for remote in rclone.get_remotes()]
+        else:
+            self.remotes=[]
+        if sys.version_info[:2]>=(3,11):
+            self._date = datetime.datetime.fromisoformat
+        else:
+            self._date = older_python_fromisoformat
+
+
+    def _uri(self, uri):
+        m=RCLONE_REGEXP.match(uri)
+        if not m:
+            raise FetchErrorNoRepeat(f'{uri} is not adapted to rclone')
+        m=m.groupdict()
+        return f'{m["remote"]}:{m["path"]}'
+
+    def list(self, uri, no_rec=False, md5=False):
+        if not self.is_installed:
+            raise FetchErrorNoRepeat('rclone is not installed')
+        _uri=self._uri(uri)
+        args=[]
+        if not no_rec:
+            args.extend(['-R','--fast-list'])
+        if md5:
+            args.append('--hash-type MD5')
+        _list=rclone.ls(_uri, args=args,)  
+        only_one_item=len(_list)==1
+        
+        answer=[]
+        for item in _list:
+            rel_name = item['Path']
+            if item['IsDir']:
+                rel_name+='/'
+            name=os.path.join(uri, rel_name)
+
+            if not item['IsDir'] and only_one_item:
+                _,local_name=os.path.split(_uri)
+                if item['Name']==local_name:
+                    # this is an indecision case, impossible to know if it 
+                    # is uri://a/a or uri://a
+                    original_item=rclone.ls(_uri,args=['--stat'])
+                    if not original_item['IsDir']:
+                        name=uri
+                
+            xdate=self._date(item["ModTime"])
+            answer.append(argparse.Namespace(name=name,
+                                rel_name=rel_name,
+                                size=0 if item["IsDir"] else item["Size"],
+                                creation_date=xdate,
+                                modification_date=xdate,
+                                md5=item.get("Hashes",{}).get('md5',None)))
+
+        return answer
+
+    @retry_if_it_fails(RETRY_TIME)
+    def info(self,uri,md5=False):
+        if not self.is_installed:
+            raise FetchErrorNoRepeat('rclone is not installed')
+        try:
+            args=['--stat']
+            if md5:
+                args.append('--hash-type MD5')
+            item=rclone.ls(self._uri(uri),args=args)            
+            xdate=self._date(item["ModTime"])
+
+            return argparse.Namespace(size=0 if item["IsDir"] else item["Size"],
+                                creation_date=xdate,
+                                modification_date=xdate,
+                                md5=item.get("Hashes",{}).get('md5',None))
+        except Exception as e:
+            raise FetchErrorNoRepeat(*e.args)
+    
+    @retry_if_it_fails(RETRY_TIME)
+    def copy(self, source, destination, show_progress=False, args=[]):
+        if not self.is_installed:
+            raise FetchErrorNoRepeat('rclone is not installed')
+        if '://' in destination:
+            destination=self._uri(destination)
+        if '://' in source:
+            source=self._uri(source)
+        if destination.endswith('/'):
+            rclone.copy(source, destination, show_progress=show_progress, args=args)
+        else:
+            rclone.copyto(source, destination, show_progress=show_progress, args=args)
+
+    def has_source(self, source):
+        return source in self.remotes
+
+# work as a singleton
+rclone_client = RcloneClient()
 
 # FTP
+
 
 FTP_REGEXP=re.compile(r'^ftp://(?P<host>[^/]*)/(?P<path>.*)$')
 
@@ -1008,7 +1125,7 @@ def http_get(url, destination):
 
 GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9@+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
 
-def get(uri, destination, parallel=None):
+def get(uri, destination, parallel=None, show_progress=False):
     """General downloader source should start with s3://... or ftp://...
     (source should not end with slash unless you know what you are doing if 
     destination ends with slash it will be completed with source end item)
@@ -1040,13 +1157,13 @@ def get(uri, destination, parallel=None):
         if m['proto'] and '@aria2' in m['proto']:
             source = f"{m['proto'].replace('@aria2','')}://{m['resource']}"
             aria2_get(source, complete_destination)
-        elif m['proto']=='s3':
-            s3_get(source, destination)
-        elif m['proto']=='azure':
-            options = {}
-            if parallel:
-                options['max_parallel']=parallel
-            AzureClient(**options).get(source, destination) 
+        #elif m['proto']=='s3':
+        #    s3_get(source, destination)
+        #elif m['proto']=='azure':
+        #    options = {}
+        #    if parallel:
+        #        options['max_parallel']=parallel
+        #    AzureClient(**options).get(source, destination) 
         elif m['proto']=='ftp':
             ftp_get(source, destination)
         elif m['proto']=='file':
@@ -1070,8 +1187,10 @@ def get(uri, destination, parallel=None):
         elif m['proto'] in ['http','https']:
             http_get(source, destination)
         else:
-            raise FetchError(f"This URI protocol is not supported: {m['proto']}")
-        
+            if rclone_client.has_source(m['proto']):
+                rclone_client.copy(source, destination, show_progress=show_progress)
+            else:
+                raise FetchError(f"This URI protocol is not supported: {m['proto']}")        
         if m['action'] and m['action'].startswith('mv '):
             pass
         elif m['action']=='gunzip':
@@ -1085,7 +1204,7 @@ def get(uri, destination, parallel=None):
     else:
         raise FetchError(f'This URI is malformed: {uri}')
 
-def put(source, uri, parallel=None):
+def put(source, uri, parallel=None, show_progress=False):
     """General uploader destination should start with s3://.... or ftp://...
     (only anonymous ftp is implemented so put is unlikely to work with ftp)
     (source should not end with slash unless you know what you are doing if 
@@ -1100,16 +1219,19 @@ def put(source, uri, parallel=None):
             raise FetchError(f'Action are unsupported when putting in {uri}')
         destination = f"{m['proto']}://{m['resource']}"
         destination = complete_if_ends_with_slash(source, destination)
-        if m['proto']=='s3':
-            s3_put(source, destination)
-        elif m['proto']=='azure':
-            AzureClient().put(source, destination) 
-        elif m['proto']=='ftp':
+        #if m['proto']=='s3':
+        #    s3_put(source, destination)
+        #elif m['proto']=='azure':
+        #    AzureClient().put(source, destination) 
+        if m['proto']=='ftp':
             ftp_put(source, destination)
         elif m['proto']=='file':
             file_put(source, destination)        
         else:
-            raise FetchError(f"This URI proto is not supported: {m['proto']}")
+            if rclone_client.has_source(m['proto']):
+                rclone_client.copy(source, destination, show_progress=show_progress)
+            else:
+                raise FetchError(f"This URI proto is not supported: {m['proto']}")
     else:
         raise FetchError(f'This URI is malformed: {uri}')
 
@@ -1128,9 +1250,9 @@ def delete(uri):
         elif m['proto']=='file':
             file_delete(uri)        
         else:
-            raise FetchError(f"This URI proto is not supported: {m['proto']}")
+            raise FetchErrorNoRepeat(f"This URI proto is not supported: {m['proto']}")
     else:
-        raise FetchError(f'This URI is malformed: {uri}')
+        raise FetchErrorNoRepeat(f'This URI is malformed: {uri}')
 
 
 def check_uri(uri):
@@ -1141,11 +1263,11 @@ def check_uri(uri):
         proto = m['proto']
         if '@' in proto:
             proto=proto.split('@')[0]
-        if proto not in ['ftp','file','s3','azure','run+fastq','run+submitted','http','https']:
-            raise FetchError(f"Unsupported protocol {m['proto']} in URI {uri}")
+        if proto not in ['ftp','file','run+fastq','run+submitted','http','https'] and not rclone_client.has_source(proto):
+            raise FetchErrorNoRepeat(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
-        raise FetchError(f"Malformed URI : {uri}")
-    return True
+        raise FetchErrorNoRepeat(f"Malformed URI : {uri}")
+    return proto
 
 def get_file_uri(uri):
     """A small utility to check if this is a file URI (starts with file://... or is a path)
@@ -1168,11 +1290,11 @@ def info(uri, md5=False):
         if '@' in proto:
             # get rid of protocol options like @aria2
             proto = proto.split('@')[0]
-        if proto=='s3':
-            return s3_info(source, md5=md5)
-        elif proto=='azure':
-            return AzureClient().info(source, md5=md5) 
-        elif proto=='ftp':
+        #if proto=='s3':
+        #    return s3_info(source, md5=md5)
+        #elif proto=='azure':
+        #    return AzureClient().info(source, md5=md5) 
+        if proto=='ftp':
             return ftp_info(source,md5=md5)
         elif proto=='file':
             return file_info(source, md5=md5) 
@@ -1181,7 +1303,10 @@ def info(uri, md5=False):
         #elif m['proto']=='run+fastq':
         #    fastq_run_get(source, destination)       
         else:
-            raise UnsupportedError(f"This URI protocol is not supported: {m['proto']}")
+            if rclone_client.has_source(proto):
+                return rclone_client.info(source, md5=md5)
+            else:
+                raise UnsupportedError(f"This URI protocol is not supported: {m['proto']}")
 
 def list_content(uri, no_rec=False, md5=False):
     """Return the recursive listing of folder specified as a URI
@@ -1193,11 +1318,11 @@ def list_content(uri, no_rec=False, md5=False):
     if m:
         m = m.groupdict()
         source = f"{m['proto']}://{m['resource']}"
-        if m['proto']=='s3':
-            return s3_list(source, no_rec=no_rec, md5=md5)
-        elif m['proto']=='azure':
-            return AzureClient().list(source, no_rec=no_rec, md5=md5) 
-        elif m['proto']=='ftp':
+        #if m['proto']=='s3':
+        #    return s3_list(source, no_rec=no_rec, md5=md5)
+        #elif m['proto']=='azure':
+        #    return AzureClient().list(source, no_rec=no_rec, md5=md5) 
+        if m['proto']=='ftp':
             return ftp_list(source, no_rec=no_rec)
         elif m['proto']=='file':
             return file_list(source, no_rec=no_rec) 
@@ -1206,7 +1331,10 @@ def list_content(uri, no_rec=False, md5=False):
         #elif m['proto']=='run+fastq':
         #    fastq_run_get(source, destination)       
         else:
-            raise FetchError(f"This URI protocol is not supported: {m['proto']}")
+            if rclone_client.has_source(m['proto']):
+                return rclone_client.list(source, no_rec=no_rec, md5=md5)
+            else:
+                raise FetchError(f"This URI protocol is not supported: {m['proto']}")
 
 def ncdu(uri, output_file):
     """Return a JSON list in the format that ncdu accept with -f"""
@@ -1355,6 +1483,31 @@ def recursive_delete(uri, include=None, dryrun=False):
     if failed:
         raise FetchError('At least some objects could not be deleted')
 
+def copy(source_uri, destination_uri, show_progress=False, file_list=None):
+        candidate_source = get_file_uri(source_uri)
+        candidate_destination = get_file_uri(destination_uri)
+        proto_source = None if candidate_source else check_uri(source_uri)
+        proto_destination = None if candidate_destination else check_uri(destination_uri)
+
+        if candidate_destination is None and candidate_source is None:
+            # neither source nor destination is local, this is a remote copy only rclone can do that
+            if rclone_client.has_source(proto_destination) and rclone_client.has_source(proto_source) and proto_destination==proto_source:
+                if file_list:
+                    args=[f"--include \"{{{','.join(file_list)}}}\""]
+                else:
+                    args=[]
+                rclone_client.copy(source_uri, destination_uri, show_progress=show_progress, args=args)
+            else:
+                raise UnsupportedError(f'Cannot copy from protocol {proto_source} to {proto_destination}')
+        else:
+            if file_list:
+                raise UnsupportedError(f'file_list option is only supported with rclone/rclone')
+            if candidate_source is not None:
+                put(candidate_source, destination_uri, show_progress=show_progress)
+            else:
+                candidate_destination = get_file_uri(destination_uri)
+                get(source_uri, candidate_destination, show_progress=show_progress)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1412,17 +1565,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
         log.basicConfig(level=log.INFO)
 
     if args.command=='copy':
-        candidate_source = get_file_uri(args.source_uri)
-        if candidate_source is not None:
-            check_uri(args.destination_uri)
-            put(candidate_source, args.destination_uri)
-        else:
-            candidate_destination = get_file_uri(args.destination_uri)
-            if candidate_destination is not None:
-                check_uri(args.source_uri)
-                get(args.source_uri, candidate_destination)
-            else:
-                raise RuntimeError('Both source_uri and destination_uri seem non file URI: operation unsupported')
+        copy(args.source_uri, args.destination_uri, show_progress=True)
     elif args.command=='list':
         if ':' not in args.uri:
             uri=f'file://{args.uri}'

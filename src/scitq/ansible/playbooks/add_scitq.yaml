@@ -57,22 +57,6 @@
     line: "SCITQ_PERMANENT_WORKER=0"
     state: present
   become: true
-- name: Add azure account
-  lineinfile:
-    dest: "/etc/scitq-worker.conf"
-    regexp: "SCITQ_AZURE_ACCOUNT"
-    line: "SCITQ_AZURE_ACCOUNT={{ worker_azure_account }}"
-    state: present
-  become: true
-  when: worker_azure_account is defined
-- name: Add azure key
-  lineinfile:
-    dest: "/etc/scitq-worker.conf"
-    regexp: "SCITQ_AZURE_KEY"
-    line: "SCITQ_AZURE_KEY={{ worker_azure_key }}"
-    state: present
-  become: true
-  when: worker_azure_key is defined
 - name: Add scitq-worker service
   systemd:
     name: scitq-worker

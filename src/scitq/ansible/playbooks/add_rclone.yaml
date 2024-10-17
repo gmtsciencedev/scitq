@@ -1,0 +1,22 @@
+- name: Check rclone
+  ansible.builtin.command: rclone version
+  register: rclone_version
+  ignore_errors: true
+- name: Add rclone
+  shell: curl https://rclone.org/install.sh | bash
+  become: yes
+  when: rclone_version is failed
+- name: Add rclone conf directory
+  file:
+    path: /root/.config/rclone
+    state: directory
+  become: yes
+- name: Add rclone conf
+  synchronize:
+    src: "{{item}}"
+    dest: /root/.config/rclone/rclone.conf
+    checksum: yes
+    archive: no
+    dirs: true
+  with_fileglob: /root/.config/rclone/rclone.conf
+  become: yes

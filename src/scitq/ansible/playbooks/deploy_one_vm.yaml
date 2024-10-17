@@ -53,7 +53,7 @@
           - include_tasks: add_docker.yaml
           - include_tasks: add_drivers.yaml
           - include_tasks: add_nfs.yaml
-          - include_tasks: add_s3authentication.yaml
+          - include_tasks: add_rclone.yaml
           - name: Add swap
             ansible.builtin.include_tasks: add_swap.yaml
             when: swap_proportion is defined and swap_proportion>0

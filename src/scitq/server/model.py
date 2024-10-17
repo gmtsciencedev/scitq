@@ -614,7 +614,8 @@ def find_remaining_quotas(session):
                     tuple_(Flavor.name, Flavor.provider).in_(flavors))
             }
             for job_args in create_jobs:
-                quotas[(job_args['provider'],job_args['region'])]-=flavors_cpu.get((job_args['flavor'],job_args['provider']),0)
+                if (job_args['provider'],job_args['region']) in quotas:
+                    quotas[(job_args['provider'],job_args['region'])]-=flavors_cpu.get((job_args['flavor'],job_args['provider']),0)
     return quotas    
 
 def find_flavor(session, protofilters='', min_cpu=None, min_ram=None, min_disk=None, 

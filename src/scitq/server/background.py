@@ -19,6 +19,7 @@ from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_O
 from .db import db
 from ..util import PropagatingThread, to_obj, validate_protofilter
 from ..constants import PROTOFILTER_SEPARATOR, PROTOFILTER_SYNTAX
+from ..fetch import UnsupportedError, copy
 
 protofilter_syntax=re.compile(PROTOFILTER_SYNTAX)
 
@@ -112,6 +113,10 @@ def background(app):
                 changed = False             
                 for task in task_list:
                     if task.use_cache:
+                        #
+                        # TASK caching
+                        #
+                        #
                         completed_by_cached=False
                         complete_task = session.query(Task).get(task.task_id)
                         execution = Execution(worker_id=None, task_id=task.task_id, 
@@ -122,10 +127,7 @@ def background(app):
                         for other_execution in session.query(Execution).filter(
                                 Execution.input_hash==hash, Execution.status=='succeeded', Execution.output_hash!=None
                                 ).order_by(Execution.output_folder!=execution.output_folder):
-                            if other_execution.output_folder!=execution.output_folder:
-                                log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: cannot use a task with different Task.output folder for now')
-                                continue
-                            elif not other_execution.check_output():
+                            if not other_execution.check_output():
                                 log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: output seems corrupted')
                                 # this will prevent querying output files for nothing
                                 other_execution.output_hash=None
@@ -133,6 +135,13 @@ def background(app):
                                 changed=False
                                 continue
                             else:
+                                if other_execution.output_folder!=execution.output_folder:
+                                    try:
+                                        copy(other_execution.output_folder,execution.output_folder, file_list=other_execution.output_files.split(' '))
+                                        log.warning(f'Copy output from {other_execution.output_folder} to {execution.output_folder}')
+                                    except UnsupportedError as e:
+                                        log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: could not reuse this other task output because of {e}')
+                                        continue
                                 log.warning(f'Using cache of {other_execution.execution_id} to execute {task.task_id}')
                                 execution.status=complete_task.status='succeeded'
                                 execution.creation_date=execution.modification_date=complete_task.modification_date=complete_task.status_date=datetime.utcnow() 
