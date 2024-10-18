@@ -10,7 +10,7 @@ from .config import DEFAULT_BATCH, WORKER_DESTROY_RETRY, get_quotas, EVICTION_AC
 from .db import db
 from ..util import to_dict, validate_protofilter, protofilter_syntax, PROTOFILTER_SEPARATOR, is_like, has_tag
 from ..constants import FLAVOR_DEFAULT_EVICTION, FLAVOR_DEFAULT_LIMIT, EXECUTION_STATUS, WORKER_STATUS
-from ..fetch import list_content, info, FetchError
+from ..fetch import list_content, info, FetchError, UnsupportedError
 
 import logging as log
 
@@ -169,14 +169,18 @@ container_options:{self.container_options}
         if self.input:
             inputs = []
             for data in self.input.split(' '):
-                inputs.extend(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
+                try:
+                    l=list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)])
+                    inputs.extend(l)
+                except UnsupportedError:
+                    inputs.append(data)
             h.update(f'input:{",".join(inputs)}\n'.encode('utf-8'))
         if self.resource:
             resources = []
             for data in self.resource.split(' '):
                 if '|' in data:
                     data=data.split('|')[0]
-                resources.extends(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
+                resources.extend(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
             h.update(f'resource:{",".join(resources)}'.encode('utf-8'))
         return h.hexdigest()
 
