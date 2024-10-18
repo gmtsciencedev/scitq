@@ -207,6 +207,7 @@ scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROP
                 [(-n|--name) NAME] [(-b|--batch) BATCH] [(-i|--input) INPUT] 
                 [(-o|--output) OUTPUT] [(-r|--resource) OUTPUT] [(-R|--requirements) REQUIREMENTS] 
                 [--retry RETRY] [--run-timeout RUNTIMEOUT] [--download-timeout DOWNLOADTIMEOUT]
+                [--use-cache]
                 [--] COMMAND
     Add a task in scitq with :
     -h,--help       display this help message
@@ -261,6 +262,8 @@ scitq-launch     [(-h|--help)] [(-d|--docker) DOCKERNAME [(-o|--option) DOCKEROP
     --download-timeout add an input or resource download maximal time in seconds, 
                     above which a KILL signal will be sent.
                     (by default, there is no timeout, a task may download for ever)
+    --use-cache     use a previous identical succeeded execution to produce outputs
+                    if possible  
     --              the last argument, COMMAND, may be constituted of several
                     words. Usually this list of words starts with a non-dashed 
                     word like sh or bash, in which case there is no possible 

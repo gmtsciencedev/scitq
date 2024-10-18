@@ -170,17 +170,27 @@ container_options:{self.container_options}
             inputs = []
             for data in self.input.split(' '):
                 try:
-                    l=list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)])
+                    action=''
+                    if '|' in data:
+                        data,action=data.split('|')
+                        action=f'|{action}'
+                    l=list([f"{item.rel_name}:{item.md5}{action}" for item in list_content(data, md5=True)])
                     inputs.extend(l)
                 except UnsupportedError:
-                    inputs.append(data)
+                    inputs.append(data+action)
             h.update(f'input:{",".join(inputs)}\n'.encode('utf-8'))
         if self.resource:
             resources = []
             for data in self.resource.split(' '):
-                if '|' in data:
-                    data=data.split('|')[0]
-                resources.extend(list([f"{item.rel_name}:{item.md5}" for item in list_content(data, md5=True)]))
+                try:
+                    action=''
+                    if '|' in data:
+                        data,action=data.split('|')
+                        action=f'|{action}'
+                    l=list([f"{item.rel_name}:{item.md5}{action}" for item in list_content(data, md5=True)])
+                    resources.extend(l)
+                except UnsupportedError:
+                    resources.append(data+action)
             h.update(f'resource:{",".join(resources)}'.encode('utf-8'))
         return h.hexdigest()
 
