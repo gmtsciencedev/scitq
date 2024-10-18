@@ -19,7 +19,7 @@ import io
 from azure.storage.blob import BlobServiceClient, BlobBlock, BlobClient, ContentSettings
 import uuid
 import azure.core.exceptions
-from .constants import DEFAULT_WORKER_CONF
+from .constants import DEFAULT_WORKER_CONF, DEFAULT_RCLONE_CONF
 import dotenv
 from tabulate import tabulate 
 from fnmatch import fnmatch
@@ -546,6 +546,7 @@ class RcloneClient:
     """A small wrapper above rclone client to integrate with scitq"""
     def __init__(self):
         """Just check that rclone is there"""
+        os.environ['RCLONE_CONFIG']=DEFAULT_RCLONE_CONF
         self.is_installed=rclone.is_installed()
         if self.is_installed:
             self.remotes=[remote[:-1] for remote in rclone.get_remotes()]
@@ -1264,7 +1265,10 @@ def check_uri(uri):
         if '@' in proto:
             proto=proto.split('@')[0]
         if proto not in ['ftp','file','run+fastq','run+submitted','http','https'] and not rclone_client.has_source(proto):
-            raise FetchErrorNoRepeat(f"Unsupported protocol {m['proto']} in URI {uri}")
+            if proto not in ['ftp','file','run+fastq','run+submitted','http','https']:
+                if not rclone_client.is_installed:
+                    raise UnsupportedError(f"{m['proto']} is not a base protocol and rclone is not installed")
+            raise UnsupportedError(f"Unsupported protocol {m['proto']} in URI {uri}")
     else:
         raise FetchErrorNoRepeat(f"Malformed URI : {uri}")
     return proto
