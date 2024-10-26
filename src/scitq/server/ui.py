@@ -84,7 +84,9 @@ def handle_get():
                     load,
                     memory,
                     stats,
-                    flavor
+                    flavor,
+                    provider,
+                    region
                 FROM worker
                 ORDER BY worker.batch,worker.name''')]),
             'tasks_per_status': dict([row for row in db.session.execute(
@@ -202,7 +204,7 @@ def flavors():
     date = int(request.args['date'])
     epoch = int(time())
     if epoch-date>REFRESH_FLAVOR:
-        return jsonify({'list':find_flavor(session=db.session,limit=None),'date':epoch})
+        return jsonify({'list':find_flavor(session=db.session,limit=None,max_eviction=100),'date':epoch})
     else:
         return '"up to date"'
 
@@ -455,7 +457,13 @@ def delete_worker():
 @ui.route('/jobs')
 def handle_jobs():
     """Provide UI with job list"""
-    return jsonify(jobs = [to_dict(job) for job in db.session.query(Job).order_by(Job.job_id.desc()).all()])
+    jobs=[]
+    for job in db.session.query(Job).order_by(Job.job_id.desc()).all():
+        job=to_dict(job)
+        job['args']=eval(job['args'])
+        jobs.append(job)
+
+    return jsonify({'jobs':jobs})
 
 @ui.route('/delete_job')
 def delete_job():
@@ -498,6 +506,7 @@ def restart_job():
     job = db.session.query(Job).get(json['job_id'])
     if job:
         job.status = 'pending'
+        job.log = ''
         job.retry = 0
         db.session.commit()
     else:

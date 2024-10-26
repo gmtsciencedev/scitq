@@ -21,6 +21,8 @@ WORKER_CREATE = f'cd {package_path("ansible","playbooks")} && ansible-playbook d
 "nodename={{hostname}} concurrency={{concurrency}} status=running flavor={{flavor}} \
 region={{region}} provider={{provider}} tags={{tags}}"'
 
+FAKE_ANSIBLE = f'''sh -c 'sleep 10; echo a PERCENT_20; sleep 10; echo b PERCENT_40; sleep 10; echo c PERCENT_60; sleep 10; echo d PERCENT_80' '''
+
 if SCITQ_SERVER is not None:
     WORKER_CREATE = WORKER_CREATE[:-1] + f' target={SCITQ_SERVER}"'
     SCITQ_SHORTNAME = SCITQ_SERVER.split('.')[0]

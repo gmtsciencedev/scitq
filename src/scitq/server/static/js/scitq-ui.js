@@ -4,7 +4,8 @@ var regions = [];
 var providers = [];
 var flavor_detail = new Map();
 var flavor_region = new Map();
-var flavor_provider = new Map();
+var flavor_regional_detail = new Map();
+var flavor_provider = new Map()
 
 function worker_concurrency_change(worker_id, change,i) {
     //socket.emit('concurrency_change', {object: 'worker', id: worker_id, change:change})
@@ -63,11 +64,12 @@ async function get_workers() {
             worker_table += `
     <tr class="" >
         <td>
-            <form target="_blank" method="post" action='/ui/task/'>
-                <input type="hidden" name="worker_filter" value="${workers[i].name}">
-                <input type="submit" id="worker-${i}-tasks" value="${workers[i].name}" class="btn btn-outline-dark border-0">
-            </form>
-            <div title="${flavor_names.includes(workers[i].flavor)?disp_flavor(flavor_detail[workers[i].flavor]):''}" class="information-tip-light">${workers[i].flavor}</div>
+            <div title="${disp_flavor(workers[i].flavor,workers[i].provider,workers[i].region)}" class="information-tip-light">
+                <form target="_blank" method="post" action='/ui/task/'>
+                    <input type="hidden" name="worker_filter" value="${workers[i].name}">
+                    <input type="submit" id="worker-${i}-tasks" value="${workers[i].name}" class="btn btn-outline-dark border-0">
+                </form>
+            </div>
         </td>
         <td class="" id="batch-name-${workers[i].worker_id}" style="padding:0">
             <form target="_blank" method="post" action='/ui/task/'>
@@ -233,14 +235,16 @@ async function update_flavors(flavors) {
             providers.length = 0;
             regions.push('auto');
             providers.push('auto');
+            console.log(flavors);
             flavors.list.forEach( function(flavor) {
+                flavor_regional_detail[`${flavor.name},${flavor.provider},${flavor.region}`]=flavor;
                 if (push_unique(flavor.name, flavor_names)) {
                     flavor_detail[flavor.name]=flavor;
-                    flavor_region[flavor.name]=[flavor.region];
+                    flavor_region[[flavor.name,flavor.provider]]=[flavor.region];
                     flavor_provider[flavor.name]=[flavor.provider];
                 } else {
-                    push_unique(flavor.region, flavor_region[flavor.name]);
-                    push_unique(flavor.provider, flavor_provider[flavor.name]);                    
+                    push_unique(flavor.region, flavor_region[[flavor.name,flavor.provider]]);
+                    push_unique(flavor.provider, flavor_provider[flavor.name]);
                 };
                 push_unique(flavor.region, regions);
                 push_unique(flavor.provider, providers);
@@ -253,8 +257,20 @@ async function update_flavors(flavors) {
     });
 }
 
-function disp_flavor(flavor) {
-    return `${flavor.name} : cpu:${flavor.cpu} ram:${flavor.ram} disk:${flavor.disk}`+(flavor.tags!=''?` tags:${flavor.tags}`:'')+(flavor.gpu?` gpu:${flavor.gpu}`:'');
+function disp_flavor(name, provider, region) {
+    if (typeof(name)=="object") {
+        f=name;
+        return `${f.name} : cpu:${f.cpu} ram:${f.ram} disk:${f.disk}`+(f.tags!=''?` tags:${f.tags}`:'')+(f.gpu?` gpu:${f.gpu}`:'')+
+            `\nprovider:${f.provider}`;
+    } else {
+        f=flavor_regional_detail[`${name},${provider},${region}`];
+        if (f==undefined) {
+            return '';
+        } else {
+            return `${f.name} : cpu:${f.cpu} ram:${f.ram} disk:${f.disk}`+(f.tags!=''?` tags:${f.tags}`:'')+(f.gpu?` gpu:${f.gpu}`:'')+
+                `\nprovider:${provider}:${region} $/h:${f.cost}\n${f.available?"available:"+f.available+" ":""}eviction:${f.eviction}`;
+        }
+    }
 }
 
 function update_with_flavor(element) {
@@ -265,11 +281,11 @@ function update_with_flavor(element) {
         flavor = flavor_detail[element.value];
         info.removeAttribute('style');
         info.textContent=disp_flavor(flavor);
-        array2datalist('regions', flavor_region[flavor.name]);
-        array2datalist('providers', flavor_region[flavor.name]);
-        if (flavor_region[flavor.name].length==1) {
-            region_input.value=flavor_region[flavor.name][0];
-        } else if (region_input.value!='' && region_input.value!='auto' && !flavor_region[flavor.name].includes(region_input.value)) {
+        array2datalist('regions', flavor_region[[flavor.name,flavor.provider]]);
+        array2datalist('providers', flavor_provider[flavor.name]);
+        if (flavor_region[[flavor.name,flavor.provider]].length==1) {
+            region_input.value=flavor_region[[flavor.name,flavor.provider]][0];
+        } else if (region_input.value!='' && region_input.value!='auto' && !flavor_region[[flavor.name,flavor.provider]].includes(region_input.value)) {
             region_input.value='';
         };
         if (flavor_provider[flavor.name].length==1) {
@@ -417,12 +433,11 @@ async function get_jobs() {
         } ;
         if (data.jobs.length>0) {
             table = '<table class="table table-responsive text-center table-hover table-striped">\n' +
-                '<thead class=" table-secondary"><tr><th>Job</th> <th>Target</th> <th>Status</th> <th style="width: 40em;">Details</th> <th>Action  <button type="button" title="delete"' +
+                '<thead class=" table-secondary"><tr><th>Job</th> <th>Target</th> <th>Status</th> <th style="width: 40em;">Details</th> <th>Latest update</th> <th>Action  <button type="button" title="delete"' +
                 ' onclick="DeleteJobs()" class="btn btn-outline-dark btn-sm">' + 
                 svg_trash + '</button> </th> </tr> </thead>\n'+
                 '<tbody>\n';
             data.jobs.forEach(function(job){
-
                 var action = '';
                 if (['succeeded','failed','pending'].includes(job.status)) {
                     action = '<button type="button" title="delete" onclick="DeleteJob('+
@@ -445,10 +460,13 @@ async function get_jobs() {
 
                 table += '<tr>' 
                     +'<td>'+action_pretify[job.action]+'</td>'
-                    +'<td>'+job.target+'</td>'
+                    +(job.target?`<td><div title="${disp_flavor(job.args.flavor,job.args.provider,job.args.region)}" class="information-tip-light">${job.target}</div></td>`:'<td></td>')
                     +'<td class="text-center text-'+status_name[job.status]+'" title ="'+job.status
                     +'"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"class="bi bi-circle-fill " viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg></td>'
-                    +'<td style="text-align: left;">'+job.log.substr(0,60) + truncated_part + '</td>'
+                    +'<td style="text-align: left;">'+job.log.substr(0,60) + truncated_part
+                    +(typeof(job.progression)=='number'?`<div class="job-progress-bar"><div class="job-progress" style="width:${job.progression}%"></div></div>`:'')
+                    +'</td>' 
+                    +`<td>${display_date(job.modification_date)}</td>`
                     +'<td>'+action+'</td>'
                     +'</tr>\n';
             });

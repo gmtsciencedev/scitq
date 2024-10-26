@@ -858,10 +858,14 @@ class ExecutionOutput(Resource):
     @ns.expect(parser)
     def put(self, id):
         """Add some data to the execution output"""
-        x = execution_dao.get(id)
+        #x = execution_dao.get(id)
         args = parser.parse_args()
-        execution_dao.update(id, 
-            {'output':('' if x.output is None else x.output) + args['text']})
+        db.session.execute(
+                update(Execution).where(Execution.execution_id==id).values(
+                    {'output':func.coalesce(Execution.output,'')+args['text']})
+            )
+        #execution_dao.update(id, 
+        #    {'output':('' if x.output is None else x.output) + args['text']})
         return {'result':'Ok'}
 
 @ns.route("/<id>/error")
@@ -872,10 +876,14 @@ class ExecutionOutput(Resource):
     @ns.expect(parser)
     def put(self, id):
         """Add some data to execution error"""
-        x = execution_dao.get(id)
+        #x = execution_dao.get(id)
         args = parser.parse_args()
-        execution_dao.update(id, 
-            {'error':('' if x.error is None else x.error) + args['text']})
+        db.session.execute(
+                update(Execution).where(Execution.execution_id==id).values(
+                    {'error':func.coalesce(Execution.error,'')+args['text']})
+            )
+        #execution_dao.update(id, 
+        #    {'error':('' if x.error is None else x.error) + args['text']})
         return {'result':'Ok'}
 
 @ns.route("/<id>/output_files")

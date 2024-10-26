@@ -216,3 +216,19 @@ width: 15%;
     color: grey;
     font-size: 8pt;
 }
+
+.job-progress-bar {
+    width: 500px;
+    background-color: darkgray;
+    height: 5px;
+    margin-bottom: 10px;
+    border-radius: 15px;
+  }
+
+.job-progress {
+width: 0px;
+height: 100%;
+background-color: blue;
+transition: width 0.3s ease;
+border-radius: 15px;
+}

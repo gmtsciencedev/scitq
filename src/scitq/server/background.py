@@ -1,9 +1,9 @@
-from sqlalchemy import select, and_, func, distinct
+from sqlalchemy import select, and_, func, distinct, update
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import NoResultFound
 import logging as log
 import os
-from subprocess import run, Popen, PIPE, TimeoutExpired
+from subprocess import run, Popen, PIPE as sub_PIPE, TimeoutExpired
 import json as json_module
 from datetime import datetime
 from argparse import Namespace
@@ -11,12 +11,18 @@ import math
 from time import sleep, time
 from signal import SIGKILL
 import re
+import multiprocessing
+import asyncio
+from asyncio.subprocess import PIPE as async_PIPE
+import traceback
+import shlex
 
 from .model import Worker, Task, Execution, Job, Recruiter, Requirement, Signal, worker_delete, find_flavor, Flavor
 from .config import WORKER_IDLE_CALLBACK, SERVER_CRASH_WORKER_RECOVERY, WORKER_OFFLINE_DELAY, WORKER_CREATE_CONCURRENCY,\
     WORKER_CREATE, WORKER_CREATE_RETRY, MAIN_THREAD_SLEEP, IS_SQLITE, SCITQ_SHORTNAME, TERMINATE_TIMEOUT, KILL_TIMEOUT,\
     JOB_MAX_LIFETIME
 from .db import db
+from ..server import get_session
 from ..util import PropagatingThread, to_obj, validate_protofilter
 from ..constants import PROTOFILTER_SEPARATOR, PROTOFILTER_SYNTAX
 from ..fetch import UnsupportedError, copy
@@ -45,7 +51,116 @@ flavor:{flavor}, region:{region}, provider:{provider}, prefetch:{prefetch}')
     db_session.add(w)
     db_session.commit()
     return w
-    
+
+def create_job_follower(job_id, command, manager):
+    """A helper class to create a JobFollower object in a subprocess"""
+    status = manager.Value('I',JobFollower.STATUS_NOT_STARTED)
+    jf = multiprocessing.Process(target=JobFollower, kwargs={'job_id':job_id, 'command':command, 'status':status})
+    jf.start()
+    return status
+
+def loop_wait_for(item, target_values, iteration, maximum_time):
+    """A small loop to wait for an item.value to change to certain target values
+    Return True if one of the target_values was reached, False if the maximum_time is reached before"""
+    t=0
+    while (t<=maximum_time):
+        sleep(iteration)
+        if item.value in target_values:
+            return True
+        t+=iteration
+    return False
+
+class JobFollower:
+    """A class designed to be run as a separate process to follow Job completion"""
+    STATUS_NOT_STARTED=0
+    STATUS_RUNNING=1
+    STATUS_SUCCEEDED=2
+    STATUS_FAILED=3
+    STATUS_TERMINATE=4
+    STATUS_KILL=5
+    POLLING=5
+    PROGRESSION_REGEXP=re.compile(r'.*PERCENT_(?P<progression>\d+).*$',
+                                  flags=re.MULTILINE)
+    PROGRESSION_REPLACE=r'PERCENT_\d+'
+
+    def __init__(self, job_id, command, status):
+        self.job_id=job_id
+        self.command=command
+        self.status=status
+        self.session=get_session()
+        self.session.execute(
+            update(Job).where(Job.job_id==self.job_id).values({'status':'running','progression':0})
+        )
+        self.session.commit()
+        asyncio.run(self.run())
+
+    async def get_output(self):
+        # Read line (sequence of bytes ending with b'\n') asynchronously
+        output = []
+        error = []
+
+        for flow,flow_receptor in [(self.process.stdout, output),(self.process.stderr, error)]:
+            now = time()
+            while True:
+                try:
+                    line = (await asyncio.wait_for(flow.readline(), self.POLLING)).decode('utf-8')
+                    if line:
+                        flow_receptor.append(line)
+                    if time()-now>self.POLLING:
+                        break
+                except asyncio.TimeoutError:
+                    break
+                except Exception as e:
+                    error.append(f'During stdout collection this error occured: {traceback.format_exc()}\n' )
+                    break
+
+        output='\n'.join(output)+'\n' if output else ''
+        error='\n'.join(error)+'\n' if error else ''
+
+        if output or error:
+            values={}
+            m=self.PROGRESSION_REGEXP.match(output)
+            if m:
+                progression = int(m.groupdict()['progression'])
+                values['progression']=progression
+            output=re.sub(self.PROGRESSION_REPLACE,'',output)
+            values['log']=func.coalesce(Job.log,'')+output+error
+            self.session.execute(
+                update(Job).where(Job.job_id==self.job_id).values(values)
+            )
+
+    async def run(self):
+        """Main loop of JobFollower (and target of the process)"""
+        if self.status.value!=self.STATUS_NOT_STARTED:
+            # unlikely case where job is cancelled before starting
+            self.status.value=self.STATUS_FAILED
+            return False
+        self.process = await asyncio.create_subprocess_exec(
+                            *shlex.split(self.command),
+                            stdout = async_PIPE,
+                            stderr = async_PIPE)
+        self.status.value=self.STATUS_RUNNING
+        while True:
+            await self.get_output()
+            process_status = self.process.returncode
+            if process_status is not None:
+                values={'status':'succeeded' if process_status==0 else 'failed'}
+                if process_status==0:
+                    values['progression']=None
+                self.session.execute(
+                    update(Job).where(Job.job_id==self.job_id).values(values)
+                )
+                self.session.commit() 
+                self.status.value = self.STATUS_SUCCEEDED if process_status==0 else self.STATUS_FAILED
+            elif self.status.value == self.STATUS_TERMINATE:
+                self.process.terminate()
+            elif self.status.value == self.STATUS_KILL:
+                self.process.kill()
+            self.session.commit() 
+            if process_status is not None:
+                break
+
+
 
 def background(app):
     # while some tasks are pending without executions:
@@ -55,6 +170,7 @@ def background(app):
 
     with app.app_context():
         session = Session(db.engine)
+    manager = multiprocessing.Manager()
     worker_process_queue = {}
     other_process_queue = []
     log.info('Starting thread for {}'.format(os.getpid()))
@@ -240,41 +356,43 @@ def background(app):
                         job.log='Another destruction job is already running, this job failed as a doublon.'
                         continue
                     if ('create',job.target) in worker_process_queue:
-                        worker,worker_create_process,job_id,start_time = worker_process_queue[('create',job.target)]
-                        if worker_create_process.poll() is None:
-                            worker_create_process.terminate()
-                            try:
-                                worker_create_process.wait(timeout=TERMINATE_TIMEOUT)
-                                log.warning(f'Worker {job.target} creation process has been terminated')
-                            except TimeoutExpired:
-                                worker_create_process.kill()
-                                try:
-                                    worker_create_process.wait(timeout=KILL_TIMEOUT)
-                                    log.warning(f'Worker {job.target} creation process has been killed')
-                                except TimeoutExpired:
+                        worker,worker_create_process_status,job_id,start_time = worker_process_queue[('create',job.target)]
+                        if worker_create_process_status.value in [JobFollower.STATUS_RUNNING, JobFollower.STATUS_NOT_STARTED]:
+                            worker_create_process_status.value=JobFollower.STATUS_TERMINATE
+                            if loop_wait_for(item=worker_create_process_status,
+                                          target_values=(JobFollower.STATUS_FAILED,JobFollower.STATUS_SUCCEEDED),
+                                          iteration=JobFollower.POLLING, 
+                                          maximum_time=TERMINATE_TIMEOUT):
+                                log.warning(f'Worker {job.target} creation process has been terminated') 
+                            else:
+                                worker_create_process_status.value=JobFollower.STATUS_KILL
+                                if loop_wait_for(item=worker_create_process_status,
+                                                    target_values=(JobFollower.STATUS_FAILED,JobFollower.STATUS_SUCCEEDED),
+                                                    iteration=JobFollower.POLLING, 
+                                                    maximum_time=KILL_TIMEOUT):   
+                                    log.warning(f'Worker {job.target} creation process has been killed') 
+                                else:
                                     log.exception(f'Could not kill worker {job.target} creation process, giving up for this round!')
                                     continue
                             
                             del(worker_process_queue[('create',job.target)])
-                            session.query(Job).get(job_id).status='failed'
+
                     worker = Namespace(**job.args)
                     real_worker = session.query(Worker).get(worker.worker_id)
                     if real_worker.ansible_active:
                         if len(worker_process_queue)<WORKER_CREATE_CONCURRENCY:
                             worker_destroy_command = WORKER_IDLE_CALLBACK.format(hostname=job.target)
                             log.warning(f'Launching destroy process for {job.target}, command is "{worker_destroy_command}"')
-                            worker_delete_process = Popen(
-                                    worker_destroy_command,
-                                    stdout = PIPE,
-                                    stderr = PIPE,
-                                    shell = True,
-                                    encoding = 'utf-8'
-                                )
-                            job.status='running'
-                            worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process, job.job_id, time())
+                            
+                            worker_delete_process_status = create_job_follower(
+                                job_id=job.job_id,
+                                command=worker_destroy_command,
+                                manager=manager
+                            )
+                            worker_process_queue[('destroy',job.target)]=(worker, worker_delete_process_status, job.job_id, time())
                             log.warning(f'Worker {job.target} destruction process has been launched')
                     else:
-                        #TODO: this should be a very rare event, we should do extra tests here
+                        # This happens when the Ansible creation processed failed very early
                         log.warning(f'Deleting worker {worker.name} ({worker.worker_id})')
                         if real_worker is not None:
                             change = True
@@ -355,31 +473,23 @@ def background(app):
                                 {'status':'failed'}
                             )
                             continue
-                        log.exception(f'Launching command is "'+WORKER_CREATE.format(
+                        worker_create_command=WORKER_CREATE.format(
                             hostname=job.target,
                             concurrency=worker.concurrency,
                             flavor=worker.flavor,
                             region=worker.region,
                             provider=worker.provider,
                             tags=flavor.tags
-                        )+'"')
-                        worker_create_process = Popen(
-                            WORKER_CREATE.format(
-                                hostname=job.target,
-                                concurrency=worker.concurrency,
-                                flavor=worker.flavor,
-                                region=worker.region,
-                                provider=worker.provider,
-                                tags=flavor.tags
-                            ),
-                            stdout = PIPE,
-                            stderr = PIPE,
-                            shell = True,
-                            encoding = 'utf-8'
+                        )
+                        #worker_create_command=FAKE_ANSIBLE
+                        log.exception(f'Launching command is "'+worker_create_command+'"')
+                        worker_create_process_status = create_job_follower(
+                            job_id=job.job_id,
+                            command=worker_create_command,
+                            manager=manager
                         )
                         worker.name = worker.hostname = job.target
-                        job.status = 'running'
-                        worker_process_queue[('create',job.target)]=(worker, worker_create_process, job.job_id, time())
+                        worker_process_queue[('create',job.target)]=(worker, worker_create_process_status, job.job_id, time())
                         log.warning(f'Worker {job.target} creation process has been launched')
 
             if change:
@@ -387,17 +497,16 @@ def background(app):
             pending_job = None
 
             change = False
-            for ((action,worker_name),(worker,worker_process,job_id,start_time)) in list(worker_process_queue.items()):
-                returncode = worker_process.poll()
-                if returncode is not None:
-                    change = True
-                    job = session.query(Job).get(job_id)
+            for ((action,worker_name),(worker,worker_process_status,job_id,start_time)) in list(worker_process_queue.items()):
+                status = worker_process_status.value
+                if status in [JobFollower.STATUS_FAILED, JobFollower.STATUS_SUCCEEDED]:
+                    current_status="succeeded" if status==JobFollower.STATUS_SUCCEEDED else "failed"
+                    log.warning(f'Process {action} {current_status} for worker {worker.name}.')
                     del(worker_process_queue[(action,worker_name)])
-                    if returncode == 0:
-                        log.warning(f'Process {action} succeeded for worker {worker.name}.')
-                        job.log = worker_process.stdout.read()
-                        job.status = 'succeeded'
-
+                    change=True
+                    if current_status=="succeeded":
+                        #session.execute(update(Job).where(Job.job_id==job_id).values(
+                        #    {'status':'succeeded', 'progression':100}))
                         if action=='destroy':
                             #session.execute(Worker.__table__.delete().where(
                             #    Worker.__table__.c.worker_id==worker.worker_id))
@@ -410,24 +519,22 @@ def background(app):
                                 log.error(f'Could not find a worker with worker_id {worker.worker_id}')
                             #worker_dao.delete(worker.worker_id, is_destroyed=True)
                     else:
-                        stderr = worker_process.stderr.read()
-                        log.warning(f'Process {action} failed for worker {worker.name}: {stderr}')
-                        job.log = worker_process.stdout.read() + stderr
-                        log.warning(f'Job output is {job.log}')
                         if job.retry > 0:
+                            job = session.query(Job).get(job_id)
                             job.retry -= 1
                             job.status = 'pending'
+                            job.log=''
                         else:
-                            job.status = 'failed'
                             if action=='create':
-                                worker = session.query(Worker).get(job.args['worker_id'])
-                                worker.status = 'failed'
+                                #worker = session.query(Worker).get(job.args['worker_id'])
+                                #worker.status = 'failed'
+                                session.execute(update(Worker).where(Worker.worker_id==job.args['worker_id']).values({'status':'failed'}))
                 elif time() - start_time > JOB_MAX_LIFETIME:
                     log.warning(f'Process {action} is taking too long for worker {worker.name}, sending TERM signal.')
-                    worker_process.terminate()
+                    worker_process_status.value = JobFollower.STATUS_TERMINATE
                 elif time() - start_time > JOB_MAX_LIFETIME + TERMINATE_TIMEOUT:
                     log.warning(f'Process {action} is really taking too long for worker {worker.name}, sending KILL signal.')
-                    worker_process.kill()
+                    worker_process_status.value = JobFollower.STATUS_KILL
 
             for job in list(session.query(Job).filter(Job.status == 'running')):
                 if job.action=='worker_deploy':

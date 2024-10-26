@@ -9,25 +9,34 @@
             when: hostvars[nodename].provider == "ovh"
           - include_tasks: destroy_vm_azure.yaml
             when: hostvars[nodename].provider == "azure"
+          - ansible.builtin.debug:
+                msg: PERCENT_20
 - name: Prepare managing servers
   hosts: managers
   any_errors_fatal: true
   tasks:
-          - include_tasks: remove_from_firewall.yaml      
+          - include_tasks: remove_from_firewall.yaml  
+          - ansible.builtin.debug:
+                msg: PERCENT_40    
 - name: Prepare storage servers
   hosts: managers
   any_errors_fatal: true
   tasks:
           - include_tasks: remove_from_nfs_exports.yaml
+          - ansible.builtin.debug:
+                msg: PERCENT_60
 - name: Cleaning Ansible
   hosts: localhost
   any_errors_fatal: true
   tasks:
           - include_tasks: remove_from_etchosts.yaml
+          - ansible.builtin.debug:
+                msg: PERCENT_80
           - name: Remove from inventory
             ansible.builtin.script:
                 cmd: >
                  "{{ inventory_dir }}"/scitq-inventory 
                  --del-host "{{ nodename }}" 
                  --change-etchosts
-
+          - ansible.builtin.debug:
+                msg: PERCENT_100

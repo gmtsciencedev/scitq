@@ -340,6 +340,7 @@ class Job(db.Model):
     log = db.Column(db.Text, nullable=True)
     creation_date = db.Column(db.DateTime, server_default=func.now())
     modification_date = db.Column(db.DateTime, onupdate=func.now())
+    progression = db.Column(db.SmallInteger)
     
 
     def __init__(self, target, action, args={}, retry=0):
