@@ -18,8 +18,7 @@
             when: provider == "ovh"
           - include_tasks: deploy_vm_azure.yaml
             when: provider == "azure"
-          - ansible.builtin.debug:
-                msg: PERCENT_10
+          - debug: msg=PERCENT_10
           - meta: refresh_inventory
           - name: Clean source 1
             ansible.builtin.file:
@@ -36,14 +35,12 @@
   hosts: managers
   tasks:
           - include_tasks: add_in_firewall.yaml
-- ansible.builtin.debug:
-      msg: PERCENT_15
+          - debug: msg=PERCENT_15
 - name: Prepare storage servers
   hosts: managers
   tasks:
           - include_tasks: add_in_nfs_exports.yaml
-- ansible.builtin.debug:
-      msg: PERCENT_20
+          - debug: msg=PERCENT_20
 - name: Prepare node
   hosts: "{{ nodename }}"
   gather_facts: false
@@ -53,31 +50,23 @@
               timeout: 300
             retries: 3
             delay: 60
-          - ansible.builtin.debug:
-              msg: PERCENT_30
+          - debug: msg=PERCENT_30
           - name: Gather facts
             setup:
           - include_tasks: add_scratch.yaml 
-          - ansible.builtin.debug:
-              msg: PERCENT_40         
+          - debug: msg=PERCENT_40         
           - include_tasks: add_docker.yaml
-          - ansible.builtin.debug:
-              msg: PERCENT_50
+          - debug: msg=PERCENT_50
           - include_tasks: add_drivers.yaml
-          - ansible.builtin.debug:
-              msg: PERCENT_60
+          - debug: msg=PERCENT_60
           - include_tasks: add_nfs.yaml
-          - ansible.builtin.debug:
-              msg: PERCENT_70
+          - debug: msg=PERCENT_70
           - include_tasks: add_rclone.yaml
-          - ansible.builtin.debug:
-              msg: PERCENT_80
+          - debug: msg=PERCENT_80
           - name: Add swap
             ansible.builtin.include_tasks: add_swap.yaml
             when: swap_proportion is defined and swap_proportion>0
-          - ansible.builtin.debug:
-              msg: PERCENT_85
+          - debug: msg=PERCENT_85
           - include_tasks: add_scitq.yaml
-          - ansible.builtin.debug:
-              msg: PERCENT_100
+
         

@@ -80,7 +80,7 @@ class JobFollower:
     STATUS_KILL=5
     POLLING=5
     PROGRESSION_REGEXP=re.compile(r'.*PERCENT_(?P<progression>\d+).*$',
-                                  flags=re.MULTILINE)
+                                  flags=re.MULTILINE+re.DOTALL)
     PROGRESSION_REPLACE=r'PERCENT_\d+'
 
     def __init__(self, job_id, command, status):
@@ -135,10 +135,19 @@ class JobFollower:
             # unlikely case where job is cancelled before starting
             self.status.value=self.STATUS_FAILED
             return False
-        self.process = await asyncio.create_subprocess_exec(
-                            *shlex.split(self.command),
-                            stdout = async_PIPE,
-                            stderr = async_PIPE)
+        try:
+            self.process = await asyncio.create_subprocess_shell(
+                                self.command,
+                                stdout = async_PIPE,
+                                stderr = async_PIPE)
+        except Exception as e:
+            self.session.execute(
+                update(Job).where(Job.job_id==self.job_id).values(
+                    {'status':'failed','log':f'Job failed because {traceback.format_exc()}'})
+            )
+            self.session.commit()
+            self.status.value=self.STATUS_FAILED
+            return False
         self.status.value=self.STATUS_RUNNING
         while True:
             await self.get_output()
