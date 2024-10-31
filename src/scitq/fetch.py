@@ -559,11 +559,17 @@ class RcloneClient:
 
 
     def _uri(self, uri):
+        if '://' not in uri:
+            # likely a local path
+            return uri
         m=RCLONE_REGEXP.match(uri)
         if not m:
             raise FetchErrorNoRepeat(f'{uri} is not adapted to rclone')
         m=m.groupdict()
-        return f'{m["remote"]}:{m["path"]}'
+        if m['remote']=='file':
+            return m['path']
+        else:
+            return f'{m["remote"]}:{m["path"]}'
 
     def list(self, uri, no_rec=False, md5=False):
         if not self.is_installed:
@@ -625,17 +631,32 @@ class RcloneClient:
     def copy(self, source, destination, show_progress=False, args=[]):
         if not self.is_installed:
             raise FetchErrorNoRepeat('rclone is not installed')
-        if '://' in destination:
-            destination=self._uri(destination)
-        if '://' in source:
-            source=self._uri(source)
+        destination=self._uri(destination)
+        source=self._uri(source)
         if destination.endswith('/'):
             rclone.copy(source, destination, show_progress=show_progress, args=args)
         else:
             rclone.copyto(source, destination, show_progress=show_progress, args=args)
 
+
+    def delete(self, uri):
+        _uri=self._uri(uri)
+        rclone.delete(_uri)
+
     def has_source(self, source):
         return source in self.remotes
+    
+    def ncdu(self, uri):
+        _uri=self._uri(uri)
+        os.system(f'rclone ncdu {_uri}')
+
+    def sync(self, source, destination, show_progress=False, args=[]):
+        """Small wrapper above rclone.sync"""
+        if not self.is_installed:
+            raise FetchErrorNoRepeat('rclone is not installed')
+        destination=self._uri(destination)
+        source=self._uri(source)
+        rclone.sync(source, destination, show_progress=show_progress, args=args)
 
 # work as a singleton
 rclone_client = RcloneClient()
@@ -1244,14 +1265,13 @@ def delete(uri):
         m = m.groupdict()
         if m['action']:
             raise FetchError(f'Action are unsupported when deleting a {uri}')
-        if m['proto']=='s3':
-            s3_delete(uri)
-        elif m['proto']=='azure':
-            AzureClient().delete(uri) 
-        elif m['proto']=='file':
-            file_delete(uri)        
+        if m['proto']=='file':
+            file_delete(uri)       
         else:
-            raise FetchErrorNoRepeat(f"This URI proto is not supported: {m['proto']}")
+            if rclone_client.has_source(m['proto']):
+                rclone_client.delete(uri)
+            else:
+                raise FetchErrorNoRepeat(f"This URI proto is not supported: {m['proto']}")
     else:
         raise FetchErrorNoRepeat(f'This URI is malformed: {uri}')
 
@@ -1277,7 +1297,7 @@ def get_file_uri(uri):
     """A small utility to check if this is a file URI (starts with file://... or is a path)
     returns a path or None (if not a file URI)"""
     if uri.startswith('file://'):
-        return uri[8:]
+        return uri[7:]
     elif ':' not in uri:
         return uri
     else:
@@ -1386,7 +1406,7 @@ def ncdu(uri, output_file):
                 top_folder.ncdu_object()],
               output_file)
 
-def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC):
+def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC, show_progress=False):
     """Sync two URI, one must be local
     Identity of the files is assessed only with name and size
     """
@@ -1395,97 +1415,127 @@ def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC):
         command = put
         remote = uri2
         try:
-            check_uri(uri2)
+            proto2=check_uri(uri2)
+            remote_proto=proto2
         except FetchError:
             local_uri=get_file_uri(uri2)
             if local_uri is None:
-                raise FetchError(f'uri2 appears to be neither locale nor prope: {uri2}')
+                raise UnsupportedError(f'uri2 appears to be neither locale nor proper: {uri2}')
             else:
-                command=get
-                remote=uri1 if ':' in uri1 else f'file://{uri1}'
+                rclone_client.sync(uri1, uri2, show_progress=show_progress)
+                #command=get
+                #remote=uri1 if ':' in uri1 else f'file://{uri1}'
     else:
-        local_uri = get_file_uri(uri2)
+        try:
+            proto1=check_uri(uri1)
+            remote_proto=proto1
+        except FetchError:
+            raise UnsupportedError(f'Destination URI seems illdefined: {uri1}')
+        local_uri=get_file_uri(uri2)
         if local_uri is None:
-            raise FetchError('Neither URI seems to be local, unsupported yet')
-        command=get
-        check_uri(uri1)
-        remote=uri1
-    full_local_uri=f"file://{local_uri}"
-    if not os.path.exists(local_uri):
-        os.makedirs(local_uri, exist_ok=True)
-
-    local_list = dict([(item.rel_name,item) for item in list_content(full_local_uri)])
-    remote_list = dict([(item.rel_name,item) for item in list_content(remote)])
-
-    if command==get:
-        source_list=remote_list
-        dest_list=local_list
-        source_uri=remote
-        dest_uri=local_uri
+            try:
+                proto2=check_uri(uri2)
+            except FetchError:
+                raise UnsupportedError(f'Destination URI seems illdefined: {uri2}') 
+            if rclone_client.has_source(proto2) and rclone_client.has_source(proto1):
+                return rclone_client.sync(uri1, uri2, show_progress=show_progress)                
+            else:
+                raise UnsupportedError('Neither URI seems to be local nor supported remotes, unsupported yet')
+        else:
+            return rclone_client.sync(uri1, uri2, show_progress=show_progress)
+        #command=get
+        #remote=uri1
+    
+    if rclone_client.has_source(remote_proto):
+        return rclone_client.sync(uri1, uri2, show_progress=show_progress)
     else:
-        source_list=local_list
-        dest_list=remote_list
-        source_uri=local_uri
-        dest_uri=remote
+        full_local_uri=f"file://{local_uri}"
+        if not os.path.exists(local_uri):
+            os.makedirs(local_uri, exist_ok=True)
+        
 
-    jobs = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=process) as executor:
-        for item_name, item in source_list.items():
-            if item_name not in dest_list or \
-                    dest_list[item_name].size!=item.size:
+        local_list = dict([(item.rel_name,item) for item in list_content(full_local_uri)])
+        remote_list = dict([(item.rel_name,item) for item in list_content(remote)])
+
+        if command==get:
+            source_list=remote_list
+            dest_list=local_list
+            source_uri=remote
+            dest_uri=local_uri
+        else:
+            source_list=local_list
+            dest_list=remote_list
+            source_uri=local_uri
+            dest_uri=remote
+
+        jobs = {}
+        with concurrent.futures.ProcessPoolExecutor(max_workers=process) as executor:
+            for item_name, item in source_list.items():
+                if item_name not in dest_list or \
+                        dest_list[item_name].size!=item.size:
+                    if include:
+                        for inc in include:
+                            if fnmatch(item_name, inc):
+                                break
+                        else:
+                            continue
+                    log.warning(f'Copying {os.path.join(source_uri, item_name)} to {os.path.join(dest_uri, item_name)}')
+                    jobs[executor.submit(command, 
+                                    os.path.join(source_uri, item_name),
+                                    os.path.join(dest_uri, item_name))]=item_name
+        
+        failed = False
+        for job in concurrent.futures.as_completed(jobs):
+            item_name = jobs[job]
+            if job.exception() is None:
+                log.info(f'Done for {item_name}: {job.result()}')
+            else:
+                log.error(f'Could not download {item_name}')
+                log.exception(job.exception())
+                failed = True
+        
+        if failed:
+            raise FetchError('At least some objects could not be synchronized')
+
+def recursive_delete(uri, include=None, dryrun=False):
+    """Works the same way than sync, recursively deleting some objects from uri"""
+    try:
+        proto=check_uri(uri)
+    except FetchError:
+        if get_file_uri(uri) is None:
+            raise UnsupportedError(f'Malformed URI for deletion {uri}')
+        else:
+            proto='file'
+    if proto=='file' or rclone_client.has_source(proto):
+        rclone_client.delete(uri)
+    else:
+        jobs = {}
+        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_SYNC) as executor:
+            for item in list_content(uri):
+                item_name=item.rel_name.split('/')[-1]
                 if include:
                     for inc in include:
                         if fnmatch(item_name, inc):
                             break
                     else:
                         continue
-                log.warning(f'Copying {os.path.join(source_uri, item_name)} to {os.path.join(dest_uri, item_name)}')
-                jobs[executor.submit(command, 
-                                os.path.join(source_uri, item_name),
-                                os.path.join(dest_uri, item_name))]=item_name
-    
-    failed = False
-    for job in concurrent.futures.as_completed(jobs):
-        item_name = jobs[job]
-        if job.exception() is None:
-            log.info(f'Done for {item_name}: {job.result()}')
-        else:
-            log.error(f'Could not download {item_name}')
-            log.exception(job.exception())
-            failed = True
-    
-    if failed:
-        raise FetchError('At least some objects could not be synchronized')
+                log.warning(f'Deleting {item.name}')
+                if not dryrun:
+                    jobs[executor.submit(delete, 
+                                item.name)]=item.name
+        
+        failed = False
+        for job in concurrent.futures.as_completed(jobs):
+            item_name = jobs[job]
+            if job.exception() is None:
+                log.info(f'Done for {item_name}: {job.result()}')
+            else:
+                log.error(f'Could not delete {item_name}')
+                log.exception(job.exception())
+                failed = True
 
-def recursive_delete(uri, include=None, dryrun=False):
-    """Works the same way than sync, recursively deleting some objects from uri"""
-    jobs = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_SYNC) as executor:
-        for item in list_content(uri):
-            item_name=item.rel_name.split('/')[-1]
-            if include:
-                for inc in include:
-                    if fnmatch(item_name, inc):
-                        break
-                else:
-                    continue
-            log.warning(f'Deleting {item.name}')
-            if not dryrun:
-                jobs[executor.submit(delete, 
-                            item.name)]=item.name
-    
-    failed = False
-    for job in concurrent.futures.as_completed(jobs):
-        item_name = jobs[job]
-        if job.exception() is None:
-            log.info(f'Done for {item_name}: {job.result()}')
-        else:
-            log.error(f'Could not delete {item_name}')
-            log.exception(job.exception())
-            failed = True
-
-    if failed:
-        raise FetchError('At least some objects could not be deleted')
+        if failed:
+            raise FetchError('At least some objects could not be deleted')
 
 def copy(source_uri, destination_uri, show_progress=False, file_list=None):
         candidate_source = get_file_uri(source_uri)
@@ -1560,7 +1610,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
 
     ncdu_parser = subparser.add_parser('ncdu', help='Create an ncdu output to audit data volume comsumption in a folder arborescence')
     ncdu_parser.add_argument('uri', type=str, help='the uri (can be a local file or a remote URI)')
-    ncdu_parser.add_argument('--run', action='store_true', help='directly launch ncdu with the results')
+    ncdu_parser.add_argument('--only-file', action='store_true', help='only generate an ncdu file, do not launch ncdu with the results')
     
     
     args = parser.parse_args()
@@ -1605,23 +1655,27 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
             tablefmt='plain'
         ))
     elif args.command=='sync':
-        sync(args.source_uri, args.destination_uri, include=args.include, process=args.process)
+        sync(args.source_uri, args.destination_uri, include=args.include, process=args.process, show_progress=True)
     elif args.command=='delete':
         recursive_delete(args.uri, include=args.include, dryrun=args.dryrun)
     elif args.command=='ncdu':
         if ':' not in args.uri:
             uri=f'file://{args.uri}'
+            proto='file'
         else:
-            check_uri(args.uri)
+            proto=check_uri(args.uri)
             uri=args.uri
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as output_file:
-            ncdu(uri=uri, output_file=output_file)
-            output_file.close()
-            if args.run:
-                os.system(f'ncdu -f "{output_file.name}"')
-                os.remove(output_file.name)
-            else:
-                print(f'ncdu json file was stored in {output_file.name}')
+        if not args.only_file and rclone_client.has_source(proto):
+            rclone_client.ncdu(uri)
+        else:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as output_file:
+                ncdu(uri=uri, output_file=output_file)
+                output_file.close()
+                if not args.only_file:
+                    os.system(f'ncdu -f "{output_file.name}"')
+                    os.remove(output_file.name)
+                else:
+                    print(f'ncdu json file was stored in {output_file.name}')
 
 if __name__=='__main__':
     main()
