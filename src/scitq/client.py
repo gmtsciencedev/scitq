@@ -27,7 +27,7 @@ import datetime
 import sys
 from uuid import uuid1
 from .util import isfifo, force_hard_link, PropagatingProcess
-from .clientenvents import monitor_events
+from .client_events import monitor_events
 import math
 
 CPU_MAX_VALUE =10
