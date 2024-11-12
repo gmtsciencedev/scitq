@@ -9,7 +9,7 @@ DEFAULT_SERVER='127.0.0.1'
 
 HTTP_ERROR_CODE_NOT_FOUND = 404
 
-TASK_STATUS = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
+TASK_STATUS = ['paused','waiting','pending','assigned','accepted','running','failed','succeeded','debug']
 EXECUTION_STATUS = ['pending','accepted','running','failed','succeeded','refused']
 WORKER_STATUS = ['paused','running','offline','failed','evicted']
 

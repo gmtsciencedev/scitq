@@ -153,379 +153,6 @@ def unzip(filepath):
     subprocess.run(['unzip',filepath] + ['-d',path] if path else [], check=True)
     os.remove(filepath)
 
-# AWS S3 
-
-S3_REGEXP=re.compile(r'^s3://(?P<bucket>[^/]*)/(?P<path>.*)$')
-
-def get_s3():
-    """Replace boto3.resource('s3') using hack suggested in https://github.com/aws/aws-cli/issues/1270"""
-    return xboto3().resource('s3')
-
-def _bucket_get(bucket, key, destination):
-    """A small helper just to ease boto3 client in thread/process context to download a file"""
-    return get_s3().Bucket(bucket).download_file(key, destination)
-
-@retry_if_it_fails(RETRY_TIME)
-def s3_get(source, destination):
-    """S3 downloader: download source expressed as s3://bucket/path_to_file 
-    to destination - a local file path"""
-    log.info(f'S3 downloading {source} to {destination}')
-    original_destination=destination
-    destination=complete_if_ends_with_slash(source, destination)
-    uri_match = S3_REGEXP.match(source).groupdict()
-    if uri_match['path'].endswith('/'):
-        retry = RETRY_TIME
-        try:
-            bucket=get_s3().Bucket(uri_match['bucket'])
-            objects = list(bucket.objects.filter(Prefix=uri_match['path']))
-            if not objects:
-                raise FetchError(f'Cannot fetch from {source}: empty (non-existing) folder')
-            while retry>0:
-                failed_objects = []
-                failed = False
-                try:
-                    jobs = {}
-                    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_S3) as executor:
-                        for obj in objects:
-                            destination_name = os.path.relpath(obj.key, uri_match['path'])
-                            destination_name = os.path.join(destination, destination_name)
-                            destination_path,_ = os.path.split(destination_name)
-                            log.info(f'S3 downloading {obj.key} to {destination_name}')
-                            if not os.path.exists(destination_path):
-                                os.makedirs(destination_path, exist_ok=True)
-                            if not os.path.exists(destination_name):
-                                jobs[executor.submit(_bucket_get, uri_match['bucket'], obj.key, destination_name)]=obj
-                        for job in  concurrent.futures.as_completed(jobs):
-                            obj = jobs[job]
-                            if job.exception() is None:
-                                log.info(f'Done for {obj.key}: {job.result()}')
-                            else:
-                                log.error(f'Could not download {obj.key}')
-                                log.exception(job.exception())
-                                failed = True
-                                failed_objects.append(obj)
-                    if failed:
-                        objects = failed_objects
-                        retry -= 1
-                        continue
-                    else:
-                        break
-                except:
-                    pass
-        except botocore.exceptions.ClientError as error:
-            if 'Not Found' in error.response.get('Error',{}).get('Message',None):
-                raise FetchErrorNoRepeat(f'{source} was not found') from error
-            else:
-                raise
-        
-        if failed:
-            raise FetchError(f"These objects could not be downloaded: {','.join([obj.key for obj in failed_objects])}")
-    else:
-        try:
-            xboto3().client('s3').download_file(uri_match['bucket'],
-                uri_match['path'],destination)
-        except botocore.exceptions.ClientError as error:
-            if 'Not Found' in error.response.get('Error',{}).get('Message',None):
-                log.warning(f'{source} was not found, trying {source}/')
-                s3_get(source+'/',original_destination)
-            else:
-                raise
-
-
-@retry_if_it_fails(RETRY_TIME)
-def s3_put(source, destination):
-    """S3 uploader: download a local file path in source to a destination
-    expressed as a s3 URI s3://bucket/path_to_file"""
-    log.info(f'S3 uploading {source} to {destination}')
-    destination=complete_if_ends_with_slash(source, destination)
-    md5 = get_md5(source)
-    uri_match = S3_REGEXP.match(destination).groupdict()
-    xboto3().client('s3').upload_file(source,uri_match['bucket'],
-        uri_match['path'],ExtraArgs={'Metadata':{'md5':md5}})
-
-@retry_if_it_fails(RETRY_TIME)
-def s3_info(uri, md5=False):
-    """S3 info fetcher: get some info on a blob specified with s3://bucket/path_to_file"""
-    log.info(f'S3 getting info for {uri}')
-    uri_match = S3_REGEXP.match(uri).groupdict()
-    try:
-        s3_client = get_s3()
-        bucket_name = uri_match['bucket']
-        bucket=s3_client.Bucket(bucket_name)
-        object = next(iter(bucket.objects.filter(Prefix=uri_match['path'])))
-        if md5:
-            metadata = s3_client.head_object(Bucket=bucket_name, Key=object.key)
-        return argparse.Namespace(size=object.size, 
-                                  creation_date=object.last_modified,
-                                  modification_date=object.last_modified,
-                                  md5=None if not md5 else metadata.get('md5',None))
-    except StopIteration:
-        raise FetchErrorNoRepeat(f'{uri} was not found')
-
-def _s3_add_md5(bucket_name, objects):
-    """A small wrapper to parallelize metadata retrieval"""
-    s3_client = xboto3().client('s3')
-    md5s = []
-    for obj in objects:
-        md5s.append(s3_client.head_object(Bucket=bucket_name, Key=obj.key).get('Metadata').get('md5',None))
-    return md5s
-
-def s3_list(uri, no_rec = False, md5=False):
-    """List content of an s3 folder in the form s3://bucket/path
-    if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
-    log.info(f'S3 getting listing for {uri}')
-    uri_match = S3_REGEXP.match(uri).groupdict()
-    bucket_name=uri_match['bucket']
-    if no_rec:
-        s3_client=xboto3().client('s3')
-        query = s3_client.list_objects_v2(
-                Bucket=bucket_name,
-                Delimiter='/',
-                Prefix=uri_match['path'])
-        answer = [argparse.Namespace(name=f's3://{bucket_name}/{prefix["Prefix"]}',
-                                   rel_name=os.path.relpath(prefix['Prefix'], uri_match['path'])+'/',
-                                   size=0,
-                                   creation_date=None,
-                                   md5=None,
-                                   key=prefix["Prefix"],
-                                   modification_date=None) for prefix in query['CommonPrefixes']
-                ] if 'CommonPrefixes' in query else [] + [
-                argparse.Namespace(name=f's3://{bucket_name}/{object["Key"]}',
-                            rel_name=os.path.relpath(object['Key'], uri_match['path']),
-                            size=object['Size'], 
-                            creation_date=object['LastModified'],
-                            md5=None,
-                            key=object["Key"],
-                            modification_date=object['LastModified'])
-                for object in query['Contents']] if 'Contents' in query else []
-    else:
-        s3_client = xboto3().client('s3')
-        bucket=get_s3().Bucket(bucket_name)
-        answer = [argparse.Namespace(name=f's3://{bucket.name}/{object.key}',
-                                rel_name=os.path.relpath(object.key, uri_match['path']),
-                                size=object.size, 
-                                creation_date=object.last_modified,
-                                md5=None,
-                                key=object.key,
-                                modification_date=object.last_modified)
-                for object in bucket.objects.filter(Prefix=uri_match['path'])]
-    
-    if md5:
-        p=multiprocessing.Pool(MAX_PARALLEL_S3_LIST)
-        sublists = list(split_list(answer, MAX_PARALLEL_S3_LIST))
-        
-        md5_sublists = p.starmap(_s3_add_md5, zip([bucket_name]*len(sublists),sublists))
-        for obj_list,md5_list in zip(sublists, md5_sublists):
-            for obj,md5value in zip(obj_list, md5_list):
-                obj.md5 = md5value
-
-    return answer
-
-def s3_delete(uri):
-    """Delete an s3 blob"""
-    log.info(f'S3 deleting {uri}')
-    uri_match = S3_REGEXP.match(uri).groupdict()
-    xboto3().client('s3').delete_object(Bucket=uri_match['bucket'], Key=uri_match['path'])
-
-
-# Azure
-
-AZURE_REGEXP=re.compile(r'^azure://(?P<container>[^/]*)/(?P<path>.*)$')
-
-
-def _container_get(container, blob_name, file_name):
-    """A small wrapper to ease azure client in thread/process context to download a file
-    container can be either a string or an Azure container client."""
-    if type(container)==str:
-        #container = AzureClient().client.get_container_client(container)
-        blob_client = AzureClient().client.get_blob_client(
-                                        container=container,
-                                        blob=blob_name)
-    else:
-        blob_client = container.get_blob_client(blob=blob_name)
-    try:
-        stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
-        with open(file=file_name, mode="wb") as download_file:
-            for chunk in stream.chunks():
-                log.warning(f'... {blob_name}: chunk {len(chunk)} downloaded ...')
-                download_file.write(chunk)
-            #download_stream = blob_client.download_blob(max_concurrency=MAX_CONCURRENCY_AZURE)
-            #download_file.write(download_stream.readall())
-    except:
-        if os.path.isfile(file_name):
-            os.remove(file_name)
-        raise
-        
-
-class AzureClient:
-    """A small wrapper above Azure blob client to integrate with scitq"""
-    def __init__(self, max_parallel=MAX_PARALLEL_AZURE):
-        """This deals with initialization"""
-        account_name=os.environ.get(AZURE_ACCOUNT)
-        account_key=os.environ.get(AZURE_KEY)
-        self.max_parallel = max_parallel
-        if account_name is None:
-            if os.path.isfile(DEFAULT_WORKER_CONF):
-                dotenv.load_dotenv(DEFAULT_WORKER_CONF)
-                account_name=os.environ.get(AZURE_ACCOUNT)
-                account_key=os.environ.get(AZURE_KEY)
-        if account_name is None:
-            raise FetchError(f'Azure account is not properly configured: either set {AZURE_ACCOUNT} and {AZURE_KEY} environment variables or adjust {DEFAULT_WORKER_CONF}.')
-        connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
-        self.client = BlobServiceClient.from_connection_string(connection_string,
-                                        max_single_get_size=1024*1024*3200,
-                                        max_chunk_get_size=1024*1024*400)
-
-    @retry_if_it_fails(RETRY_TIME)
-    def get(self, source, destination):
-        log.info(f'Azure downloading {source} to {destination}')
-        original_destination = destination
-        destination=complete_if_ends_with_slash(source, destination)
-        uri_match = AZURE_REGEXP.match(source).groupdict()
-        if uri_match['path'].endswith('/'):
-            retry = RETRY_TIME
-            try:
-                container=self.client.get_container_client(uri_match['container'])
-                objects = list(container.list_blobs(name_starts_with=uri_match['path']))
-                if not objects:
-                    raise FetchError(f'Cannot fetch from {source}: empty (non-existing) folder')
-                while retry>0:
-                    failed_objects = []
-                    failed = False
-                    try:
-                        jobs = {}
-                        with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_parallel) as executor:
-                            for obj in objects:
-                                destination_name = os.path.relpath(obj.name, uri_match['path'])
-                                destination_name = os.path.join(destination, destination_name)
-                                destination_path,_ = os.path.split(destination_name)
-                                log.info(f'Azure downloading {obj.name} to {destination_name}')
-                                if not os.path.exists(destination_path):
-                                    os.makedirs(destination_path, exist_ok=True)
-                                if not os.path.exists(destination_name):
-                                    jobs[executor.submit(_container_get, 
-                                            container.container_name, 
-                                            obj.name, 
-                                            destination_name)]=obj
-                            for job in  concurrent.futures.as_completed(jobs):
-                                obj = jobs[job]
-                                if job.exception() is None:
-                                    log.info(f'Done for {obj.key}: {job.result()}')
-                                else:
-                                    log.error(f'Could not download {obj.key}')
-                                    log.exception(job.exception())
-                                    failed = True
-                                    failed_objects.append(obj)
-                        if failed:
-                            objects = failed_objects
-                            retry -= 1
-                            continue
-                        else:
-                            break
-                    except:
-                        pass
-            except azure.core.exceptions.ResourceNotFoundError as error:
-                raise FetchErrorNoRepeat(f'{source} was not found') from error
-            
-            if failed:
-                raise FetchError(f"These objects could not be downloaded: {','.join([obj.key for obj in failed_objects])}")
-        else:
-            try:
-                container=self.client.get_container_client(uri_match['container'])
-                _container_get(container, uri_match['path'],destination)
-            except azure.core.exceptions.ResourceNotFoundError as error:
-                log.warning(f'{source} was not found, trying {source}/')
-                self.get(source+'/', original_destination)
-
-    @retry_if_it_fails(RETRY_TIME)
-    def put(self, source, destination):
-        """Azure uploader: download a local file path in source to a destination
-        expressed as an Azure URI azure://container/path_to_file"""
-        log.info(f'Azure uploading {source} to {destination}')
-        destination=complete_if_ends_with_slash(source, destination)
-        uri_match = AZURE_REGEXP.match(destination).groupdict()
-        blob_client = self.client.get_blob_client(container=uri_match['container'],
-                                                blob=uri_match['path'])
-        md5=hashlib.md5()
-        with open(file=source, mode="rb") as data:
-            if os.path.getsize(source)>=AZURE_CHUNK_SIZE:
-                if blob_client.exists():
-                    blob_client.delete_blob()
-                block_list=[]
-                while True:
-                    read_data = data.read(AZURE_CHUNK_SIZE)
-                    if not read_data:
-                        break # done
-                    md5.update(read_data)
-                    blk_id = str(uuid.uuid4())
-                    retry = RETRY_TIME
-                    while retry>=0:
-                        try:
-                            blob_client.stage_block(block_id=blk_id,data=read_data) 
-                            block_list.append(BlobBlock(block_id=blk_id))
-                            break
-                        except Exception as e:
-                            log.exception(f'Failed to upload chunk while uploading {source} to {destination}'
-                                        +', retrying' if retry>=0 else ', giving up')
-                            if retry >= 0:
-                                retry-=1
-                            else: 
-                                raise FetchError(f'Failed to upload {source} to {destination} because of {e}')                           
-                blob_client.commit_block_list(block_list, content_settings=ContentSettings(content_md5=md5.digest()))
-            else:
-                # MD5 computation is not required for *small* files but it is unclear how small that is
-                # it should be given by the maxSingleShotSize property yet this property is hidden in lower layers of the API
-                # given that md5 computation is inexpensive with small file anyway, better compute it for all
-                read_data=data.read()
-                md5.update(read_data)
-                blob_client.upload_blob(read_data, overwrite=True,max_concurrency=MAX_CONCURRENCY_AZURE,
-                                        content_settings=ContentSettings(content_md5=md5.digest()))
-
-    @retry_if_it_fails(RETRY_TIME)
-    def info(self,uri,md5=False):
-        """Azure info fetcher: get some info on a blob specified with azure://container/path_to_file"""
-        log.info(f'Azure getting info for {uri}')
-        uri_match = AZURE_REGEXP.match(uri).groupdict()
-        try:
-            container=self.client.get_container_client(uri_match['container'])
-            object = next(iter(container.list_blobs(name_starts_with=uri_match['path'])))
-            return argparse.Namespace(size=object.size, 
-                                    creation_date=object.creation_time,
-                                    modification_date=object.last_modified,
-                                    md5=None if not md5 else bytes_to_hex(object.content_settings.content_md5))
-        except StopIteration:
-            raise FetchErrorNoRepeat(f'{uri} was not found')
-
-    def list(self,uri, no_rec=False, md5=False):
-        """List the content of an azure storage folder  azure://container/path
-        if no_rec is True, restrict listing to path (and not recursive) - which may list "folders" with None creation_date"""
-        log.info(f'Azure getting listing for {uri}')
-        uri_match = AZURE_REGEXP.match(uri).groupdict()
-        container=self.client.get_container_client(uri_match['container'])
-        if no_rec:
-            return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
-                                    rel_name=os.path.relpath(object.name, uri_match['path'])+('/' if object.name.endswith('/') else ''),
-                                    size=object.get('size',0), 
-                                    creation_date=object.get('creation_time',None),
-                                    modification_date=object.get('last_modified',None),
-                                    md5=None if not md5 else bytes_to_hex(object.get('content_settings',{}).get('content_md5',None)))
-                    for object in container.walk_blobs(name_starts_with=uri_match['path'],delimiter='/')]
-        else:
-            return [argparse.Namespace(name=f"azure://{container.container_name}/{object.name}",
-                                    rel_name=os.path.relpath(object.name, uri_match['path']),
-                                    size=object.size, 
-                                    creation_date=object.creation_time,
-                                    modification_date=object.last_modified,
-                                    md5=bytes_to_hex(object.content_settings.content_md5))
-                    for object in container.list_blobs(name_starts_with=uri_match['path'])]
-
-    def delete(self, uri):
-        """Delete an azure blob"""
-        log.info(f'Azure deleting {uri}')
-        uri_match = AZURE_REGEXP.match(uri).groupdict()
-        container=self.client.get_container_client(uri_match['container'])
-        container.delete_blob(uri_match['path'])
-
 def older_python_fromisoformat(d):
     """This is a script to add minimal support to Z date (eg ISO 8601 strings) that were not supported before 3.11"""
     if '.' in d:
@@ -623,7 +250,8 @@ class RcloneClient:
             return argparse.Namespace(size=0 if item["IsDir"] else item["Size"],
                                 creation_date=xdate,
                                 modification_date=xdate,
-                                md5=item.get("Hashes",{}).get('md5',None))
+                                md5=item.get("Hashes",{}).get('md5',None),
+                                type='dir' if item["IsDir"] else 'file')
         except Exception as e:
             raise FetchErrorNoRepeat(*e.args)
     
@@ -706,22 +334,40 @@ def ftp_info(uri, md5=False):
         ftp.login()
 
         with io.StringIO() as output:
-            ftp.dir(uri_match['path'],output.write)
+            ftp.dir('-a',uri_match['path'],output.write)
             output.seek(0)
-            answer = output.read()
+            answer = output.readline()
         
         if answer:
             obj = answer.split()
-            obj_date = datetime.datetime.strptime(
-                ' '.join( (obj[FTP_DIR_MONTH_POSITION],
-                           obj[FTP_DIR_DAY_POSITION],
-                           obj[FTP_DIR_YEAR_POSITION])
-                    ),
-                '%b %d %Y').replace(tzinfo=pytz.utc)
+            try:
+                obj_date = datetime.datetime.strptime(
+                    ' '.join( (obj[FTP_DIR_MONTH_POSITION],
+                            obj[FTP_DIR_DAY_POSITION],
+                            obj[FTP_DIR_YEAR_POSITION])
+                        ),
+                    '%b %d %Y').replace(tzinfo=pytz.utc)
+            except ValueError:
+                try:
+                    obj_date = datetime.datetime.strptime(
+                        ' '.join( (obj[FTP_DIR_MONTH_POSITION],
+                                obj[FTP_DIR_DAY_POSITION],
+                                str(datetime.datetime.now().year))
+                            ),
+                        '%b %d %Y').replace(tzinfo=pytz.utc)
+                except ValueError:
+                    obj_date = None
+            if obj[FTP_DIR_NAME_POSITION]=='.':
+                obj_type='dir'
+            elif obj[FTP_DIR_NAME_POSITION]==uri_match['path'].split('/')[-1]:
+                obj_type='file'
+            else:
+                obj_type='unknown'
             return argparse.Namespace(size=obj[FTP_DIR_SIZE_POSITION],
                                     creation_date=obj_date, 
                                     modification_date=obj_date,
-                                    md5=None)
+                                    md5=None,
+                                    type=obj_type)
         else:
             raise FetchErrorNoRepeat(f'{uri} was not found')
 
@@ -1073,10 +719,19 @@ def file_info(uri, md5=False):
     if uri_match:
         complete_path = uri_match['path']
         stat = os.stat(complete_path)
+        if os.path.isfile(complete_path):
+            type='file'
+        elif os.path.isdir(complete_path):
+            type='dir'
+        elif os.path.islink(complete_path):
+            type='link'
+        else:
+            type='unknown'
         return argparse.Namespace(size=stat.st_size, 
                                   creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
                                   modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc),
-                                  md5=get_md5(complete_path) if md5 else None)
+                                  md5=get_md5(complete_path) if type=='file' and md5 else None,
+                                  type=type)
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 

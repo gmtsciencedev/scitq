@@ -1,6 +1,6 @@
 from .lib import Server, HTTPException
 from .fetch import get
-from typing import Optional
+from typing import Optional, Union, List
 from time import sleep
 import os
 from signal import SIGTSTP, SIGCONT
@@ -8,10 +8,14 @@ import urwid
 from threading import Event,Thread
 import logging as log
 from .constants import DEFAULT_SERVER
+from .path import URI
+from .util import colors
 
 DEFAULT_REFRESH=30
+DEBUG_INTERVAL=2
 TASK_STATUS=['paused','waiting','pending','assigned','accepted','running','failed','succeeded']
 WORKER_STATUS=['paused','running','offline','failed']
+MAX_COMMAND_DEBUG_DISPLAY=60
 
 # this simple mechanism enable to override a value including if the new value is None
 class Unset:
@@ -27,6 +31,27 @@ def _(x):
 
 def dmap(f,d):
     return {k:f(v) for k,v in d.items()}
+
+def debug_input(message, choices, one_char=True, default=True):
+    '''A small input wrapper that validate choices'''
+    if type(choices)==str:
+        choices=list(choices)
+    default_choice=choices[0] if default is True else default
+    answer=''
+    while answer not in choices:
+        answer = input(message)
+        answer=answer.lower() if answer else default_choice
+        if one_char:
+            answer=answer[0]
+    return answer
+
+def red_print(message, **args):
+    '''print something in red'''
+    print(colors.fg.red+str(message)+colors.reset, **args)
+
+def blue_print(message, **args):
+    '''print something in blue'''
+    print(colors.fg.blue+str(message)+colors.reset, **args)
 
 class WorkflowException(Exception):
     pass
@@ -184,10 +209,14 @@ class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
     def __init__(self, name: str, max_step_workers=None, 
                  server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
-                 provider: Optional[str] =None, region: Optional[str] ='auto',
-                 flavor: Optional[str] =None, shell=False, max_workflow_workers=None, 
-                 retry=None, rounds=None, prefetch = None, container=None, container_options='', 
-                 download_timeout=None, run_timeout=None, use_cache=False):
+                 provider: Optional[str] =None, region: str ='auto',
+                 flavor: Optional[str] =None, shell: Union[bool,str]=False, 
+                 max_workflow_workers: Optional[int]=None, 
+                 retry: Optional[int]=None, rounds: Optional[int]=None, prefetch: Optional[int]= None,
+                 container: Optional[str]=None, container_options: str='', 
+                 download_timeout: Optional[int]=None, run_timeout: Optional[int]=None, 
+                 use_cache: bool=False, base_storage: Optional[Union[URI,str]]=None,
+                 debug: bool=False):
         """Workflow init:
         Mandatory:
         - name [str]: name of workflow
@@ -219,13 +248,22 @@ class Workflow:
         self.__is_paused__ = False
         self.__clean__ = False
         self.__current_workers__=0
+        self.__batch_task_counter__={}
+        self.base_storage = base_storage if type(base_storage)==URI else URI(base_storage) if base_storage else None
+        self.debug = debug
         if region and provider and not max_workflow_workers:
             raise WorkflowException('For security, set the "max_workflow_workers" parameter if provider and region are set')
     
-    def step(self, batch, command, concurrency=None, prefetch=Unset, provider=Unset, region=Unset, flavor=Unset, name=None, 
-             tasks_per_worker=None, rounds=None, shell=Unset, maximum_workers=Unset, input=None, output=None, resource=None,
-             required_tasks=None, container=Unset, container_options=Unset, retry=Unset,
-             download_timeout=Unset, run_timeout=Unset, use_cache=Unset):
+    def step(self, batch: str, command: str, concurrency: Optional[int]=None, prefetch: Optional[int]=Unset, 
+             provider: Optional[str]=Unset, region: Optional[str]=Unset, flavor: Optional[str]=Unset, 
+             name: Optional[str]=None, tasks_per_worker: Optional[int]=None, rounds: Optional[int]=None, 
+             shell: Optional[Union[bool,str]]=Unset, maximum_workers: Optional[int]=Unset, 
+             input: Optional[Union[str,URI,List[str],List[URI]]]=None, output: Optional[Union[str,URI]]=None, 
+             resource: Optional[Union[str,URI,List[str],List[URI]]]=None, rel_output: Optional[str]=None,
+             required_tasks: Optional[Union[int,object,List[int],List[object]]]=None, 
+             container: Optional[str]=Unset, container_options: Optional[str]=Unset, 
+             retry: Optional[int]=Unset, download_timeout: Optional[int]=Unset, 
+             run_timeout: Optional[int]=Unset, use_cache: Optional[bool]=Unset):
         """Add a step to workflow
         - batch: batch for this step (all the different tasks and workers for this step will be grouped into that batch)
                 NB batch is mandatory and is defined by at least concurrency and flavor (either at workflow or step level) 
@@ -280,6 +318,9 @@ class Workflow:
                                           extra_workers=extra_workers)
                             
         # task part
+        if batch not in self.__batch_task_counter__:
+            self.__batch_task_counter__[batch]=0
+        self.__batch_task_counter__[batch]+=1
 
         if type(input)==list:
             input = ' '.join(input)
@@ -290,12 +331,23 @@ class Workflow:
         if type(output)==list:
             raise WorkflowException(f'Task {name} error: output must be a single path, not a list')
 
+        if rel_output and output:
+            raise WorkflowException(f'Cannot specify rel_output and output simultaneously')
+
+        if output is None and rel_output:
+            if self.base_storage is None:
+                raise WorkflowException(f'Cannot specify rel_output if Workflow.base_storage is unset')
+            output = str(self.base_storage / rel_output)
+        elif type(output)==URI:
+            output = str(output)
+
         if output and not output.endswith('/'):
             output += '/'
 
+
         task = self.server.task_create(
             command = command,
-            name = name,
+            name = name if name is not None else f'{batch} #{self.__batch_task_counter__[batch]}',
             batch = self.__batch__[batch].name,
             input = input,
             output = output,
@@ -309,7 +361,8 @@ class Workflow:
             required_task_ids = None if required_tasks is None \
                 else [t if type(t)==int else t.task_id for t in required_tasks] if type(required_tasks)==list \
                 else [required_tasks] if type(required_tasks)==int else [required_tasks.task_id],
-            use_cache=use_cache
+            use_cache=use_cache,
+            status='debug' if self.debug else None
         )
 
 
@@ -321,6 +374,8 @@ class Workflow:
     
     def run(self, refresh=DEFAULT_REFRESH):
         """This is a monitoring function that display some info and run up to the point all tasks are done"""
+        if self.debug:
+            return self.__debug_run__()
         # prepare display
         title_line = urwid.Columns([cell('BATCH',20,'inverted'),cell('TASKS',40,'w'),cell('WORKERS',20,'blueb')])
         subtitle_line = urwid.Columns([cell(self.name,20,'inverted'),cell('PAU',5,'y'),cell('WAI',5,'b'),cell('PEN',5,'db'),
@@ -531,3 +586,172 @@ class Workflow:
             for uri in uri_list:
                 get(uri,destination)
 
+    def switch_to_non_debug(self, tasks_to_go):
+        '''A routine to go out of debug mode'''
+        print('Setting all debug tasks to pending')
+        for task in tasks_to_go.values():
+            if task.required_task_ids:
+                self.server.task_update(task.task_id, status='waiting')
+            else:
+                self.server.task_update(task.task_id, status='pending')
+        self.debug=False
+        self.run()
+
+    def __debug_run__(self):
+        """This specific run function is only run in debug mode"""
+        # preparting debug run
+        tasks_done=set() # we use sets are inclusion in sets can be tested with set1 <= set2
+        tasks=self.server.tasks(task_id=[step.__task__.task_id for step in self.__steps__ if step.__task__.status=='debug'])
+        tasks_to_go={task.task_id: task for task in tasks}
+        tasks_depends={}
+        for task in tasks_to_go.values():
+            if task.required_task_ids:
+                for id in task.required_task_ids:
+                    if id not in tasks_depends:
+                        tasks_depends[id]=set()
+                    tasks_depends[id].add(task.task_id)
+                task.required_task_ids=set(task.required_task_ids)
+            else:
+                task.required_task_ids=set()
+        previous_task=None
+
+        # running debug
+        while tasks_to_go:
+
+            # choosing task
+            task=None
+            if previous_task:
+                for task_id in tasks_depends.get(previous_task.task_id,[]):
+                    if task_id in tasks_to_go and tasks_to_go[task_id].required_task_ids<=tasks_done:
+                        task=tasks_to_go[task_id]
+                        break
+            
+            if task is None:
+                for task_id,task in tasks_to_go.items():
+                    if tasks_to_go[task_id].required_task_ids<=tasks_done:
+                        break
+                else:
+                    input('Dead end: some tasks remain but they have unmet requirements, must give up, press Enter')
+                    return False
+
+            # choice of task to launch
+            print(f'''----------------------------------------------------------
+task        | [{task.task_id}] {task.name}
+command     | {task.command}
+container   | {task.container}
+----------------------------------------------------------''')
+            answer=debug_input(f'About to launch task [{task.task_id}] {task.name}, should I run it? [Y]es/[n]o another task/[q]uit debuger and stop/e[x]it debuger continuing in normal mode ', 
+                                choices='ynqx')
+            if answer=='q':
+                return False
+            elif answer=='x':
+                return self.switch_to_non_debug(tasks_to_go=tasks_to_go)
+            elif answer=='n':
+                possible_tasks=[]
+                for task_id,task in tasks_to_go.items():
+                    if tasks_to_go[task_id].required_task_ids<=tasks_done:
+                        possible_tasks.append(task)
+                current=20
+                while True:
+                    for i,task in enumerate(possible_tasks[current-20:current]):
+                        print(f'{i+1}) [{task.task_id}] {task.name} : {task.command[:MAX_COMMAND_DEBUG_DISPLAY]}')
+                    answer=debug_input('Please type the task number you want me to launch or [q] to quit, [x] to exit and continue in non debug'+
+                                    (' or [m] for more' if len(possible_tasks)>current else '')+': ',
+                                    choices=list(map(str,range(1,len(possible_tasks[current-20:current])+1)))+['m','q','x'],
+                                    default=False, one_char=False)
+                    if answer=='m':
+                        current+=20
+                        continue
+                    elif answer=='q':
+                        return False
+                    elif answer=='x':
+                        return self.switch_to_non_debug(tasks_to_go=tasks_to_go)
+                    else:
+                        task=possible_tasks[current-20:current][int(answer)-1]
+                        break
+
+            # launching
+            previous_task = task
+            previous_executions=list([ex.execution_id for ex in self.server.executions(task_id=task.task_id)])
+            self.server.task_update(task.task_id, status='pending', retry=0)
+            print(f'task [{task.task_id}] {task.name} is pending...')
+            previous_status='pending'
+            current_execution=None
+            output_position=error_position=1
+            while True:
+                status=self.server.task_get(task.task_id).status
+                if previous_status!=status:
+                    previous_status=status
+                    print(f'task [{task.task_id}] {task.name} changed to {status} status...')
+                if status in ['pending','assigned','accepted']:
+                    sleep(DEBUG_INTERVAL)
+                else:
+                    executions=self.server.executions(task_id=task.task_id)
+                    for execution in executions:
+                        if execution.execution_id not in previous_executions:
+                            if current_execution is None:
+                                current_execution=execution
+                                output_position=error_position=1
+                                break
+                            elif current_execution.execution_id==execution.execution_id:
+                                break
+                    else:
+                        if current_execution:
+                            input('Looks like current execution disappeared, this should not happend, press Enter')
+                            current_execution=None
+                        else:
+                            print(f'Looks like there are no executions for this task, this should not happend for a {status} task')
+                            answer=debug_input('What should I do with it? mark it as [f]ailed, put it back in [d]ebug state, [t]ry again to find execution? ',
+                                               choices='fdt', default=False) 
+                            if answer=='f':
+                                task=self.server.task_update(task.task_id, status='failed')
+                                del[tasks_to_go[task.task_id]]
+                                break
+                            elif answer=='d':
+                                task=self.server.task_update(task.task_id, status='debug')
+                                task.status='debug'
+                                break
+                            else:
+                                continue
+                    
+                    if current_execution:
+                        #current_execution_status=self.server.execution_get(current_execution.execution_id).status     
+                        output = self.server.execution_output(current_execution.execution_id, 
+                                                            output_position=output_position,
+                                                            error_position=error_position) 
+                        
+                        if output.error:
+                            error_position += len(output.error)
+                            red_print(output.error, end='')
+                        if output.output:
+                            output_position += len(output.output)
+                            blue_print(output.output, end='')
+
+                    if status=='running':
+                        sleep(DEBUG_INTERVAL)
+                        continue
+                    elif status=='failed':
+                        answer=debug_input('Task failed, should we retry? [Y]es or [n]o', choices='yn')
+                        if answer=='y':
+                            self.server.task_update(task.task_id, status='pending')
+                            sleep(DEBUG_INTERVAL)
+                            continue
+                        else:
+                            break
+                    else:
+                        if status=='succeeded':
+                            tasks_done.add(task.task_id)
+                        answer=debug_input(f'Task is now {status}, should we [C]ontinue in debug mode, [r]etry it anyway, [q]uit debug mode and stop, or e[x]it debug mode and continue in normal mode? ',
+                                           choices='crqx') 
+                        if answer=='c':
+                            del[tasks_to_go[task.task_id]]
+                            break
+                        elif answer=='r':
+                            self.server.task_update(task.task_id, status='pending')
+                            sleep(DEBUG_INTERVAL)
+                            continue
+                        elif answer=='q':
+                            return False
+                        elif answer=='x':
+                            return self.switch_to_non_debug(tasks_to_go=tasks_to_go)
+        print('''That's all folks! No more tasks to debug''')

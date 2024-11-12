@@ -181,15 +181,15 @@ task = api.model('Task', {
     'batch': fields.String(required=False, 
         description="only workers with the same batch (null or not) will accept the task."),
     'input': fields.String(required=False,
-        decription="Input data required for task (space separated files URL in s3://...)"),
+        description="Input data required for task (space separated files URL in s3://...)"),
     'output': fields.String(required=False,
-        decription="Output data basepath where /output content will be copied (if null, the result transmission is up to the command)"),
+        description="Output data basepath where /output content will be copied (if null, the result transmission is up to the command)"),
     'container': fields.String(required=False,
-        decription="Container (as for now this is a docker) in which task is launched"),
+        description="Container (as for now this is a docker) in which task is launched"),
     'container_options': fields.String(required=False,
-        decription="Container (extra) option if needed"),
+        description="Container (extra) option if needed"),
     'resource': fields.String(required=False,
-        decription="Resource data required for task (much like input except it is shared between tasks) (space separated files URL in s3://...)"),
+        description="Resource data required for task (much like input except it is shared between tasks) (space separated files URL in s3://...)"),
     'required_task_ids': fields.List(fields.Integer,required=False,
         description="List of task ids required to do this task"),
     'retry': fields.Integer(required=False,
@@ -203,7 +203,7 @@ task = api.model('Task', {
 })
 
 task_filter = api.model('TaskFilter', {
-    'task_id': fields.List(fields.Integer(),required=False,decription='A list of ids to restrict listing'),
+    'task_id': fields.List(fields.Integer(),required=False,description='A list of ids to restrict listing'),
     'batch': fields.String(required=False, description="Filter with this batch"),
     'status': fields.String(required=False, description="Filter with this status"),
     'name': fields.String(required=False, description="Filter with this name"),
@@ -237,7 +237,7 @@ class TaskList(Resource):
 
 
 task_status_filter = api.model('TaskStatusFilter', {
-    'task_id': fields.List(fields.Integer(),required=True,decription='A list of ids to restrict listing'),
+    'task_id': fields.List(fields.Integer(),required=True,description='A list of ids to restrict listing'),
 })
 
 @ns.route('/status')
@@ -311,6 +311,9 @@ class WorkerObjectFreeze(WorkerObject):
 
         db.session.commit()
         return task
+
+
+
 
 ns = api.namespace('workers', description='WORKER operations')
 
@@ -789,14 +792,14 @@ class WorkerSignal(Resource):
 ns = api.namespace('executions', description='EXECUTION operations')
 
 execution_filter = api.model('ExecutionFilter', {
-    'task_id': fields.Integer(required=False,decription='A list of ids to restrict listing'),
+    'task_id': fields.Integer(required=False,description='A list of ids to restrict listing'),
     'status': fields.String(required=False, description="Filter with this status"),
-    'latest': fields.Boolean(required=False, decription="Filter only for latest execution"),
+    'latest': fields.Boolean(required=False, description="Filter only for latest execution"),
     'task_name': fields.String(required=False, description="Filter with this task name"),
     'batch': fields.String(required=False, description="Filter with this batch"),
     'limit': fields.Integer(required=False, description="Limit results to this number"),
-    'reverse': fields.Boolean(required=False, decription="Reverse sorting order, most recent executions first"),
-    'no_output': fields.Boolean(required=False, decription="Do not include output and error for a lighter query"),
+    'reverse': fields.Boolean(required=False, description="Reverse sorting order, most recent executions first"),
+    'no_output': fields.Boolean(required=False, description="Do not include output and error for a lighter query"),
     'trunc': fields.Integer(required=False, description="Limit output size to this number"),
 })
 @ns.route('/')
@@ -850,6 +853,13 @@ class ExecutionObject(Resource):
         db.session.commit()
         return {'result':'ok'}
 
+execution_output_filter = api.model('ExecutionOutputFilter', {
+    'output': fields.Boolean(required=False, default=True, description='Include output flow (stdout)'),
+    'error': fields.Boolean(required=False, default=True, description='Include error flow (stderr)'),
+    'output_start': fields.Integer(required=False, default=1, description='Provide output (stdout) starting from this position'),
+    'error_start': fields.Integer(required=False, default=1, description='Provide error (stderr) starting from this position'),
+})
+
 @ns.route("/<id>/output")
 @ns.param("id", "The execution identifier")
 @ns.response(404, "Execution not found")
@@ -864,9 +874,36 @@ class ExecutionOutput(Resource):
                 update(Execution).where(Execution.execution_id==id).values(
                     {'output':func.coalesce(Execution.output,'')+args['text']})
             )
+        db.session.commit()
         #execution_dao.update(id, 
         #    {'output':('' if x.output is None else x.output) + args['text']})
         return {'result':'Ok'}
+    
+    @ns.doc("get_task_output_and_or_error_from_a_given_position")
+    @ns.expect(execution_output_filter)
+    def get(self, id):
+        """Fetch an execution output given its identifier"""
+        data=api.payload['data']
+        output=data.get('output',True)
+        error=data.get('error',True)
+        output_start=data.get('output_position',1)
+        error_start=data.get('error_position',1)
+
+        query_items=[]
+        if output:
+            if IS_SQLITE:
+                query_items.append(f'substr(output,{output_start}) as output')
+            else:
+                query_items.append(f'substring(output FROM {output_start}) as output')
+        if error:
+            if IS_SQLITE:
+                query_items.append(f'substr(error,{error_start}) as error')        
+            else:
+                query_items.append(f'substring(error FROM {error_start}) as error')
+
+        return dict(db.session.execute(f'''SELECT {','.join(query_items)} FROM execution WHERE execution_id={id}''').one())
+
+
 
 @ns.route("/<id>/error")
 @ns.param("id", "The execution identifier")
@@ -882,6 +919,7 @@ class ExecutionOutput(Resource):
                 update(Execution).where(Execution.execution_id==id).values(
                     {'error':func.coalesce(Execution.error,'')+args['text']})
             )
+        db.session.commit()
         #execution_dao.update(id, 
         #    {'error':('' if x.error is None else x.error) + args['text']})
         return {'result':'Ok'}

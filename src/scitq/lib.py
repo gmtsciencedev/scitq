@@ -424,6 +424,13 @@ class Server:
         """get a specific execution with execution_id equal to id
         return the execution"""
         return self.get(f'/executions/{id}')
+    
+    def execution_output(self, id, output:bool=None, error:bool=None, output_position:int=None, error_position:int=None):
+        """get the output and error flow (can be restricted to one or the other specifying error=False or output=False)
+        starting from a given position (notably to get only newer output or error flow): first character is position 1"""
+        return self.get(f'/executions/{id}/output', data=_clean(
+            {'output':output, 'error':error, 'output_position':output_position, 'error_position':error_position}
+        ))
 
     def task_create(self, command, name=None, status=None,batch=None, 
             input=None, output=None, container=None, container_options='',

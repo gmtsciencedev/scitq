@@ -882,7 +882,7 @@ class Executor:
                         self.s.execution_update(self.execution_id, 
                             status='succeeded' if returncode==0 else 'failed', 
                             return_code=returncode, 
-                            output_files=' '.join([os.path.relpath(of, self.output_dir) for of in output_files.split(' ')]),
+                            output_files=None if output_files is None else ' '.join([os.path.relpath(of, self.output_dir) for of in output_files.split(' ')]),
                             freeze=returncode==0)
                     
                         if returncode!=0:
