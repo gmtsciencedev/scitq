@@ -11,7 +11,7 @@ class URI:
             self.proto=fetch.check_uri(uri) if proto is None else proto
         self.uri=uri
     
-    def __div__(self, other: str) -> 'URI':
+    def __truediv__(self, other: str) -> 'URI':
         while other.startswith('/'):
             other=other[1:]
         if '://' in other:

@@ -639,6 +639,8 @@ class Workflow:
 task        | [{task.task_id}] {task.name}
 command     | {task.command}
 container   | {task.container}
+resource    | {task.resource}
+input       | {task.input}
 ----------------------------------------------------------''')
             answer=debug_input(f'About to launch task [{task.task_id}] {task.name}, should I run it? [Y]es/[n]o another task/[q]uit debuger and stop/e[x]it debuger continuing in normal mode ', 
                                 choices='ynqx')
