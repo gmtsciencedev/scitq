@@ -15,7 +15,6 @@
 - name: Upgrade pip
   ansible.builtin.shell:
     cmd: /usr/bin/python3 -m pip install --upgrade pip setuptools pyopenssl
-    warn: no
   become: true
 - name: Copy scitq source
   ansible.posix.synchronize:
@@ -28,13 +27,11 @@
   ansible.builtin.shell:
     chdir: /opt/scitq/
     cmd: /usr/bin/python3 -m pip install .
-    warn: no
   become: true
   when: scitq_src is defined
 - name: Install scitq from pip
   ansible.builtin.shell:
     cmd: pip3 install scitq=="{{ version }}"
-    warn: no
   become: true
   when: scitq_src is not defined
 - name: Add scitq-worker service template
