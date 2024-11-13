@@ -498,9 +498,9 @@ class WorkerCallback(Resource):
         worker = worker_dao.get(id)
         if message == 'idle': 
             if not worker.permanent:
-                if db.session.query(Execution).filter(Execution.status.in_(['running','pending']),
+                if db.session.query(Execution).filter(Execution.status.in_(['running','pending','accepted']),
                         Execution.worker_id==worker.worker_id).count()>0:
-                    log.warning(f'Worker {worker.name} called idle callback but some tasks are still running, refusing...')
+                    log.warning(f'Worker {worker.name} called idle callback but some tasks are still running or about to run, refusing...')
                     return {'result':'still have running tasks'}
                 if db.session.query(Task).filter(and_(Task.status.in_(['pending']),
                                         Task.batch==worker.batch)).count()>0:
