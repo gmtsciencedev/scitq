@@ -1149,6 +1149,23 @@ class RecruiterList(Resource):
         '''Create or replace a recruiter'''
         return recruiter_dao.create(api.payload), 201
 
+
+@ns.route('/match')
+class RecruiterList(Resource):
+    '''Send a list of workers matching recruitment criteria for a list of recruiters'''
+    @ns.doc('list_recruiters')
+    @ns.marshal_list_with(worker)
+    def get(self):
+        '''List all workers'''
+        recruiters = recruiter_dao.list(**api.payload)
+        workers = worker_dao.list()
+        recruitable_workers=[]
+        for recruiter in recruiters:
+            for worker in workers:
+                if recruiter.match_flavor(worker=worker, session=db.session):
+                    recruitable_workers.append(worker)
+        return recruitable_workers
+
 @ns.route("/<batch>/<rank>")
 @ns.param("batch", "Target batch for the recruiter")
 @ns.param("rank", "Rank of the recruiter")

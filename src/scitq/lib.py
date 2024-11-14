@@ -585,6 +585,11 @@ class Server:
         """Delete an existing recruiter"""
         return self.delete(f'/recruiter/{batch}/{rank}', asynchronous=asynchronous)
     
+    def recruiters_match(self, **args):
+        """List all recruiters (a recruiter is an automate that deploy workers as needed for a certain batch)
+        - args: some filtering option like batch='Default'"""
+        return self.get(f'/recruiter/match', **args)
+    
     def join(self, task_list, retry=1, check=False):
         """Wait for a certain list of tasks to succeed. In case of failure, relaunch tasks
         a limited number of time (retry). If check is True, then join will fail if

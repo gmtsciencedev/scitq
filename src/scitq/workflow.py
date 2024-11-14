@@ -674,6 +674,7 @@ input       | {task.input}
 
             # launching
             previous_task = task
+            worker_status = 'unknown'
             previous_executions=list([ex.execution_id for ex in self.server.executions(task_id=task.task_id)])
             self.server.task_update(task.task_id, status='pending', retry=0)
             print(f'task [{task.task_id}] {task.name} is pending...')
@@ -686,6 +687,37 @@ input       | {task.input}
                     previous_status=status
                     print(f'task [{task.task_id}] {task.name} changed to {status} status...')
                 if status in ['pending','assigned','accepted']:
+                    if status=='pending':
+                        workers=self.server.workers()
+                        for worker in workers:
+                            if worker.batch==task.batch:
+                                new_worker_status='present'
+                                break
+                        else:
+                            new_worker_status='absent'
+                        if new_worker_status!=worker_status:
+                            worker_status=new_worker_status
+                            print(f'A worker for this batch is {worker_status}', end='')
+                            if worker_status=='absent':
+                                recruiters=list(self.server.recruiters(batch=task.batch))
+                                if recruiters:
+                                    for recruiter in recruiters:
+                                        if recruiter.worker_provider and recruiter.worker_region:
+                                            print(' but there is an active recruiter')
+                                            break
+                                    else:
+                                        print(', there are recycling only recruiters', end='')
+                                        if not workers:
+                                            red_print(r': /!\ WARNING but there are no workers to recycle, add one manually')
+                                        workers=list(self.server.recruiters_match(batch=task.batch))
+                                        if workers:
+                                            print(' and some compatible workers')
+                                        else:
+                                            red_print(r': /!\ WARNING but no compatible workers are present, add one manually')
+                                else:
+                                    red_print(r': /!\ WARNING there are no recruiters so you should manually add a worker')
+                            else:
+                                print('')
                     sleep(DEBUG_INTERVAL)
                 else:
                     executions=self.server.executions(task_id=task.task_id)
