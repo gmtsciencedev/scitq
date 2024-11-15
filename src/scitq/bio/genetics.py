@@ -51,13 +51,13 @@ def sra_get_samples(bioproject:str, library_layout:Optional[str]=None, library_s
         raise BioException(f'No such bioproject {bioproject}')
 
     header_line,body = p.stdout.split(maxsplit=1)
-    new_style_headers = []
 
     # fixing SRA headers to make them more consistent with ENA and python style
+    new_style_headers = []
     for header in header_line.split(','):
-        words=[word[:-1].lower() if word.endswith('_') else word.lower() for word in re.findall('[A-Z]?[^A-Z]+|[A-Z]+', header)]
+        words=[word[:-1].lower() if word.endswith('_') else word.lower() for word in re.findall('[A-Z]?[^A-Z]+|[A-Z]{2,3}', header)]
         new_style_headers.append('_'.join(words) if words else header) 
-               
+
     output=io.StringIO(f"{','.join(new_style_headers)}\n{body}")
     samples = {}
     for item in csv.DictReader(output, delimiter=','):
