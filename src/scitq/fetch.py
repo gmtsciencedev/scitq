@@ -496,9 +496,10 @@ def fasp_get(source, destination):
 
 
 FASTQ_RUN_REGEXP=re.compile(r'^run\+fastq://(?P<run_accession>[^/]*)/?$')
+FASTQ_PARITY = re.compile(r'.*(1|2)\.f.*q(\.gz)?$')
 
 @retry_if_it_fails(RETRY_TIME)
-def fastq_sra_get(run_accession, destination):
+def fastq_sra_get(run_accession, destination, filter_r1=False):
     """This subfunction of runacc_get is only called when EBI's ENA won't
     answer as NCBI's SRA while more complete is quite slow"""
     log.info(f'SRA get run+fastq://{run_accession} to {destination}')
@@ -524,6 +525,15 @@ def fastq_sra_get(run_accession, destination):
             check=True)
     current_fastq = glob.glob(os.path.join(destination, '*.fastq'))
     fastqs = [fastq for fastq in current_fastq if fastq not in previous_fastq]
+    if filter_r1:
+        unfiltered_fastqs = fastqs
+        fastqs = []
+        for fastq in unfiltered_fastqs:
+            if fastq.endswith('1.fastq'):
+                fastqs.append(fastq)
+            else:
+                log.info(f'Removing read as it is not r1: {fastq}')
+                os.remove(fastq)
     log.info(f'Pigziping fastqs ({fastqs})')
     subprocess.run(['pigz','-f']+fastqs,
         check=True)
@@ -531,6 +541,7 @@ def fastq_sra_get(run_accession, destination):
         os.remove(os.path.join(destination, run_accession+'.sra'))
     elif os.path.isdir(os.path.join(destination, run_accession)):
         shutil.rmtree(os.path.join(destination, run_accession))
+    
 
 def _my_fastq_download(method, url, md5, destination):
     """A small adhoc function to download and check a fastq through a ftp_url plus a md5"""
@@ -548,7 +559,7 @@ def _my_fastq_download(method, url, md5, destination):
 
 
 @retry_if_it_fails(PUBLIC_RETRY_TIME)
-def fastq_run_get(source, destination, methods=['fastq_aspera', 'fastq_ftp', 'sra']):
+def fastq_run_get(source, destination, methods=['fastq_aspera', 'fastq_ftp', 'sra'],filter_r1=False):
     """Fetch some fastq associated to a run accession"""
     log.info(f'Run accession: uploading {source} to {destination}')
     if not destination.endswith('/'):
@@ -567,10 +578,10 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
             break
         else:
             log.exception('EBI does not answer our query')
-            return fastq_sra_get(uri_match['run_accession'], destination)
+            return fastq_sra_get(uri_match['run_accession'], destination, filter_r1=filter_r1)
         if run_query.status_code==204:
             log.exception('This does not seem to be available on EBI')
-            return fastq_sra_get(uri_match['run_accession'], destination)
+            return fastq_sra_get(uri_match['run_accession'], destination, filter_r1=filter_r1)
         runs = run_query.json()
         if len(runs)==0:
             # it seems the new API of EBI tends to answer empty responses
@@ -582,7 +593,7 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
             break
     else:
         log.exception('EBI does not answer our query')
-        return fastq_sra_get(uri_match['run_accession'], destination)
+        return fastq_sra_get(uri_match['run_accession'], destination, filter_r1=filter_r1)
         
 
 
@@ -595,13 +606,17 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
                 log.exception(f'Cannot use {method} as docker is not available.')
                 continue
             if method == 'sra':
-                return fastq_sra_get(uri_match['run_accession'], destination, 
+                return fastq_sra_get(uri_match['run_accession'], destination, filter_r1=filter_r1, 
                     __retry_number__=1)
             elif method in run:
                 urls =  run[method].split(';')
                 # preparing to download and check all fastqs
                 download_threads = []
                 for url,md5 in zip(urls, ftp_md5s):
+                    if filter_r1:
+                        m=FASTQ_PARITY.match(url)
+                        if m and m.groups()[0]!='1':
+                            continue
                     download_thread=PropagatingThread(target=_my_fastq_download,
                                         args=(method, url, md5, destination))
                     download_thread.start()
@@ -619,7 +634,7 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
         raise FetchError(f'Could not fetch {source}')
     else:
         log.exception('EBI response does not include a fastq_ftp field')
-        return fastq_sra_get(uri_match['run_accession'], destination)
+        return fastq_sra_get(uri_match['run_accession'], destination, filter_r1=filter_r1)
 
 
 SUBMITTED_RUN_REGEXP=re.compile(r'^run\+submitted://(?P<run_accession>[^/]*)/?$')
@@ -800,7 +815,7 @@ def http_get(url, destination):
 
 # generic wrapper
 
-GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9@+]*)://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
+GENERIC_REGEXP=re.compile(r'^(?P<proto>[a-z0-9+]*)(@(?P<option>[a-z0-9_@]+))?://(?P<resource>[^|]*)(\|(?P<action>.*))?$')
 
 def get(uri, destination, parallel=None, show_progress=False):
     """General downloader source should start with s3://... or ftp://...
@@ -829,18 +844,14 @@ def get(uri, destination, parallel=None, show_progress=False):
         if not os.path.exists(complete_destination_folder):
             os.makedirs(complete_destination_folder, exist_ok=True)
 
+        if m['option']:
+            options=m['option'].split('@')
+        else:
+            options=[]
         
-        
-        if m['proto'] and '@aria2' in m['proto']:
-            source = f"{m['proto'].replace('@aria2','')}://{m['resource']}"
+        if 'aria2' in options:
             aria2_get(source, complete_destination)
-        #elif m['proto']=='s3':
-        #    s3_get(source, destination)
-        #elif m['proto']=='azure':
-        #    options = {}
-        #    if parallel:
-        #        options['max_parallel']=parallel
-        #    AzureClient(**options).get(source, destination) 
+
         elif m['proto']=='ftp':
             ftp_get(source, destination)
         elif m['proto']=='file':
@@ -848,19 +859,28 @@ def get(uri, destination, parallel=None, show_progress=False):
         elif m['proto']=='fasp':
             fasp_get(source, destination)
         elif m['proto']=='run+fastq':
-            fastq_run_get(source, destination)       
-        elif m['proto']=='run+fastq@sra':
-            fastq_run_get(source.replace('run+fastq@sra://','run+fastq://'), destination, methods=['sra'])       
-        elif m['proto']=='run+fastq@ftp':
-            fastq_run_get(source.replace('run+fastq@ftp://','run+fastq://'), destination, methods=['fastq_ftp'])       
-        elif m['proto']=='run+fastq@aspera':
-            fastq_run_get(source.replace('run+fastq@aspera://','run+fastq://'), destination, methods=['fastq_aspera'])       
+            filter_r1 = 'filter_r1' in options
+            if 'sra' in options or 'aspera' in options or 'ftp' in options:
+                methods=[]
+                for option in options:
+                    if option in ['sra','aspera','ftp']:
+                        methods.append(option)
+                    elif option!='filter_r1':
+                        log.warning(f'Unsupported option {option} in URI {uri}')
+                fastq_run_get(source, destination, methods=methods, filter_r1=filter_r1)
+            else:
+                fastq_run_get(source, destination, filter_r1=filter_r1)       
         elif m['proto']=='run+submitted':
-            submitted_run_get(source, destination)    
-        elif m['proto']=='run+submitted@ftp':
-            submitted_run_get(source.replace('run+submitted@ftp://','run+submitted://'), destination, methods=['submitted_ftp'])       
-        elif m['proto']=='run+submitted@aspera':
-            submitted_run_get(source.replace('run+submitted@aspera://','run+submitted://'), destination, methods=['submitted_aspera']) 
+            if 'aspera' in options or 'ftp' in options:
+                methods=[]
+                for option in options:
+                    if option in ['aspera','ftp']:
+                        methods.append(f'submitted_{option}')
+                    else:
+                        log.warning(f'Unsupported option {option} in URI {uri}')
+                submitted_run_get(source, destination, methods=methods)
+            else:
+                submitted_run_get(source, destination)    
         elif m['proto'] in ['http','https']:
             http_get(source, destination)
         else:

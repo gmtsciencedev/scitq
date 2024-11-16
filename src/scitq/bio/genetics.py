@@ -5,9 +5,10 @@ import subprocess
 import io
 import csv
 import re
-from scitq.fetch import list_content
+from scitq.fetch import list_content, FASTQ_PARITY
 import statistics
 import math
+import copy
 
 DEPTH_REGEXP=re.compile(r"(?P<pair1>[12]x)?(?P<core>\d+[kmg]?)(?P<pair2>x[12])?")
 
@@ -151,9 +152,8 @@ def uri_get_samples(uri: str, ending: str='.fastq.gz', alternate_endings: List[s
         final_samples[sample] = [Namespace(sample_accession=sample, uri=file, library_layout=library_layout) for file in files]
     return final_samples
 
-def guess_library_layout_and_filter(samples: Dict[str,List[Namespace]]) -> Tuple[str,Dict[str,List[Namespace]]]:
-    """Look for the most likely dominant library_layout and return a tuple consisting of 
-     the guessed library_layout and a filtered set of samples with runs filtered by the guessed layout """
+def find_library_layout(samples: Dict[str,List[Namespace]]) -> str:
+    """Look for the dominant library_layout in a group of sample"""
     paired=unpaired=0
     for sample,runs in samples.items():
         unpaired_likeliness=0
@@ -169,7 +169,41 @@ def guess_library_layout_and_filter(samples: Dict[str,List[Namespace]]) -> Tuple
     if unpaired==paired or (unpaired==0 and paired==0):
         raise BioException(f'Cannot decide: paired vote {paired} vs unpaired vote {unpaired}')
     library_layout = 'PAIRED' if paired>unpaired else 'UNPAIRED'
-    return library_layout, {sample:[run for run in runs if run.library_layout==library_layout] for sample,runs in samples.items()}
+    return library_layout
+
+def filter_by_layout(samples: Dict[str,List[Namespace]], paired: bool, use_only_r1: bool=True):
+    """A simple filter by layout (e.g. PAIRED/UNPAIRED) wiht a little subtelty: when filtering for UNPAIRED,
+    there are two option for PAIRED samples: the most likely option is not discard the sample but to remove half the reads
+    (option use_only_r1 - note that this option is only effective when filtering for UNPAIRED, e.g. if 'paired' is set to False)
+    However one could also want to use all the reads, like if they were independant, in which case there is no filtering.
+    """
+    filtered_samples = {}
+    if paired:
+        for sample,runs in samples.items():
+            runs = [run for run in runs if run.library_layout=='PAIRED']
+            if runs:
+                filtered_samples[sample]=runs
+    else:
+        if use_only_r1:
+            for sample,runs in samples.items():
+                filtered_runs = []
+                for run in runs:
+                    if run.uri.startswith('run+fastq'):
+                        new_run = copy.deepcopy(run)
+                        if new_run.library_layout=='PAIRED':
+                            new_run.uri=new_run.uri.replace('run+fastq','run+fastq@filter_r1')
+                        filtered_runs.append(new_run)
+                    elif run.library_layout=='PAIRED':
+                        m=FASTQ_PARITY.match(run.uri)
+                        if not(m) or m.groups()[0]=='1':
+                            filtered_runs.append(run)
+                    else:
+                        filtered_runs.append(run)
+                if filtered_runs:
+                    filtered_samples[sample]=filtered_runs
+        else:
+            filtered_samples=samples
+    return filtered_samples
 class Depth:
     """A simple object providing minimal information of the type of sequencing"""
     
