@@ -175,7 +175,7 @@ def filter_by_layout(samples: Dict[str,List[Namespace]], paired: bool, use_only_
     """A simple filter by layout (e.g. PAIRED/SINGLE) wiht a little subtelty: when filtering for SINGLE,
     there are two option for PAIRED samples: the most likely option is not discard the sample but to remove half the reads
     (option use_only_r1 - note that this option is only effective when filtering for SINGLE, e.g. if 'paired' is set to False)
-    However one could also want to use all the reads, like if they were independant, in which case there is no filtering.
+    If use_only_r1 is set to False, then PAIRED samples are simply discarded, keeping only SINGLE.
     """
     filtered_samples = {}
     if paired:
@@ -202,7 +202,10 @@ def filter_by_layout(samples: Dict[str,List[Namespace]], paired: bool, use_only_
                 if filtered_runs:
                     filtered_samples[sample]=filtered_runs
         else:
-            filtered_samples=samples
+            for sample,runs in samples.items():
+                runs = [run for run in runs if run.library_layout=='SINGLE']
+            if runs:
+                filtered_samples[sample]=runs
     return filtered_samples
 class Depth:
     """A simple object providing minimal information of the type of sequencing"""
