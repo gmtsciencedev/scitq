@@ -171,7 +171,7 @@ def find_library_layout(samples: Dict[str,List[Namespace]]) -> str:
     library_layout = 'PAIRED' if paired>single else 'SINGLE'
     return library_layout
 
-def filter_by_layout(samples: Dict[str,List[Namespace]], paired: bool, use_only_r1: bool=True):
+def filter_by_layout(samples: Dict[str,List[Namespace]], paired: bool, use_only_r1: bool=True) -> Dict[str,List[Namespace]]:
     """A simple filter by layout (e.g. PAIRED/SINGLE) wiht a little subtelty: when filtering for SINGLE,
     there are two option for PAIRED samples: the most likely option is not discard the sample but to remove half the reads
     (option use_only_r1 - note that this option is only effective when filtering for SINGLE, e.g. if 'paired' is set to False)
@@ -225,6 +225,23 @@ class Depth:
     @property
     def total_read_number(self):
         return self.read_number*2 if self.paired else self.read_number
+
+def filter_by(samples: Dict[str,List[Namespace]], **filters: any) -> Dict[str,List[Namespace]]:
+    """A simple filter by multiple criteria find in the different objects contained in the Dict samples
+    typically: filter_by(samples, library_strategy='WGS')
+    """
+    filtered_samples = {}
+    for sample, runs in samples.items():
+        filtered_runs = []
+        for run in runs:
+            for attribute,value in filters.items():
+                if getattr(run, attribute, None)!=value:
+                    break
+            else:
+                filtered_runs.append(run)
+        if filtered_runs:
+            filtered_samples[sample]=filtered_runs
+    return filtered_samples
 
 def user_friendly_depth(depth_string: str) -> Depth:
     """It is commun to specify depth as a string like 2x20M for 20000000 of pair of reads or 100Kx1 for 100000 single reads
