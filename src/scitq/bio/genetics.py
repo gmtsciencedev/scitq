@@ -16,7 +16,7 @@ class BioException(Exception):
     pass
 
 def ena_get_samples(bioproject:str, library_layout:Optional[str]=None, library_strategy:Optional[str]=None) -> Dict[str,List[Namespace]]:
-    """Get a list of runs grouped by sample, optionally filtered by library_layout (PAIRED/UNPAIRED for instance) 
+    """Get a list of runs grouped by sample, optionally filtered by library_layout (PAIRED/SINGLE for instance) 
     and or by library_strategy (WGS/AMPLICON for instance)
     The run objects listed have a uri attribute that can conveniently be used as input in scitq tasks"""
     ena_query=f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={bioproject}&\
@@ -36,7 +36,7 @@ result=read_run&fields=all&format=json&download=true&limit=0"
     return samples
 
 def sra_get_samples(bioproject:str, library_layout:Optional[str]=None, library_strategy:Optional[str]=None) -> Dict[str,List[Namespace]]:
-    """Get a list of runs grouped by sample, optionally filtered by library_layout (paired/unpaired for instance) 
+    """Get a list of runs grouped by sample, optionally filtered by library_layout (paired/single for instance) 
     and or by library_strategy (WGS/amplicon for instance)
     The run objects listed have a uri attribute that can conveniently be used as input in scitq tasks"""
     try:
@@ -148,33 +148,33 @@ def uri_get_samples(uri: str, ending: str='.fastq.gz', alternate_endings: List[s
         if len(files)%2==0 and count(files,f'2{ending}')==count(files,f'1{ending}'):
             library_layout = 'PAIRED'
         else:
-            library_layout = 'UNPAIRED'
+            library_layout = 'SINGLE'
         final_samples[sample] = [Namespace(sample_accession=sample, uri=file, library_layout=library_layout) for file in files]
     return final_samples
 
 def find_library_layout(samples: Dict[str,List[Namespace]]) -> str:
     """Look for the dominant library_layout in a group of sample"""
-    paired=unpaired=0
+    paired=single=0
     for sample,runs in samples.items():
-        unpaired_likeliness=0
+        single_likeliness=0
         for run in runs:
-            if run.library_layout=='UNPAIRED':
-                unpaired_likeliness+=1
+            if run.library_layout=='SINGLE':
+                single_likeliness+=1
             elif run.library_layout=='PAIRED':
                 paired+=1
                 break
         else:
-            if unpaired_likeliness>0:
-                unpaired+=1
-    if unpaired==paired or (unpaired==0 and paired==0):
-        raise BioException(f'Cannot decide: paired vote {paired} vs unpaired vote {unpaired}')
-    library_layout = 'PAIRED' if paired>unpaired else 'UNPAIRED'
+            if single_likeliness>0:
+                single+=1
+    if single==paired or (single==0 and paired==0):
+        raise BioException(f'Cannot decide: paired vote {paired} vs single vote {single}')
+    library_layout = 'PAIRED' if paired>single else 'SINGLE'
     return library_layout
 
 def filter_by_layout(samples: Dict[str,List[Namespace]], paired: bool, use_only_r1: bool=True):
-    """A simple filter by layout (e.g. PAIRED/UNPAIRED) wiht a little subtelty: when filtering for UNPAIRED,
+    """A simple filter by layout (e.g. PAIRED/SINGLE) wiht a little subtelty: when filtering for SINGLE,
     there are two option for PAIRED samples: the most likely option is not discard the sample but to remove half the reads
-    (option use_only_r1 - note that this option is only effective when filtering for UNPAIRED, e.g. if 'paired' is set to False)
+    (option use_only_r1 - note that this option is only effective when filtering for SINGLE, e.g. if 'paired' is set to False)
     However one could also want to use all the reads, like if they were independant, in which case there is no filtering.
     """
     filtered_samples = {}
@@ -210,6 +210,7 @@ class Depth:
     def __init__(self, read_number: int, paired: Optional[bool]=None):
         self.read_number = read_number
         self.paired = paired
+        self.single = not paired
 
     def __repr__(self):
         return f'Depth({self.read_number}{f",paired={self.paired}" if self.paired is not None else ""})'
@@ -218,9 +219,12 @@ class Depth:
         """Convert object to a tuple of (read_number, paired) for convenient attribution to disctinct variables"""
         return (self.read_number, self.paired)
 
+    @property
+    def total_read_number(self):
+        return self.read_number*2 if self.paired else self.read_number
 
 def user_friendly_depth(depth_string: str) -> Depth:
-    """It is commun to specify depth as a string like 2x20M for 20000000 of pair of reads or 100Kx1 for 100000 unpaired reads
+    """It is commun to specify depth as a string like 2x20M for 20000000 of pair of reads or 100Kx1 for 100000 single reads
     return a depth object containing read_number
     """
     m = DEPTH_REGEXP.match(depth_string.lower())
