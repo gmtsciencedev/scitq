@@ -18,8 +18,14 @@ class URI:
             raise fetch.UnsupportedError(f'Cannot join path with {other} which looks like a complete URI')
         return URI(os.path.join(self.uri, other), proto=self.proto)
     
+    def __add__(self, other: str) -> str:
+        return self.uri + other
+    
     def __str__(self):
         return self.uri
+    
+    def __repr__(self):
+        return f'URI("{self.uri}")'
 
     @property
     def path(self):
