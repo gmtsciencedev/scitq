@@ -672,6 +672,9 @@ def main():
             elif args.show:
                 print(rclone_content)
 
+            else:
+                print('This action need an option like --install or --show')
+
     
 
 
