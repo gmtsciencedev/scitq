@@ -12,7 +12,7 @@ from .model import Task, Execution, Signal, Requirement, Worker,\
     ModelException, create_worker_create_job, worker_handle_eviction
 from .db import db
 from .config import IS_SQLITE
-from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, WORKER_STATUS, TASK_STATUS_ID
+from ..constants import TASK_STATUS, EXECUTION_STATUS, FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, WORKER_STATUS, TASK_STATUS_ID, DEFAULT_RCLONE_CONF
 
 
 api = Api(version='1.2', title='TaskMVC API',
@@ -1255,3 +1255,13 @@ class FlavorList(Resource):
                     provider = args.provider,
                     region = args.region,
                     protofilters = args.protofilters)
+
+ns = api.namespace('config', description='Get some config parameter from server')
+
+@ns.route("/rclone")
+class Rclone(Resource):
+    @ns.doc("get_rclone_conf")
+    def get(self):
+        """Provide rclone conf"""
+        with open(DEFAULT_RCLONE_CONF,'rt') as rclone_conf:
+            return rclone_conf.read()

@@ -10,7 +10,7 @@ import shutil
 import random
 from .debug import Debugger
 from .constants import DEFAULT_SERVER_CONF, DEFAULT_WORKER_CONF, TASK_STATUS, EXECUTION_STATUS,\
-    FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION
+    FLAVOR_DEFAULT_LIMIT, FLAVOR_DEFAULT_EVICTION, DEFAULT_RCLONE_CONF
 from signal import SIGKILL, SIGCONT, SIGQUIT, SIGTSTP
 import dotenv
 from tabulate import tabulate
@@ -259,6 +259,14 @@ def main():
     list_flavor_parser.add_argument('--protofilters',type=str,
                                     help=f'Add some : separated filters like cpu>1 or tags#G - do not forget to quote as shell like to intrepret > signs...',
                                     default=None)    
+    
+    config_parser = subparser.add_parser('config', help='Get some limited config information from server')
+    subsubparser=config_parser.add_subparsers(dest='action')
+    rclone_config_parser= subsubparser.add_parser('rclone',help='Get config information for rclone/scitq-fetch')
+    rclone_config_parser.add_argument('--install',action='store_true',
+                                      help='Install the config, replacing current config with the server config')    
+    rclone_config_parser.add_argument('--show',action='store_true',
+                                      help='Output the config')
 
     args=parser.parse_args()
 
@@ -648,6 +656,19 @@ def main():
                         region=args.region, protofilters=args.protofilters)
             headers = ['name','provider','region','cpu','ram','tags','gpu','gpumem','disk','cost','eviction','available']
             __list_print(flavors, headers, headers, long=True)
+
+    elif args.object=='config':
+
+        if args.action=='rclone':
+            rclone_content = s.config_rclone()
+
+            if args.install:
+                with open(DEFAULT_RCLONE_CONF,'wt') as rclone:
+                    rclone.write(rclone_content)
+            
+            elif args.show:
+                print(rclone_content)
+
     
 
 
