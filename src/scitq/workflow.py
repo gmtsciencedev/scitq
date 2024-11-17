@@ -323,10 +323,14 @@ class Workflow:
         self.__batch_task_counter__[batch]+=1
 
         if type(input)==list:
-            input = ' '.join(input)
+            input = ' '.join(map(str,input))
+        elif type(input)!=str:
+            input = str(input)
 
         if type(resource)==list:
-            resource = ' '.join(resource)
+            resource = ' '.join(map(str,resource))
+        elif type(resource)!=str:
+            resource = str(resource)
         
         if type(output)==list:
             raise WorkflowException(f'Task {name} error: output must be a single path, not a list')
@@ -338,7 +342,7 @@ class Workflow:
             if self.base_storage is None:
                 raise WorkflowException(f'Cannot specify rel_output if Workflow.base_storage is unset')
             output = str(self.base_storage / rel_output)
-        elif type(output)==URI:
+        elif type(output)!=str:
             output = str(output)
 
         if output and not output.endswith('/'):
