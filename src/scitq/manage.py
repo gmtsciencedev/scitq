@@ -663,6 +663,9 @@ def main():
             rclone_content = s.config_rclone()
 
             if args.install:
+                rclone_path,_ = os.path.split(DEFAULT_RCLONE_CONF)
+                if not os.path.exists(rclone_path):
+                    os.makedirs(rclone_path)
                 with open(DEFAULT_RCLONE_CONF,'wt') as rclone:
                     rclone.write(rclone_content)
             
