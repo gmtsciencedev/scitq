@@ -1,5 +1,6 @@
 Flask<2.2
 flask-sqlalchemy<3.0.0
+sqlalchemy<2
 Flask-Migrate
 flask-restx==1.2.0
 flask-socketio >= 5.2.0

@@ -707,7 +707,7 @@ six==1.16.0
     #   javaproperties
     #   msrestazure
     #   python-dateutil
-sqlalchemy==2.0.32
+sqlalchemy==1.4.54
     # via
     #   alembic
     #   flask-sqlalchemy

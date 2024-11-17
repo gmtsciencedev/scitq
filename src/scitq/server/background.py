@@ -530,6 +530,7 @@ def background(app):
                     else:
                         if job.retry > 0:
                             job = session.query(Job).get(job_id)
+                            log.exception(f'Job log was {job.log}')
                             job.retry -= 1
                             job.status = 'pending'
                             job.log=''
