@@ -1034,6 +1034,8 @@ def list_content(uri, no_rec=False, md5=False):
                 return rclone_client.list(source, no_rec=no_rec, md5=md5)
             else:
                 raise UnsupportedError(f"This URI protocol is not supported: {m['proto']}")
+    else:
+        return []
 
 def ncdu(uri, output_file):
     """Return a JSON list in the format that ncdu accept with -f"""

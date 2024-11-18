@@ -45,11 +45,13 @@
   hosts: "{{ nodename }}"
   gather_facts: false
   tasks:
-          - name: Wait for ssh
-            wait_for_connection:
-              timeout: 300
-            retries: 3
-            delay: 60
+          - set_fact:
+              ansible_python_interpreter: '/usr/bin/python3'
+          - name: Wait for host
+            ping:
+            ignore_errors: yes
+            retries: 60
+            delay: 5
           - debug: msg=PERCENT_30
           - name: Gather facts
             setup:

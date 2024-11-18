@@ -324,12 +324,12 @@ class Workflow:
 
         if type(input)==list:
             input = ' '.join(map(str,input))
-        elif type(input)!=str:
+        elif type(input)==URI:
             input = str(input)
 
         if type(resource)==list:
             resource = ' '.join(map(str,resource))
-        elif type(resource)!=str:
+        elif type(resource)==URI:
             resource = str(resource)
         
         if type(output)==list:
@@ -342,7 +342,7 @@ class Workflow:
             if self.base_storage is None:
                 raise WorkflowException(f'Cannot specify rel_output if Workflow.base_storage is unset')
             output = str(self.base_storage / rel_output)
-        elif type(output)!=str:
+        elif type(output)==URI:
             output = str(output)
 
         if output and not output.endswith('/'):
