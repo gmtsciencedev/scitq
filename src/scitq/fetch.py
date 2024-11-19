@@ -10,7 +10,7 @@ import requests
 import glob
 import hashlib
 import subprocess
-from .util import PropagatingThread, xboto3, if_is_not_None, bytes_to_hex, get_md5, split_list, package_version
+from .util import PropagatingThread, if_is_not_None, bytes_to_hex, get_md5, split_list, package_version
 import concurrent.futures
 import argparse
 import datetime
