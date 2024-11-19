@@ -1,5 +1,29 @@
 <!-- CHANGELOG SPLIT MARKER -->
 
+# v1.3 (2024-11-10)
+
+This version introduces several enhancements to the v1.2.x series, as well as several important changes in the components used. The storage configuration should be changed as all storage is managed through rclone now:
+- the `Workflow` class now has some debug capacity which should make debugging a lot easier (simply specify `debug=True` in the `Workflow`
+constructor), and contrarily to the previous `scitq-manage debug run` method, tasks are executed the normal way (not an ad hoc local way) and one can initiate a debug run and switch to the normal run during the debug (the reverse is not possible though),
+- `Task`s can be cached, i.e. the results of an identical task will be automatically reused provided:
+  - `use_cache` property is set to True in the Workflow constructor (or with `Server.task_create()`) for the new Task,
+  - Another Task previously succeeded exists with identical `command`, `container`, `input` and `resource`,
+  - both `Task`s `output` are located on the same cloud component (enabling remote copy)
+- A new component, `scitq.bio.genetics`, was added with several convenient functions like `ena_get_samples()`, `sra_get_samples()`, and some ad hoc filters like `filter_by_layout()` which are coupled with new enhancements in `scitq.fetch`, see below,
+- In `scitq.fetch` there is a major component change, with the integration of [rclone](https://github.com/rclone/rclone): this instantly makes all rclone compatible storage systems available in scitq. Note that the URI (generalized URL) used by scitq are different from the one used by rclone: on rclone URIs are like `<resource name>:path/to/my/file` while scitq uses something like `s3://path/to/my/file`. To mimic previous usage, scitq change `<resource>://path/to/my/file` to `<resource>:path/to/my/file` when calling rclone, thus if you call your main S3 resource s3 and your main Azure resource azure, the change will be entirely transparent. However a lot of additional benefits come with this change:
+  - there is now a progress bar when calling `scitq-fetch` from the command line,
+  - the performance is increased,
+  - remote copy is now possible (azure to azure or s3 to s3 copy without transferring any files locally using either copy or rsync: this was throwing an exception in previous versions) - this function is used in `Task` caching when `output` are different.
+  - MD5 support which was introduced in v1.2.4 is now supported through rclone: it is compatible with Azure previous implementation (because Azure has limited internal support for MD5), but not AWS (which has no MD5 support): thus files transferred to AWS with previous scitq versions will lose their MD5 information (you'll need to re-transfer them to recover this info if strictly needed - MD5 value should be optional in nearly all situations, notably in the case of `Task` caching which uses MD5 when available and relies on name/date/size otherwise).
+- An unrelated change has also occurred in `scitq.fetch` : protocol options are now more flexible and can be cumulated in several situations. Protocol options like `ftp@aria2://...` or `run+fastq@sra://...` activate specific behavior in different protocols: they were impossible to cumulate and internally `ftp@aria2` was considered a different protocol from `ftp`. It is now possible to use `run+fastq@sra@filter_r1://...` for instance which means, remove R2 reads and use SRA to recover that run. The `filter_r1` protocol option is automatically invoked by ad hoc function `scitq.bio.genetics.filter_by_layout()`.
+- `scitq.path.URI` formalizes scitq URI in the same way `libpath.Path` does, for instance you can say `URI('s3://temp') / 'test'` which output `URI('s3://temp/test')`, you can ask a `URI` object if it `exists()` if it `isdir()` or it `isfile()`. You can also `list()` its content (though output is a list of Namespace object with dates, size, and co, and not URIs as one could expect). `Workflow.step()` constructor now accepts URI or list of URIs for input, resource and output (not a list for this last one). 
+- a lot of bug fixes were added (see commits for details), including several issues with ansible.
+
+To switch to rclone configuration mode (which is mandatory in v1.3), you need to add the different storage resources through rclone, see https://rclone.org/docs/#configure, and the copy the generated `rclone.conf` file (usually in `~/.config/rclone`) to `/etc/` on the scitq server. Remember to call main resources `s3` for the main S3 or `azure` for the main Azure so that your previous URIs remain the same. Clients can copy the configuration using `scitq-manage rclone config --install`, which enable them to use `scitq-fetch` command locally.
+
+All these changes make `Workflow` creation a lot easier than before.
+
+
 # v1.2.5 (2024-10-09)
 
 This is a quick fix for v1.2.4, that makes workers deploy more robust:
@@ -87,7 +111,7 @@ COMMIT;
 Creating a new worker / deleting the old worker is manual, use the UI or `scitq-manage worker deploy ...` and `scitq-manage worker delete ...` (if you use recruiters, do not let the recruiters recreate for you in the same region, as stated below this is generally not a good idea - this is why we create the new worker **before** deleting the old one)
 
 ### What does not work
-For now, relaunching the instance from the Azure console won't work: the modification of the file system table (`/etc/fstab`) occuring during the instance preparation prevents the instance to complete its boot if relaunched. This means we should rework our instance Ansible scripts to prevent some modifications specifically in Azure (as it enable reboot with correct behaviour in OVH). However this would be moderately useful as immediately relaunching an instance that was just deallocated maximizes the risk of a new deallocation event (which makes sense: Azure needs that kind of instance in this region for customers paying the full price, why would it let you have it at the discount price?). If you really need an extra worker, choose another region/flavor and create a new worker. This is likely what will be done if it is automatically managed.
+For now, relaunching the instance from the Azure console won't work: the modification of the file system table (`/etc/fstab`) occuring during the instance preparation prevents the instance to complete its boot if relaunched. This means we should rework our instance Ansible scripts to prevent some modifications specifically in Azure (as it enable reboot with correct behavior in OVH). However this would be moderately useful as immediately relaunching an instance that was just deallocated maximizes the risk of a new deallocation event (which makes sense: Azure needs that kind of instance in this region for customers paying the full price, why would it let you have it at the discount price?). If you really need an extra worker, choose another region/flavor and create a new worker. This is likely what will be done if it is automatically managed.
 
 
 
