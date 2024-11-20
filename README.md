@@ -30,7 +30,7 @@ cloud).
 using s3 buckets, or Azure containers as data exchange medium, but simple ftp is also possible,
 and even some more exotic stuff like IBM Aspera, last a very specific protocol for 
 bioinformatics dedicated to downloading public FASTQs (DNA sequence) from EBI or
- NCBI,
+ NCBI, and all rclone compatible storages are available.
 - it integrates nicely with docker, providing support for private registries, and wrapping docker executions in a simple yet efficient way,
 It provides a simple data slot paradigm for docker: data input slots or data output slots 
 are always in the same place (/input or /output) (in non-dockerized environment,
@@ -55,11 +55,16 @@ these, so docker remains non-mandatory in scitq).
 
 It provides convenient utilities such as scitq-fetch which can replace specialized tools like AWS or Azure tool and address the different storages the same way.
 
-It does not provide:
+scitq provides two design possibilities:
+- a simple task and worker management library called `scitq.lib` which is akin to `Celery` and very straight forward (queue some tasks, recruit a worker, you're done), but provides limited management goodies (dynamic worker allocation is complex to set up, debug capacities are limited),
+- a Workflow creation library, `scitq.workflow` which provides something more akin to `Nextflow`, i.e. chaining more or less complexe interdependant tasks. There are however several notable differences with `Nextflow`:
+  - this is not a different language, this is plain python, where you import a plain python module, not Groovy in a yaml file,
+  - Nextflow is more abstract and borrows from the declarative style (which is neither better nor worse, see below),
+  - faithful to its practical philosophy, scitq Workflow style provides a writing style easy to read in this task chaining situation. Workflows contain Tasks, the same objects that are used in `scitq.lib`, not theoritical steps : if you have several independant task chains at one point or another in the Workflow you'll have to make a python loop to declare them. While it may lack some abstract design purity, it is considerably easier to use in difficult case of splitting and merging, or to adapt to different kind of initial input.
+  - this is python, you can use introspection to query your tasks live, and chat with them in a shell, asking for help or news.
 
-- a mandatory workflow solution, as in a number of cases workflows are managed within tasks,
-- an abstract environment: it runs vanilla docker with some mount options (or whatever option you want),
-- a custom language to express the orchestration logic, yet it provides a simple python library (`scitq.lib`) which makes orchestration through python an easy task (it can be done with some shell code also)
+Thus, you are free to use either style, and said simply `scitq.lib` is more adapted to simple tasks (including very big tasks), while `scitq.workflow` is better when different kind of tasks are involved with some dependancies.
+
 
 ## Introduction
 
@@ -118,9 +123,14 @@ On the scitq-server server, install scitq:
 pip install scitq
 ```
 
-We will use an S3 storage. Configure it the usual way with `.aws/credentials` (and `.aws/config` if needed - note that is needed for non-AWS S3). Configure it on each server (it is not strictly required on the scitq-server server, but it will be convenient to retrieve the data in the end). We will also need to create a bucket, which we will call `mybucket` (or adapt the code replacing mybucket by your real bucket name).
+You will need also rclone, install it as your distribution recommand, for instance on Ubuntu:
+```sh
+apt install -y rclone
+```
 
-On remote servers, when I run long-term tasks, I usually use GNU screen. But then again, you can open several SSH connections if you prefer.
+We will use an S3 storage. Configure it the usual way with `rclone` (see [s3 config](https://rclone.org/s3/) on rclone site), call the resource `s3` within `rclone`. This is because scitq integrate with rclone, so when you specify `xxx://....` in scitq, scitq will try to find a resource called `xxx` in rclone, thus naming the resource `s3` will make our URIs look like standard s3 URIs: `s3://....`. Now copy `~/.config/rclone/rclone.conf` to `/etc/rclone.conf`. We will also need to create a bucket, which we will call `mybucket` (or adapt the code replacing mybucket by your real bucket name).
+
+On remote servers, when I run long-term tasks, I usually use GNU screen or tmux. But then again, you can open several SSH connections if you prefer.
 
 On the scitq-server server, we will need two open shells, one with the server running, with this command:
 ```bash
@@ -129,32 +139,37 @@ FLASK_APP=scitq.server flask run
 
 And the other to be able to run some code.
 
-On the worker(s), install scitq as well (same as above, with pip), but we will also need docker (which is installed using `apt install docker.io` in Ubuntu), and then run in a shell:
+On the worker(s), install scitq as well (same as above, with pip), but we will also need docker and rclone (which are installed using `apt install -y docker.io rclone` in Ubuntu):
 
+Copy rclone configuration either manually copying `rclone.conf` to `/etc` or using
+```bash
+scitq-manage config rclone --install
+```
+
+and then run in a shell:
 ```bash
 scitq-worker <IP of scitq server> 1
 ```
 
-PS remember to install the `.aws` folder that is needed for s3.
-
-A very minimal setup, but enough for what we need to do. In a production setup, you'd want scitq to deploy the workers automatically for you, but that requires ansible install and setup, we'll come to that later.
+A minimal setup, but enough for what we need to do. In a production setup, you'd want scitq to deploy the workers automatically for you, but that requires ansible install and setup, we'll come to that later.
 
 #### running the tasks
 
-First we want to get a list of all the runs and samples, and we will use ENA API to do so (remember that the EBI mirror NCBI and so this works for any project except extremely recent projects deposited on NCBI SRA - now you could certainly use sratools, but you would have to adapt the code and install sratools):
+First we want to get a list of all the runs and samples, and we will use ENA API to do so, and fortunately for us there is a convenient utility for that in scitq, `scitq.bio.genetics.sra_get_samples()`:
+
+I recommand installing `typer` which is an extremely easy way to create a command line interface, do this with `pip install typer`.
+
+
 ```python
-import requests
-import sys
+import typer
+from scitq.bio.genetics import sra_get_samples
 
-project=sys.argv[1]
+def prepare_bioproject(project:str):
+  """Fetch and clean a bioproject FASTQs with fastp"""
+  samples = sra_get_samples(project)
 
-def get_sample_runs(project):
-  """Get sample & runs from ENA"""
-  query=requests.get(f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={project}&result=read_run&fields=sample_accession,run_accession&format=json&download=true&limit=0")
-  samples = {}
-  for item in query.json():
-    samples[item['sample_accession']] = samples.get(item['sample_accession'],[]) + [item['run_accession']]
-  return samples
+if __name__=='__main__':
+  typer.run(prepare_bioproject)
 ```
 
 Next for our task, we need to download the FASTQs, but scitq will take care of that for us, which we will see just after. Next we must pass them to fastp. We need to find a docker image with fastp included. We could, of course, build our own and use conda to install fastp, but here we are lucky and some nice people from StaPH-B did that for us, the docker image is public and called: staphb/fastp.
@@ -169,68 +184,26 @@ scitq will take care of collecting the output for us, but we'd like to have fast
 
 So our next function will create the corresponding scitq task using the Server.task_create method, our code will be run on the scitq server, so we will use 127.0.0.1 as the server IP address - but you can also use the public IP or a public name that point to it:
 ```python
+import typer
+from scitq.bio.genetics import sra_get_samples
 from scitq.lib import Server
 
-def run_tasks(samples,project):
+def prepare_bioproject(project:str):
+  """Fetch and clean a bioproject FASTQs with fastp"""
+  samples = sra_get_samples(project)
   s=Server('127.0.0.1')
   tasks = []
   for sample, runs in samples.items():
     task.append(
       s.task_create(
-        command = f"sh -c 'zcat /input/*.f*q.gz |fastp --stdin \
+        command = f"zcat /input/*.f*q.gz |fastp --stdin \
           --out1 /output/{sample}.fastq.gz \
           --json /output/{sample}-fastp.json \
           --cut_front --cut_tail --n_base_limit 0 --length_required 60 \
           --adapter_sequence AGATCGGAAGAGCACACGTCTGAACTCCAGTCA \
-          --adapter_sequence_r2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT' ",
-        input = " ".join([f'run+fastq://{run}' for run in runs]),
-        output = f"s3://mybucket/myresults/{project}/{sample}/",
-        container = "staphb/fastp"
-      )
-    )
-
-  s.join(tasks, retry=2)
-```
-
-Ok, here our s.task_create command is obviously doing lots of things, let's look in detail at each argument:
-
-- `command` : you recognize the shell command that we discussed above. We have wrapped it in a shell (using `sh -c '...'`) because scitq tasks do not use the shell by default (which is not always present in docker images), but here we use a pipe which is a shell commodity, so we need a shell. Next, we have taken our input files from the `/input/` folder, and we output all we want back in the `/output` folder. Otherwise it is the same command.
-- `input` this is where we ask scitq to fetch the public data for us and make it available in the `/input` folder of our docker. It is a string of space separated URI, and here we use a very specialized URI: `run+fastq://<run accession>` that probably only scitq understand. scitq will use whatever works, starting from EBI ftp, then switching to NCBI sratools if it does not work, and trying 10 times (EBI Aspera will also be tempted). As you have noticed we installed nothing for sratools or aspera, but scitq will use the official dockers of those solutions to fetch the data, if it thinks it is needed. (note that `scitq-fetch` is a standalone utility that understands these URIs and can be used outside of scitq, it is included in scitq python package)
-- `output` this is where all that is in our docker `/output/` at the end of the task will be copied to. Here you may recognized a completely standard s3 URI, designating a folder in our s3 bucket, we have an different subfolder for each sample, which is not mandatory in our case as output files have different names for each sample, but is generally advised.
-- `container` this is simply the docker image that will be used to run the command.
-
-In the end, the last line, we use a small command (`s.join(tasks)`) to wait for all the tasks to complete, which name is reminiscent of a function much alike in python threading package. It will block python code, waiting that all the task completed, making the queuing script end only when all tasks are done. It takes an optional parameter, `retry`, which tells scitq to automatically retry failed tasks two times before giving up. It makes a small reporting log during execution also.
-
-And that's it!
-
-So to sum it up, our final code is:
-
-```python
-import requests
-import sys
-from scitq.lib import Server
-
-def get_sample_runs(project):
-  """Get sample & runs from ENA"""
-  query=requests.get(f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={project}&result=read_run&fields=sample_accession,run_accession&format=json&download=true&limit=0")
-  samples = {}
-  for item in query.json():
-    samples[item['sample_accession']] = samples.get(item['sample_accession'],[]) + [item['run_accession']]
-  return samples
-
-def run_tasks(samples,project):
-  s=Server('127.0.0.1')
-  tasks = []
-  for sample, runs in samples.items():
-    tasks.append(
-      s.task_create(
-        command = f"sh -c 'zcat /input/*.f*q.gz |fastp --stdin \
-          --out1 /output/{sample}.fastq.gz \
-          --json /output/{sample}-fastp.json \
-          --cut_front --cut_tail --n_base_limit 0 --length_required 60 \
-          --adapter_sequence AGATCGGAAGAGCACACGTCTGAACTCCAGTCA \
-          --adapter_sequence_r2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT' ",
-        input = " ".join([f'run+fastq://{run}' for run in runs]),
+          --adapter_sequence_r2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT",
+        shell=True,
+        input = [run.uri for run in runs],
         output = f"s3://mybucket/myresults/{project}/{sample}/",
         container = "staphb/fastp"
       )
@@ -239,10 +212,21 @@ def run_tasks(samples,project):
   s.join(tasks, retry=2)
 
 if __name__=='__main__':
-  project = sys.argv[1]
-  samples = get_sample_runs(project)
-  run_tasks(samples, project)
+  typer.run(prepare_bioproject)
+
 ```
+
+Ok, here our s.task_create command is obviously doing lots of things, let's look in detail at each argument:
+
+- `command` : you recognize the shell command that we discussed above. We have taken our input files from the `/input/` folder, and we output all we want back in the `/output` folder. Otherwise it is the same command.
+- `shell` : by default task are not run within a shell, but here we use a pipe (which is useful because it works even with several files),
+- `input` this is where we ask scitq to fetch the public data for us and make it available in the `/input` folder of our docker. We simply gather all the different runs for this sample, and provide the list of run URIs prepared by our ready made function. For inforimation, under the hood it uses a specialized URI that looks like `run+fastq://<run accession>` and that probably only scitq understand. scitq will use whatever works, starting from EBI ftp, then switching to NCBI sratools if it does not work, and trying 10 times (EBI Aspera will also be tempted). As you have noticed we installed nothing for sratools or aspera, but scitq will use the official dockers of those solutions to fetch the data, if it thinks it is needed. (note that `scitq-fetch` is a standalone utility that understands these URIs and can be used outside of scitq, it is included in scitq python package)
+- `output` this is where all that is in our docker `/output/` at the end of the task will be copied to. Here you may recognized a completely standard s3 URI (which is due to the fact that our rclone resource is called s3), designating a folder in our s3 bucket, we have an different subfolder for each sample, which is not mandatory in our case as output files have different names for each sample, but is generally advised.
+- `container` this is simply the docker image that will be used to run the command.
+
+In the end, the last line, we use a small command (`s.join(tasks)`) to wait for all the tasks to complete, which name is reminiscent of a function much alike in python threading package. It will block python code, waiting that all the task to be completed, making the queuing script end only when all tasks are done. It takes an optional parameter, `retry`, which tells scitq to automatically retry failed tasks two times before giving up. It makes a small reporting log during execution also.
+
+And that's it!
 
 Now you can run it with a bioproject name on your scitq server (let us say it is uploaded to scitq-fastp.py on our scitq server):
 
@@ -283,17 +267,12 @@ Of course for the purpose of demonstration do not delete the batch and let a few
 
 So now your results are all in `s3://mybucket/myresults/PRJEB46098`. You should get them back on the server and see them.
 
-You can, of course, use AWS CLI utility:
-```bash
-aws s3 sync s3://mybucket/myresults/PRJEB46098 ./PRJEB46098
-```
-
-But you can also use `scitq-fetch` utility:
+We will use `scitq-fetch` utility:
 ```bash
 scitq-fetch sync s3://mybucket/myresults/PRJEB46098 ./PRJEB46098
 ```
 
-Both command will do pretty much the same thing, except AWS native command is more thorough, it will check file integrity with a hash algorithm (much like MD5), which scitq-fetch won't do, relying only on file name and exact size. However, it uses the AWS library `boto3` under the hood, and is thus safe. Also scitq-fetch comes in with scitq package, you won't need to install anything else, and it is agnostic of the provider, meaning you can also use it on Azure storages, or plain ftp with the same syntax, something AWS native command won't do.
+NB you can use rclone also directly, but scitq provide a more consistent way of naming URI in the context of task management (which is not the direct purpose of rclone)
 
 #### getting back outputs
 

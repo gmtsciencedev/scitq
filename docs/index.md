@@ -10,7 +10,8 @@ How to read the doc: unsure if this is what you need? Look at the [GUI](gui.md) 
 * [usage](usage.md): now that is properly set up, use scitq and queue your first tasks.
 * [GUI](gui.md): monitor (and tune) what's going on in scitq.
 * [scitq-manage](manage.md): same as above but for command line lovers.
-* [model](model.md): some insights about the underlying model, API and database.
+* [model](model.md): some insights about the underlying model, base API and database.
+* [workflow](workflow.md): as specified above, the workflow API offers a higher level API recommanded for more sophisticated workload.
 * [motivation](motivation.md): why scitq, and how it came to exist.
 
 ## Project layout

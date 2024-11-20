@@ -24,6 +24,7 @@ Three specific objects will be detailed later as they have very specific actions
 - ansible (used when installing or debuging)
 - db (used when installing)
 - debug (used when debuging)
+- config (used when installing)
 
 The actions are:
 

@@ -45,7 +45,7 @@ If you are upgrading, go to [upgrading](#upgrading) chapter.
 
 You need simply the python setuptools. With a Ubuntu distribution just do that:
 ```bash
-apt install python3 python3-pip
+apt install python3 python3-pip rclone
 ```
 
 #### PostgreSQL
@@ -74,6 +74,8 @@ pip3 install --upgrade pip setuptools
 pip3 install scitq
 ```
 
+NB on newer Ubuntu, notably 24.04 LTS and above, you'll need to specify `pip install --break-system-packages ...` instead of `pip install ...`. If the server is dedicated, it makes sense to install package out of a virtual environment.
+
 If you want to install by source:
 ```bash
 cd /root/
@@ -87,7 +89,7 @@ python3 -m pip install .
 
 Since v1.0rc5, uwsgi is the default deploy mode. If you want to keep old style deploy go to [next chapter](#old-style-deploy). Old style deploy uses Flask development server and is used in debug or simple setups. It does not depends upon uwsgi and is more straight forward to understand but it behaves poorly under heavy load.
 
-**new in v1.0rc8** Since v1.0rc8 there are two different service for scitq which enable a much better performance under heavy load.
+Since v1.0rc8 there are two different service for scitq which enable a much better performance under heavy load.
 
 Copy the production template 
 ```bash
@@ -102,15 +104,9 @@ If this is you first time install you will have to create an `/etc/scitq.conf`:
 curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/production/scitq.conf -o /etc/scitq.conf
 
 
-If you use uwsgi which is the new default, you must install uwsgi in a specific way, so that it includes SSL (needed for "handshake") and gevent support:
+Install pyuwsgi:
 ```bash
-apt install -y libssl-dev
-python3 -m pip install --upgrade pip
-export CFLAGS="-I/usr/include/openssl"
-export LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
-export UWSGI_PROFILE_OVERRIDE=ssl=true
-python3 -m pip install -I --no-binary=:all: --no-cache-dir pyuwsgi uwsgi
-python3 -m pip install gevent
+python3 -m pip install pyuwsgi
 ```
 
 Now edit `/etc/scitq.conf` to suit your need. Keeping 
@@ -148,17 +144,6 @@ When scitq.server is imported, the default behaviour is to start the background(
 
 With this system, scitq-queue logs are in `/var/log/scitq/scitq-queue.log` (QUEUE_LOG_FILE paramater in /etc/scitq.conf), and scitq-main logs can be reached by `journalctl -u scitq-main` (which is the same as for the worker service on SCITQ workers, `journalctl -u scitq-worker`). 
 
-#### Old style deploy
-
-uwsgi is the new way to deploy scitq starting from v1.0rc5. If for some reason you prefer old style deploy (which use development server included in Flask), you're in the right place. This system is more simple (a unique service that does everything) and it does not depend upon uwsgi. However it is not recommanded by Flask in production, it behaves poorly under heavy load, is more fragile (some exception may crash all services) and offers less flexibility than the split service uwsgi deploy.
-
-```bash
-curl https://raw.githubusercontent.com/gmtsciencedev/scitq/main/templates/template_service.tpl -o /etc/systemd/system/scitq.service
-```
-
-You should edit it to change the `Environment=` lines and modify them (notably SCITQ_SERVER which must be changed). Look into [Parameters](parameters.md#scitq-server-parameters), but remember that the parameters must be put into `/etc/systemd/system/scitq.service` in `[Service]` section 
-
-
 
 ## Ansible
 
@@ -172,6 +157,7 @@ If you installed scitq before the `1.0b3` version, this section is very differe
 
 It is now recommanded to have ansible in its own virtual environment to prevent package collision with scitq itself. 
 
+For Ubuntu 20.04 LTS:
 ```bash
 apt-get install -y python3-pip python3-venv python3-apt
 python3 -m venv /root/ansibleenv
@@ -180,9 +166,22 @@ pip install ansible
 ln -s /root/ansibleenv/bin/ansible* /usr/local/bin/
 ```
 
+For Ubuntu 24.04 LTS:
+```bash
+add-apt-repository ppa:deadsnakes/ppa -y
+apt install python3.10 python3.10-venv python3.10-dev
+python3.10 -m venv /root/ansibleenv
+source /root/ansibleenv/bin/activate
+pip install ansible
+ln -s /root/ansibleenv/bin/ansible* /usr/local/bin/
+```
+NB:  there are issue with some of the packages we use starting from python 3.11
+
+
 !!! note
 
     All ansible collections must be done within the virtualenv.
+
 
 ### Install custom ansible collections
 
@@ -236,7 +235,7 @@ Just type in (keep all the default answers everywhere, no password on the key el
 ssh-keygen
 ```
 
-This will create `/root/.ssh/id_rsa` and `/root/.ssh/id_rsa.pub`. If you are unfamiliar with ssh, the first file is your private key and should be kept private and secret.
+This will create `/root/.ssh/id_rsa` and `/root/.ssh/id_rsa.pub` (these are the older SSH file names, on newer distrib, they are named `/root/.ssh/id_edXXXXX` and `/root/.ssh/id_edXXXXX.pub`). If you are unfamiliar with ssh, the first file is your private key and should be kept private and secret.
 
 ### Configure ansible components
 
@@ -293,12 +292,14 @@ If you want to deploy by source, add a scitq_src variable pointing to the path t
 
 Last, this `[scitq:vars]` section is also where NFS parameters can be set if you plan to use NFS, see [using NFS](specific.md#using-nfs) for details. If that is so, you will also need to add your NFS server to the managers group, creating a subsection `[managers]` with the shortname of your server.
 
-Next it is likely you will need a `[workers:vars]` section:
 
-- If you are using s3, see [using S3](specific.md#aws-or-others-s3) for details, you can either set up the `s3_...` variables for all workers under a `[workers:vars]` section or be more specific and set it up only for a certain provider, like under `[ovh:vars]` section. 
-- If you are using Azure storage, see [using Azure Storage](specific.md#azure-storage) for details, the same, you should put the required variable definition in either section.
-- Same for the `docker_...` variables if you use a private registry, see [docker private registry](specific.md#docker-private-image-registry-management).
+
+Next you may need a `[workers:vars]` for the `docker_...` variables if you use a private registry, see [docker private registry](specific.md#docker-private-image-registry-management).
  
+!!! note
+
+    Up to version `v1.2.x`, the `[workers:vars]` had also to contain some variables for S3 or Azure storage so that workers can access the cloud storage components. This is handle directly by `rclone` now so it is not required anymore. It is recommanded to remove those settings however they do not interfere with rclone, so leaving them will have no consequences (other than inducing some confusion for someone seeing those settings).
+
 So that a final `/etc/ansible/inventory/02-scitq` could look like this:
 
 ```ini
@@ -312,10 +313,6 @@ scitq_src=/root/scitq
 mynfsserver
 
 [workers:vars]
-s3_key_id=xxxxxxxxxxxxxxxxxxxxxxxxxxx
-s3_access_key=xxxxxxxxxxxxxxxxxxxxxxxxxx
-s3_region=gra
-s3_url=https://s3.gra.perf.cloud.ovh.net
 docker_registry=xxxxxxxxxx.container-registry.ovh.net
 docker_authentication=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
@@ -334,7 +331,7 @@ There are four optional tasks which are recommanded and all require some modific
 - scitq Ansible code is really about deploying in the cloud, so you should set up a [provider](specific.md#providers-configuration).
 - You should set up the [security](#security) as it is a reasonable idea when operating in a public cloud.
 - You should add some [storage](#define-a-storage-component).
-- You should deploy a docker [private registry](specific.md#docker-private-image-registry-management).
+- Unless you use only public docker images, you should deploy a docker [private registry](specific.md#docker-private-image-registry-management).
 
 
 In this file we will finish with manual worker deployment and security.
@@ -349,7 +346,7 @@ In this file we will finish with manual worker deployment and security.
 
 Just like for scitq-server you need simply the python setuptools. With a Ubuntu distribution just do that:
 ```bash
-apt install python3 python3-pip unzip pigz aria2
+apt install python3 python3-pip unzip pigz aria2 rclone
 pip3 install --upgrade pip
 pip3 install --upgrade setuptools
 ```
@@ -384,7 +381,7 @@ Environment=SCITQ_SERVER=127.0.0.1
 ```
 SCITQ_SERVER *must* be modified to your scitq-server IP address or DNS name (not the URL, the name or address). It may even be a good idea to set this SCITQ_SERVER variable into your /etc/environment global setting so that scitq commands on the system can reach the right scitq server automatically (not mandatory, whereas SCITQ_SERVER is mandatory in `/etc/systemd/system/scitq-worker.service`)
 
-PATH can be safely left as it is (unless you have an alternative PATH when you deployed the scitq package), AWS_ENDPOINT_URL is only needed if you use [S3](specific.md#aws-or-others-s3).
+PATH can be safely left as it is (unless you have an alternative PATH when you deployed the scitq package).
 
 See [worker parameters](parameters.md#scitq-worker-parameters) for details.
 
@@ -396,6 +393,12 @@ systemctl start scitq-worker
 ```
 
 See how it goes with `systemctl status scitq-worker`. The journal/log can be consulted with `journalctl -u scitq-worker` (better pipe that in a less, it may be quite long).
+
+You'll need also to install rclone configuration from server:
+(you need to have SCITQ_SERVER environment variable correctly set to the name or IP of your scitq server)
+```sh
+scitq-manage config rclone --install
+```
 
 ## Security
 
@@ -430,7 +433,7 @@ ip6tables-save > /etc/iptables/rules.v6
 
 ## Define a storage component
 
-If your tasks generate some kind of data output, which is very likely this is the last mandatory step of the install. With current scitq version, you have two choices: [S3](specific.md#aws-or-others-s3) or [NFS](specific.md#using-nfs). S3 is recommanded, it is cheaper and does not have NFS bottleneck issue, but if you have a nice NFS (with a generous bandwidth and low latency disks), it is perfectly fine.
+If your tasks generate some kind of data output, which is very likely this is the last mandatory step of the install. With current scitq version, you will need to setup the storage component with `rclone` using `rclone --config /etc/rclone.conf config`, see https://rclone.org/docs/ for details. The `--config /etc/rclone.conf` option which is not standard is because scitq uses a central configuration which is not rclone default (you can otherwise copy rclone generated configuration from the default `~/.config/rclone/rclone.conf` to `/etc/rclone.conf`). [NFS](specific.md#using-nfs) is no more recommanded due to bottleneck issue and permission trouble.
 
 In case you have specific docker images that you would want to use, configure a [private registry](specific.md#docker-private-image-registry-management).
 
@@ -489,7 +492,7 @@ python3 -m pip install .
 
 #### For a server only
 
-Upgrade database (mandatory when upgrading to v1.2):
+Upgrade database (mandatory when upgrading to v1.2 or above):
 ```
 scitq-manage db upgrade
 ```
