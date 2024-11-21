@@ -9,7 +9,7 @@ PATH=/usr/bin:/usr/local/bin
 ```
 
 !!! note
-    Before version 1.0rc7, these parameters were set directly in `/etc/systemd/system/scitq.service` file, in the `[Service]` section with lines `Environment=...` lines. Beware that since scitq 1.0rc7, the `/etc/systemd/system/scitq.service` has been replaced by two files `/etc/systemd/system/scitq-main.service` and `/etc/systemd/system/scitq-queue.service`, and you will have to disable the old service (`systemctl stop scitq; systemctl disable scitq; mv /etc/systemd/system/scitq.service /root/`), create a sample `/etc/scitq.conf` (where you will have to copy your old `Environment=...` lines without the `Environment=` part), copy the new services definition from `templates/production` - or directly from [https://github.com/gmtsciencedev/scitq/tree/main/templates/production](https://github.com/gmtsciencedev/scitq/tree/main/templates/production) in the `/etc/systemd/system` folder, do a `systemctl daemon-reload` and activate them with `systemctl enable scitq-main scitq-queue`.
+    Before version 1.0rc7, these parameters were set directly in `/etc/systemd/system/scitq.service` file.
 
 ### PATH
 The usual PATH setup. Not really important for the server, it must contain the PATH where scitq-server command was deployed with [setup.py install](install.md#install-python-package) and is very likely `/usr/local/bin` which is contained by default.
@@ -18,14 +18,12 @@ The usual PATH setup. Not really important for the server, it must contain the P
 This is required by Flask itself, it should be `scitq.server`, which is set by default, do not change that.
 
 ### SCITQ_PRODUCTION
-This is the hack that SCITQ is using to know it is not used with the development server, in short, you should always keep it defined to 1 in that file. 
-
-In more details, when it is unset, each scitq.server import tries to launch the queuing thread, which may lead to multiple queuing of the same task if several scitq server process are launched. Setting `SCITQ_PRODUCTION` will prevent the queuing thread from beeing launched with `scitq-server` command, it will only be launched with `scitq-queue` command. This enable multiple servers to be launched in uwsgi context while ensuring a single queuing thread is launched.
+This is the hack that SCITQ is using to know it is not used with the development server, in short, you should always keep it defined to 1 in that file. Do not change that parameter.
 
 ### SQLALCHEMY_DATABASE_URI
-This is required by SQLAlchemy (more specifically flask-sqlalchemy), it can be either sqlite or PostgreSQL but sqlite should be avoided except for simple tests. In theory any SQLAlchemy compatible database should work but this has not been tested, and as for now, there is some raw SQL code at several place in the code... Yes we know it is bad... However an effort was made so that this code should work at least for mariadb/mysql but again this has never been tested.
+This is required by SQLAlchemy (more specifically flask-sqlalchemy), it can be either sqlite or PostgreSQL but sqlite should be avoided except for simple tests. In theory any SQLAlchemy compatible database should work but this has not been tested, and as for now, there is some raw SQL code at several places in the code... Yes we know it is bad... However an effort was made so that this code should work at least for mariadb/mysql but again this has never been tested.
 
-For details look at [https://flask-sqlalchemy.palletsprojects.com/en/2.x/config/]. Default value of `postgresql://root@/scitq` should suit anybody.
+For details look at [https://flask-sqlalchemy.palletsprojects.com/en/2.x/config/]. Default value of `postgresql://root@/scitq` should suit the vast majority.
 
 ### SQLALCHEMY_POOL_SIZE
 This is optionnally used by SQLAlchemy for performance optimization. Default should be fine for most users. Consider  [SCITQ_SERVER_PROCESS](#scitq_server_process) parameter to increase performance. 
@@ -48,7 +46,8 @@ Note that it is only used if workers are deployed with ansible, through scitq-se
 This is the number of uwsgi workers (note that it is completely unrelated to SCITQ workers, this is the way uwsgi calls its acting processes). The default (10) should be fine for most setups but if you have huge computation, you may want to increase the number of worker. Be aware of the total number of connections (see [SQLALCHEMY_POOL_SIZE](#sqlalchemy_pool_size)) and adjust the maximum connections in PostgreSQL setup.
 
 ### PYTHONPATH
-This is the PYTHONPATH variable we all know. It should not be present in this file but due to a bug in Ubuntu default python setup, it must be added so that locally built packages can be used, that is used with [SCITQ_SRC]. It should not be useful in other context of use 
+This is the PYTHONPATH variable we all know. It should not be present in this file but due to a bug in Ubuntu 20.04 default python setup, it must be added so that locally built packages can be used, that is used with [SCITQ_SRC]. It should not be useful in other context of use.
+NB this can be removed in Ubuntu 24.04.
 
 ### OVH / OpenStack provider specific variables
 
@@ -72,6 +71,10 @@ OS_IDENTITY_API_VERSION=3
 These variables are defined in Horizon rc file that is provided by OVH - when you log into Horizon this file can be exported clicking on [this link](https://horizon.cloud.ovh.net/project/api_access/openrc/).
 
 Only the password must be set up manually as it is not included in the file associated to OS_PASSWORD variable.
+
+!!! note
+
+    The Open RC file that is proposed using OVH Manager is incomplete and lack several variable: use the one from the Horizon manager as pecified above.
 
 In order to use dynamic flavor discovery, also known as [protofilters](manage.md#using-protofilters-new-in-v123), some specific variables must be added, notably some specific OVH API variables, see [availability variables](specific.md#ovh-availability), [OVH updater](specific.md#ovh-updater), and optionnally [preferred region](specific.md#ovh-preferred-region).
 
@@ -123,13 +126,11 @@ scitq_src=/home/ubuntu/public-pytq
 bioit
 
 [workers:vars]
-s3_key_id=xxxxxxxxxxxxxxxxxxxxxx
-s3_access_key=yyyyyyyyyyyyyyyyyyyyy
-s3_region=gra
-s3_url=https://s3.gra.perf.cloud.ovh.net
 swap_proportion = 0.1
 docker_registry=zzzzzzzz.graX.container-registry.ovh.net
 docker_authentication=wwwwwwwwwwwwwwwwwwwwww
+ssh_public_key=/root/.ssh/id_rsa.pub
+
 ```
 
 If you are familiar with Ansible, you may notice this is a static group definition with some variables.
@@ -186,34 +187,26 @@ This variable is not mandatory and should only be set if you deploy scitq by sou
 
 #### SSH key (Azure)
 
-This defaults to `/root/.ssh/id_rsa.pub` and should not be changed. Change it only in `/etc/ansible/inventory/O2-scitq` if you have your root SSH key in a non standard place. This is only used by Azure deploy code (you must change Ansible SSH key setting as well using Ansible standard settings). Note that OVH handle SSH key in a entirely different way and is not affected by this.
+This defaults to `/root/.ssh/id_rsa.pub`. Change it only in `/etc/ansible/inventory/O2-scitq` if you have your root SSH key in a non standard place. This is only used by Azure deploy code (you must change Ansible SSH key setting as well using Ansible standard settings). Note that OVH handle SSH key in a entirely different way and is not affected by this.
+
+NB In Ubuntu 24.04, the default SSH public key is changed so this should be set to something like:
 
 ```ini
-ssh_public_key=/root/.ssh/id_rsa.pub
+ssh_public_key=/root/.ssh/id_edXXXXXX.pub
 ```
 
 ### [managers]
 
-The only reason you may want to add a new member of the managers group is if you have NFS. So add in here the same name that you entered for nfs_server (just the plain name on a new line, not nfs_server=...), look at the typical `02-scitq`/
+The only reason you may want to add a new member of the managers group is if you have NFS. So add in here the same name that you entered for nfs_server (just the plain name on a new line, not nfs_server=...), look at the typical `02-scitq` above.
 
 ### [workers:vars]
 
 The workers specific section.
 
-#### s3_ variables
+!!! note
 
-You will need those to grant S3 access to the workers (workers automatically created for you by SCITQ, not static workers).
+    previous s3_... variables are no more used as `rclone` is used instead. See [Install](./install.md).
 
-There are four of them:
-
-`s3_key_id` and `s3_access_key` are the classical authentication token typically found in the `~/.aws/credentials` file created by awscli when you setup the access. 
-
-If you are using a standard AWS S3 bucket, you will not need more than this. Non-AWS S3, notably OVH S3, requires two other variables found in the `~/.aws/config` file (such as explained here: [optimise-the-sending-of-your-files](https://docs.ovh.com/fr/storage/object-storage/s3/optimise-the-sending-of-your-files/)).
-
-`s3_region` should be set with the value set for `region` variable in `~/.aws/config` filen
-`s3_url` should be set with the value set for `endpoint_url` variable in `~/.aws/config`.
-
-s3_ variables are further explained in [specific](specific.md#aws-or-others-s3).
 #### swap_proportion
 
 This is non mandatory but highly advised. This setup will be used to use this proportion of /scratch folder (which should be automatically assigned to the largest partition on workers) to set up a swap file. 

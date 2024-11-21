@@ -4,9 +4,11 @@
 
 ### Using NFS
 
-NFS has been used since the beginning of scitq usage, but we tend to not use it anymore as NFS is very likely to create some bandwidth bottlenecks. Yet if you have a very big bandwidth this can still be a very good option. In doubt, look at S3 that will be covered later on.
+NFS has been used since the beginning of scitq usage, but we tend to not use it anymore as NFS is very likely to create some bandwidth bottlenecks. Its usage is deprecated and it will be removed in a future version.
 
 NFS is hardcoded to be mounted on `/data` and as for now there is no way to change that easily as this directory will be used in the NFS server, in the workers and in the container (dockers) where your tasks are launched.
+
+It is incompatible with `use_cache` option (results could be unpredictible).
 
 #### Changes in scitq server ansible configuration (`/etc/ansible/inventory/02-scitq` by default)
 
@@ -62,64 +64,32 @@ Don't forget to apply `/etc/exports` changes with:
 exportfs -a
 ```
 
-### AWS (or other's) S3
+### cloud storage (AWS or other's S3, Azure storage, GCP storage, etc.)
 
-S3 is the new *de facto* standard for data exchange. It is recommanded as it can be purchased from a variety of places (AWS obviously, but almost everybody (but Microsoft...) is selling S3 now, notably OVH has much cheaper options than AWS) and it scales remarkably. 
+**New in v1.3** In v1.3, it was decided to integrate [rclone](https://rclone.org) instead of using libraries provided by the different Cloud Companies. `rclone` is programmed in Go, it is quick, well documented and support a lot of different systems, plus it completely share some of the ideas we had (like `sync` of course but also `ncdu`). It has only one drawback (on our point of view, we think it is faithful to its mission doing so): its philosophy is different, it connect to specific sources and is mostly a generalized rsync between different resources belonging to an organisation, while what we need is a file transfer tool accross systems: this has one consequence: 
 
-Be careful not to be too cheap, the cheapest providers (e.g. [Wasabi](https://wasabi.com/)) were never tested, they never answered our demands to know if their model fit our usage which is not very clear. They should work for what we know.
+- `rclone` URIs start with a resource private name like you expect when you `rsync` or `scp`, something akin to the name of a server,
+- `scitq` URIs are rather on absolute URIs, they start with the protocol you use, like on a browser or with ftp. 
 
-Here we will focus on worker access to S3 and we suppose you have already setup some standard access to your S3 on some computers (maybe your own computer), as this will prove useful to finally get the results of your workers or to push some resources or inputs (covered in [usage](usage.md)).
+So for thing to run smoothly (and be retrocompatible with scitq previous versions), you have to call your different resources in rclone after the protocole name they use: your main S3 resource should be called `s3`, your main Azure resource `azure`, and so on. Note that if you have several independant S3 or Azure resources, then you will have to introduce new names but as this was not possible at all in previous scitq versions, it will not break anything.
 
+To add an rclone resource, just follow [rclone manual](https://rclone.org/docs/):
 
-#### With Ansible
-
-Just open the scitq ansible configuration file (`/etc/ansible/inventory/02-scitq` by default) and configure s3 variables in `[workers:vars]` section:
-
+```sh
+rclone --config /etc/rclone.conf config
 ```
-[workers:vars]
-[...]
-s3_key_id=xxxxx
-s3_access_key=xxxx
-s3_region=gra
-s3_url=https://s3.gra.perf.cloud.ovh.net
-```
+NB the `--config /etc/rclone.conf` option is because scitq uses a central configuration which is not rclone default
 
-You can also put these variables under more specific provider configuration (for instance you could replace `[workers:vars]` by `[ovh:vars]`), so that different provider use different s3 settings.
-
-You must also setup S3 access on your permanent workers for root user.
-
-
-### Azure storage
-
-The situation with Azure is more simple, only Azure is selling some Azure storage. Note that this is different from [Azure for instances](#azure) below. You may use Azure storage with any provider or use other types of storage with Azure instances. Technically, there is another difference: for instance, the setting is done at the server level (`/etc/scitq.conf`), while for storage, this is done at worker level, that is either in scitq server `/etc/ansible/inventory/02-scitq` for automatically deployed workers, or on worker `/etc/scitq-worker.conf` for manually deployed workers.
-
-#### With ansible (automatically deployed workers)
-Just open the scitq ansible configuration file (`/etc/ansible/inventory/02-scitq` by default) and configure s3 variables in `[workers:vars]` section:
-
-```ini
-[workers:vars]
-[...]
-worker_azure_account=<storageaccount_name>
-worker_azure_key=<storageaccount_key>
-```
-
-NB the content of those keys appears in the Storage Account page in https://portal.azure.com, in the "Access Keys" section, you can make the connection string appears, copy it and extract the corresponding values:
-
-`DefaultEndpointsProtocol=https;AccountName=<storageaccount_name>;AccountKey=<storageaccount_key>;EndpointSuffix=core.windows.net`
-
+NB2 contrarily to previous versions, ansible integration is automatic, the `/etc/rclone.conf` of the server is automatically copied to workers by ansible.
 
 #### In manually deployed workers
-Edit or create the `/etc/scitq-worker.conf` and add the keys that way:
 
-```ini
-SCITQ_AZURE_ACCOUNT=<storageaccount_name>
-SCITQ_AZURE_KEY=<storageaccount_key>
+Either copy the `rclone.conf` file of the server to the worker `/etc` or type in the worker:
+
+```sh
+scitq-manage config rclone --install
 ```
-
-See in paragraph just above how to get the account name and key.
-The service must be reloaded to register the change (`systemctl restart scitq-worker`)
-
-NB if you migrate from an earlier version of scitq (v1.0rc10 or lower), you will need to add a line in `/etc/systemd/system/scitq-worker.service`, you should have a line `EnvironmentFile=/etc/scitq-worker.conf` in your `[Service]` section (as appear in the `template/template_worker_service.tpl` in source tree). You'll need to `systemctl daemon-reload` before restarting ther service in that case.
+NB this command is primarily intended for users, when they manage scitq from their laptop.
 
 ## Docker private image: registry management
 

@@ -25,6 +25,7 @@ Since v1.2, a new table, recruiter, has been added to allow dynamic worker alloc
 
 ![schema_recruiter](img/recruiter.1degree.png)
 
+The recruiter objects are more abstract than other objects and trigger some worker management behaviour, their downlevel use is explained at the end of this document, see [recruiter objects](#recruiter-objects). However they are best used with the higher level [Workflow](./workflow.md) component.
 
 Execution are not accessible simply using the [GUI](gui.md) or the [command line utility](manage.md). That is because in the vast majority of cases, the only execution that matters is the last. If a task failed, was re-excuted and succeeded in the second execution, why it failed the first time is now of lesser interest. However it is still in the database and we will learn here how to access that.
 
@@ -228,3 +229,28 @@ Since v1.2, `create_task` accept a `shell` optional argument, which default to `
 
 Most of the time, using `shell=True` is harmless if not useful. However, first, we stick to python conventions, notably the behaviour of `subprocess.run`, and second, some dockers may not have a shell, in which case activating shell will trigger an error. What `shell=True` does is that it replace your <command> by `sh -c '<command>'`, but it makes the code look tidier. This also means that if your command contains single quotes `'`, it is quite unlikely to work and it will trigger a warning. You can also specify `shell='bash'` if you want a specific shell program. We recommand not to try fancy stuff such as `shell='python'`, which might work but are prone to errors.
 
+#### Recruiter objects
+
+Recruiter objects are the low level objects implementing the recruitment rules of Workflow, see [Workflow](./workflow.md), their direct use using `scitq.lib` is however possible, but should be reserved to specific cases. 
+
+A Recruiter is attached to a `batch` (and thus may operate outside of Workflow use). A batch may have several strictly ranked Recruiters (only one Recruiter of a certain `rank`, starting by 1 and increasing, is allowed per `batch`, creating a new Recruiter for an already existing `rank` for a certain `batch` is the same as updating the old Recruiter if one existed before).
+
+Each Recruiter has some triggering parameters:
+
+- `minimum_tasks` : a minimal pending task number (which default to 0, trigger as soon as one pending task is there),
+- `maximum_workers` : a maximum number of workers which is reached for this batch will untrigger the Recruiter.
+
+Recruiters are listed sorted by their rank and apply one after the other if their triggering conditions are met. Thus the higher the rank, the more likely the `maximum_workers` condition is met.
+
+When the Recruiter triggers it applies recruitment criteria:
+
+- `worker_flavor` : (mandatory) flavor of Worker to recruit,
+- `worker_provider`, `worker_region`: (optional) both are needed for deploy to occur, otherwise this is a "recycle only" recruiter. Note that setting both parameters will not prevent recycling, but make it considerably unlikely as if a recyclable worker is not immediately available a new deploy will occur,
+- `tasks_per_worker`: (mandatory) dividing the pending task number by this figure will set the need number of worker (up to `maximum_workers`),
+- `worker_concurrency`,`worker_prefetch`: this are settings for newly recruited workers (deployed or recycled). Contrarily to what happens with the workflow high level system, here `worker_concurrency` is not taken into account to estimate the number of needed workers, only `tasks_per_worker` is used.
+
+Recruiters maybe manually created by `scitq.lib.Server().recruiter_create()` call.
+
+Recruiters are linked to batch, deleting the batch will delete all its Recruiters.
+
+Worker restitution upon idleness occurs independantly of Recruiters, Recruiters just add or update Workers.

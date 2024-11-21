@@ -1,6 +1,6 @@
 <!-- CHANGELOG SPLIT MARKER -->
 
-# v1.3 (2024-11-10)
+# v1.3 (2024-11-21)
 
 This version introduces several enhancements to the v1.2.x series, as well as several important changes in the components used. The storage configuration should be changed as all storage is managed through rclone now:
 - the `Workflow` class now has some debug capacity which should make debugging a lot easier (simply specify `debug=True` in the `Workflow`

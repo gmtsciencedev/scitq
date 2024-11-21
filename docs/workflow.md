@@ -51,8 +51,8 @@ So under the hood, Step is attached to a Batch object, which is named after the 
 As said above, only `name` is mandatory, and most other attributes are default for Step attributes. There are however two specific attributes that should be set always at Workflow level:
 
 - `debug` (new in v1.3): this attribute changes the behavior of `Workflow.run()` method and the behavior of `Task`:
-  - if `debug` is False (the default): this is the normal mode: as soon as you create a task with `Workflow.step()` it is active, it will start to recruit its workers and run tasks, even before `Workflow.run()` is launched. Generally several tasks will run simultaneously at a time, comming from one or several steps. `Workflow.run()` display an NCurse application that help managing the whole Workflow - but it does not really run the Workflow which runs on its own (thus typing CTRL-C will not stop tasks, there are special keys to press in the NCurse application to do that).
-  - if `debug` is True: tasks are created in a `debug` state and nothing will happen until `Workflow.run()` is launched. When this happens, instead of the NCurse application, a more simple text will propose you to run one of the available tasks (one that does not depend on another task), it will display as much information as possible for this particular task (how the worker are recruited, how the task change and most importantly a real time log of the task command). Each time a task is over, it will ask what to do next, retry, continue with another task, or switch back to normal mode. Note that once in normal mode, there is no comming back to the debug mode. Killing the python script with CTRL-C will prevent any more task to run (but will not stop the current task).
+  - if `debug` is False (the default): this is the normal mode, tasks are launched with a certain concurrency level, and all tasks able to be run are triggered, see [Workflow extra methods](#workflow-extra-methods) below.
+  - if `debug` is True: tasks are created in a `debug` state and when `Workflow.run()` is launched it will be proposed to launch one of the available tasks (a choice is possible), but only one at a time. It will display as much information as possible for this particular task (how the worker are recruited, how the task change and most importantly a real time log of the task command). When this task is over, scitq will ask what to do next, retry, continue with another task, or switch back to normal mode. Note that once in normal mode, there is no comming back to the debug mode. In debug mode, and contrarilly to what happen in normal mode, killing the python script with CTRL-C will prevent any more task to run.
 - `base_storage` : an optional value that enable to specify `Step.output` with `step(rel_output=...)` this is the same thing as specifying `step(output=os.path.join(base_storage,...))`.
 
 ## Step attributes (Worflow.step() constructor arguments)
@@ -63,7 +63,7 @@ Let us dive into Step attributes, first the Batch or shared attributes:
 - `batch` (mandatory): This is the name of the Batch object, but it is also used to define the batch to which Tasks will belong, the actual batch of the Tasks is `<Workflow name>.<Step batch>`, so as to avoid any collision with a similar Step from another Workflow,
 - `maximum_worker` (mandatory if Workflow `max_step_workers` is unset): this is the maximum number of workers to be allocated for this batch, see the worker recruitment system below,
 - `concurrency` (mandatory if Worfkow `concurrency` is unset): this is the concurrency setting for newly recruited workers,
-- `provider`, `region`, `flavor` (optional, can be set at Workflow level): these are mandatory if new workers should be deployed, if any of these is unset only recycling of currently idle workers will happen if at least `flavor` is set, see worker recruitment below, (`region` defaults now to `'auto'` which enable to use the `PREFERRED_REGION` setting)
+- `provider`, `region`, `flavor` (optional, can be set at Workflow level): these are mandatory if new workers should be deployed, if any of these is unset only recycling of currently idle workers will happen if at least `flavor` is set, see worker recruitment below, (`region` defaults now to `'auto'` which enable to use the `PREFERRED_REGIONS` setting and permit to adapt automatically to another region when a region is depleted of its quota of instances, see [Worker recruitment](#worker-recruitment) below)
 - `prefetch` (optional, default to 0): this is the prefetch setting for newly recruited workers,
 - `rounds` (optional): an another setting that can help with worker recruitment: for instance if you have 100 tasks with a concurrency of 10, you expect 10 rounds if there is only one worker. So if you want to be frugal, this setting tells scitq how long you are ready to wait in terms of iterations (useful if there is a variable number of tasks),
 - `tasks_per_worker` (optional): another logic for worker recruitment: in above exemple, you have a concurrency of 10, that is your worker launches ten tasks simultaneously, but in the end, you expect your worker to do 100 tasks (in 10 rounds). The following equation should be true: `tasks_per_worker = concurrency * rounds`. It's just another way of specifying your expectations.
@@ -131,50 +131,25 @@ To recruit, scitq need to know what kind of worker you need, how many of them, a
 
 - the kind of worker is set by the `flavor` argument available at Workflow or Step level: this is the same argument that is expected in `worker_deploy()` call that we have seen before. There is one novelty in v1.2, now even manually deployed worker have a flavor, which by default is `'local'`, but can be changed notably in `/etc/scitq-worker.conf` with `SCITQ_FLAVOR=...`
 (this value is overriden by the one in scitq database if it exists, so to change the flavor of a manually deployed worker, change its /etc/scitq-worker.conf and its scitq database value with `scitq-manage worker update -n ... -f <newflavor>`).
-- (new in v1.2.3) `flavor` can also start with `auto:...` and uses the protofilters syntax (see [protofilters](manage.md#using-protofilters-new-in-v123)), which offers more flexibility in terms of recycling, and adapt automatically to availability issues *if region is set to auto*,
-- where to recruit is set by the `provider` and `region` parameters. If both of those are set, it triggers the possibility to deploy new workers (but it does not make that automatic), if either is missing, no new deploy will occur, but recycling an already present worker remains possible.
-- (new in v1.2.3) if `flavor` uses the new `auto:...` syntax, `region` and `provider` can be set to `auto`. This is strongly recommanded for `region`, as it will enable to adapt to `availability`, and not necessarily for `provider` where specifying `auto` may generate extra costs.
+- (new in v1.2.3) `flavor` can also start with `auto:...` and uses the protofilters syntax (see [protofilters](manage.md#using-protofilters-new-in-v123)), which offers more flexibility in terms of recycling, and adapt automatically to availability issues *if region is set to auto* (which is now the default value in Workflow),
+- where to recruit is set by the `provider` and `region` parameters. If both of those are set, it triggers the possibility to deploy new workers (but it does not make that automatic), if either is missing, no new deploy will occur, but recycling an already present worker remains possible. As region is now preset to `auto`, specifying the provider decide wether the recruiter actively deploy or only recycle. 
+- like `region`, `provider` can be set to `auto`. This has the benefit of bringing a maximal flexibility, notably when using `auto:...` as a `flavor` (as likely different providers have different names for flavors). Yet it gives less control on the different data flows, and it may generate extra costs due to egress/ingress transfers. In doubt it is recommanded to specify a provider (like ovh or azure) and avoid auto except in specific case (when very sparse instances are needed accross providers).
 
-The last thing to know is to specify how many workers are needed, which is computed using the following rules:
+The last thing to know is the number of needed workers, which is computed using the following rules:
 
-* There must be some Tasks with status `pending` for this Step (that is tasks not running yet, but with their requirements (a.k.a. `required_tasks`) fulfilled), also scitq know that each worker can do `Step.concurrency` tasks in parallel so basically `# pending tasks / Step.concurrency` is the right base figure,
-* An upper limit is set to avoid renting half Azure or half OVH because the Workflow went berseck, this is the `Step.maximum_workers` attribute.
-
-This is the minimal setup, but there are several refinement:
-
-- First, the `Step.maximum_workers` can be set really high and a lower limit can be set with `rounds` or `tasks_per_worker` Step level attributes. Both attributes are syntaxic sugar to specify how long you would ideally wait, if it remains below the hard limit that is `Step.maximum_workers`: the `rounds` argument is how many time scitq will reuse the worker for this Step. So if `rounds=10` and `concurrency=10`, it means scitq will expect one worker per 100 tasks. In that case, specifying `rounds=10` is the same as `tasks_per_worker=100`.
-- Second, scitq will always preferably recycle, that is reuse an available worker of the right kind, provided this worker has some spare possibilities from its previously attributed tasks (e.g. no more pending tasks in its previous batch). However you can force somehow this behaviour:
+* There must be some Tasks with status `pending` for this Step (i.e. tasks not running yet, but with their requirements (a.k.a. `required_tasks`) fulfilled). Using the `Step.concurrency` which setup how many tasks in parallel are run, an initial (and maximal) number can be proposed: `# pending tasks / Step.concurrency`,
+* This value is however capped by several figures:
+  - [mandatory] `Step.maximum_workers` is the upper limit to avoid an explosion of costs,
+  - [optional] the initial number can be devided with `Step.rounds` (e.g. the number of rounds of `Step.concurrency` tasks that each worker will do),
+  - [optional] when specifying `Step.tasks_per_worker` the initial number is replaced by `# pending tasks / tasks_per_worker` (up to `Step.maximum_workers`) (which is the same idea as above but expressed differently: if `concurrency` is 10, then `rounds=10` is equivalent to `tasks_per_worker=100`.
+- Second, scitq will always preferably recycle, that is reuse an available worker of the right kind, provided this worker is partly idle. However you can force somehow this behaviour:
 
   - for instance if `Workflow.max_worklow_workers=Sum of Step maximum_workers`, then new worker deploy propability is maximal: as soon as a Task reaches the `pending` status, if a worker of the right `flavor` is not immediately available, a new Worker is deployed,
   - If `Worker.max_workflow_workers` is set to 0, then no new deploy will happen whatsoever, scitq will wait indefinitely that by chance a Worker of the right `flavor` becomes available.
   - An intermediate setup will trigger an initial and progressive recruitment up to `Worker.max_workflow_workers`, and then scitq will recycle these workers between the different Workflow steps (at least, those requiring the same `flavor`).
 
 
-### Recruiter objects
 
-Recruiter objects are the low level objects implementing the recruitment rules of Workflow. 
-
-A Recruiter is attached to a `batch` (and thus may operate outside of Workflow use). A batch may have several strictly ranked Recruiters (only one Recruiter of a certain `rank`, starting by 1 and increasing, is allowed per `batch`, creating a new Recruiter for an already existing `rank` for a certain `batch` is the same as updating the old Recruiter if one existed before).
-
-Each Recruiter has some triggering parameters:
-
-- `minimum_tasks` : a minimal pending task number (which default to 0, trigger as soon as one pending task is there),
-- `maximum_workers` : a maximum number of workers which is reached for this batch will untrigger the Recruiter.
-
-Recruiters are listed sorted by their rank and apply one after the other if their triggering conditions are met. Thus the higher the rank, the more likely the `maximum_workers` condition is met.
-
-When the Recruiter triggers it applies recruitment criteria:
-
-- `worker_flavor` : (mandatory) flavor of Worker to recruit,
-- `worker_provider`, `worker_region`: (optional) both are needed for deploy to occur, otherwise this is a "recycle only" recruiter. Note that setting both parameters will not prevent recycling, but make it considerably unlikely as if a recyclable worker is not immediately available a new deploy will occur,
-- `tasks_per_worker`: (mandatory) dividing the pending task number by this figure will set the need number of worker (up to `maximum_workers`),
-- `worker_concurrency`,`worker_prefetch`: this are settings for newly recruited workers (deployed or recycled). Contrarily to what happens with the workflow high level system, here `worker_concurrency` is not taken into account to estimate the number of needed workers, only `tasks_per_worker` is used.
-
-Recruiters maybe manually created by `scitq.lib.Server().recruiter_create()` call.
-
-Recruiters are linked to batch, deleting the batch will delete all its Recruiters.
-
-Worker restitution upon idleness occurs independantly of Recruiters, Recruiters just add or update Workers.
 
 ## Workflow extra methods
 
@@ -183,9 +158,77 @@ Workflow main use is to add Step with the `Workflow.step()` creator. However you
 - `Workflow.run()`: Current behaviour is that Tasks start as soon as they are declared (if they have no requirements), so this does not really trigger the workflow (which is consistent with the equivalent `scitq.lib.Server().join()` behaviour), but it displays a nice URWID (built upon NCURSE) text app, that displays what is going on with all your tasks for all batch and how the workers are affected. There are also several possible actions like PAUSE (which prevent new tasks to be launched without touching running tasks), SUSPEND (which does the same, plus it suspend running tasks) and DESTROY (which kill all tasks and batches - and recruiters).
 Any abnormal ending of the app will trigger an RuntimeException preventing further execution of the script.
 
-- `Workflow.clean()`: This method delete all batch and tasks that were created and by default download all logs (STDOUT and STDERR of all steps in folder named after the Workflow.name, controlled by `log_destination` optional argument - if this argument is set to None then no logs will be downloaded) 
+- `Workflow.clean()`: This method delete all batch and tasks that were created and by default download all logs (STDOUT and STDERR of all steps in folder named after the Workflow.name, controlled by `log_destination` optional argument - if this argument is set to None then no logs will be downloaded). With v1.3, doing this will remove possibilities of using cache (with the `use_cache` parameter), and is now discouraged.
 
-## A more elaborate example
+## Specific domain library
+
+### scitq.bio.genetics
+
+This library offers convenient functions dedicated to genetics:
+- `ena_get_samples()`: a method that takes a bioproject accession (like PRJEBxxxx or PRJNAxxxx) and return a dictionary of sample accession: list of runs. The `run` object is a `argparse.Namespace` objet with the attributes of the EBI ENA run object, plus a specific attribute, `run.uri` which is a URI string that can be used notably in `Step.input`,
+- `sra_get_samples()`: a very similar method which use NCBI SRA instead of EBI ENA. NCBI SRA attributes are transformed to be more compatible with EBI ENA and more pythonic:
+
+Original SRA attribute|Modified attribute in scitq
+--|--
+Run|run
+ReleaseDate|release_date
+LoadDate|load_date
+spots|spots
+bases|bases
+spots_with_mates|spots_with_mates
+avgLength|avg_length
+size_MB|size_mb
+AssemblyName|assembly_name
+download_path|download_path
+Experiment|experiment
+LibraryName|library_name
+LibraryStrategy|library_strategy
+LibrarySelection|library_selection
+LibrarySource|library_source
+LibraryLayout|library_layout
+InsertSize|insert_size
+InsertDev|insert_dev
+Platform|platform
+Model|model
+SRAStudy|sra_study
+BioProject|bio_project
+Study_Pubmed_id|study_pubmed_id
+ProjectID|project_id
+Sample|sample
+BioSample|bio_sample
+SampleType|sample_type
+TaxID|tax_id
+ScientificName|scientific_name
+SampleName|sample_name
+g1k_pop_code|g1k_pop_code
+source|source
+g1k_analysis_group|g1k_analysis_group
+Subject_ID|subject_id
+Sex|sex
+Disease|disease
+Tumor|tumor
+Affection_Status|affection_status
+Analyte_Type|analyte_type
+Histological_Type|histological_type
+Body_Site|body_site
+CenterName|center_name
+Submission|submission
+dbgap_study_accession|dbgap_study_accession
+Consent|consent
+RunHash|run_hash
+ReadHash|read_hash
+
+The run objects contain like before a `run.uri` attribute for use in input.
+
+- a `uri_get_samples()` is also provided: it takes a URI in input, a cloud storage folder containing a project (consisting of different FASTQs), and it provides a similar dict of sample accession: runs. The regroupment of runs per sample is guessed using either the one sample per folder approach (the folder containing the diffent runs) or the common prefix approach (where runs for the same samples share a common prefix that is not shared with the other runs). The parity information is also guessed from the ending of FASTQ (i.e. if a folder contains two FASTQs, one ending in `1.fastq.gz` the other with `2.fastq.gz`, the runs will have a `run.library_layout` set to `'PAIRED'`). Like previously `run.uri` attribute is also provided.
+
+- Some other functions are also provided, with effect relatively obvious for the field: 
+  - `find_library_layout()` find the dominent library layout in a sample dict such as returned by previous functions.
+  - `filter_by_layout()` filter runs matching a specific layout, except that PAIRED run will be transformed into SINGLE run.
+  - `filter_by()` enable filtering runs by an arbitrary attribute (for instance, one could say `samples=filter_by(samples, library_strategy='WGS')`)
+  - `user_friendly_depth()` enable to use strings representing a number of read, a commun parameter for runs, known as depth, in a common way such as `10M`. It also support `x2` or `x1` suffix to denote the parity information (`10Mx2` means 10000000 of pair of reads). One can use prefix like `2x10M`, the result is identical. The answer of this function is a Depth object containing both information.
+
+## A complete workflow example
 
 This is a real life example, a QC workflow for a public study (that is remove low quality sequences and sequences that belong to the host (which is usual in microbiota studies), and normalize (rarefy) samples), using the nice docker collection from StaPH-B group.
 
@@ -196,122 +239,109 @@ NB: Tt is easy to adapt to OVH just change provider to 'ovh' flavor to 'c2-120' 
 
 ```python
 from scitq.workflow import Workflow
-import requests
+from bio.genetics import ena_get_samples
 import sys
+import typer
  
 SEED = 42
  
-######################################################
-#                                                    #
-#    Project specifics                               #
-#                                                    #
-######################################################
-if len(sys.argv)<3:
-    print(f'Usage: {sys.argv[0]} <bioproject accession PRJxxxxxxx> <depth>')
-    sys.exit(1)
 
-bioproject=sys.argv[1]
-depth=sys.argv[2]
-ena_query=f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={bioproject}&\
-result=read_run&fields=sample_accession,run_accession,library_strategy,library_layout&format=json&download=true&limit=0"
-azure_base = f'azure://rnd/raw/{bioproject}'
- 
- 
-######################################################
-#                                                    #
-#    Collecting samples                              #
-#                                                    #
-######################################################
-samples = {}
-for item in requests.get(ena_query).json():
-    if item['library_strategy']=='WGS':
-        if item['sample_accession'] not in samples:
-            samples[item['sample_accession']]=[]
-        samples[item['sample_accession']].append(item['run_accession'])
- 
- 
-######################################################
-#                                                    #
-#    QC Workflow                                     #
-#                                                    #
-######################################################
- 
-wf = Workflow(name=f'QC-{bioproject}', shell=True, 
-              max_step_workers=5, retry=2, flavor='Standard_D32ads_v5', 
-              provider='azure', region='swedencentral',
-              max_workflow_workers=10)
- 
-for sample,runs in samples.items():
- 
-    # cleaning step
-    step1 = wf.step(
-        batch='fastp',
-        name=f'fastp:{sample}',
-        command=f'zcat /input/*.f*q.gz|fastp \
-            --adapter_sequence AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter_sequence_r2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
-            --cut_front --cut_tail --n_base_limit 0 --length_required 60 --stdin \
-            --json /output/{sample}_fastp.json -z 1 -o /output/{sample}.fastq.gz',
-        container='staphb/fastp:0.23.4',
-        concurrency=12,
-        input=[f'run+fastq://{run}' for run in samples[sample]],
-        output=f'{azure_base}/{sample}/fastp/',
-    )
- 
-    # human filtering step (removing human DNA for ethical reasons)
-    step2 = wf.step(
-        batch='humanfiltering',
-        name=f'bowtiehuman:{sample}',
-        command=f'bowtie2 -p 4 --mm -x /resource/chm13v2.0/chm13v2.0 -U /input/{sample}.fastq.gz\
-|samtools fastq -@ 2 -f 4 -F 256 -0 /output/{sample}.fastq -s /dev/null',
-        container='staphb/bowtie2:2.5.1',
-        concurrency=6,
-        required_tasks=step1,
-        input=step1.output,
-        output=f'{azure_base}/{sample}/humanfiltering/',
-        resource='azure://rnd/resource/chm13v2.0.tgz|untar',
-    )
- 
-    # normalization step
-    step3 = wf.step(
-        batch='seqtk',
-        name=f'seqtk:{sample}',
-        command=f'seqtk sample -s{SEED} - {depth} < /input/{sample}.fastq > /output/{sample}.fastq',
-        container='staphb/seqtk:1.3',
-        concurrency=6,
-        required_tasks=step2,
-        input=step2.output,
-        output=f'{azure_base}/{sample}/seqtk-{depth}/',
-    )
- 
-######################################################
-#                                                    #
-#    Monitoring and post-treatment                   #
-#                                                    #
-######################################################
+def QC_workflow(bioproject:str, depth:str):
+    """Collect samples for a bioproject, filter, clean, and normalize them at a given depth - and provide stats"""
+    
+    ######################################################
+    #                                                    #
+    #    Collecting samples                              #
+    #                                                    #
+    ######################################################
+    samples = ena_get_samples(bioproject)
+    depth,parity = user_friendly_depth(depth).to_tuple()
+    
+    ######################################################
+    #                                                    #
+    #    QC Workflow                                     #
+    #                                                    #
+    ######################################################
+    wf = Workflow(name=f'QC-{bioproject}', shell=True, 
+                max_step_workers=5, retry=2, flavor='auto:cpu>=32:ram>=120:disk>=100', 
+                provider='azure', region='auto',
+                max_workflow_workers=10, 
+                base_storage= f'azure://rnd/raw/{bioproject}')
+    
+    for sample,runs in samples.items():
+    
+        # cleaning step
+        step1 = wf.step(
+            batch='fastp',
+            name=f'fastp:{sample}',
+            command=f'zcat /input/*.f*q.gz|fastp \
+                --adapter_sequence AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter_sequence_r2 AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
+                --cut_front --cut_tail --n_base_limit 0 --length_required 60 --stdin \
+                --json /output/{sample}_fastp.json -z 1 -o /output/{sample}.fastq.gz',
+            container='staphb/fastp:0.23.4',
+            concurrency=12,
+            input=[run.uri for run in runs],
+            rel_output=f'{sample}/fastp/',
+        )
+    
+        # human filtering step (removing human DNA for ethical reasons)
+        step2 = wf.step(
+            batch='humanfiltering',
+            name=f'bowtiehuman:{sample}',
+            command=f'bowtie2 -p 4 --mm -x /resource/chm13v2.0/chm13v2.0 -U /input/{sample}.fastq.gz\
+    |samtools fastq -@ 2 -f 4 -F 256 -0 /output/{sample}.fastq -s /dev/null',
+            container='staphb/bowtie2:2.5.1',
+            concurrency=6,
+            required_tasks=step1,
+            input=step1.output,
+            rel_output=f'{sample}/humanfiltering/',
+            resource='azure://rnd/resource/chm13v2.0.tgz|untar',
+        )
+    
+        # normalization step
+        step3 = wf.step(
+            batch='seqtk',
+            name=f'seqtk:{sample}',
+            command=f'seqtk sample -s{SEED} - {depth} < /input/{sample}.fastq > /output/{sample}.fastq',
+            container='staphb/seqtk:1.3',
+            concurrency=6,
+            required_tasks=step2,
+            input=step2.output,
+            rel_output=f'{sample}/seqtk-{depth}/',
+        )
+    
+    ######################################################
+    #                                                    #
+    #    Monitoring and post-treatment                   #
+    #                                                    #
+    ######################################################
 
-step4 = wf.step(
-    batch='stats',
-    name=f'stats',
-    command='apt update && apt install -y parallel && \
-find /input -name *.fastq | parallel -j $CPU --ungroup seqkit -j 1 stats {}',
-    container='staphb/seqkit',
-    concurrency=1,
-    required_tasks=step3.gather(),
-    input=step3.gather('output'),
-)
+    step4 = wf.step(
+        batch='stats',
+        name=f'stats',
+        command='apt update && apt install -y parallel && \
+    find /input -name *.fastq | parallel -j $CPU --ungroup seqkit -j 1 stats {}',
+        container='staphb/seqkit',
+        concurrency=1,
+        required_tasks=step3.gather(),
+        input=step3.gather('output')
+    )
 
-wf.run(refresh=10)
-wf.clean()
+    wf.run(refresh=10)
+
+if __name__=='__main__':
+    typer.run(QC_workflow)
 ```
 
-The **project specifics** and **collecting samples** parts are just a sample use of python requests and ENA API, nothing related to scitq, and really classic.
+The **collecting samples** is just a very basic use of the `scitq.bio.genetics` library.
 
 Some details about **QC Workflow**
 
-- In the Workflow declaration, you will find the recruitment rules specified as described: 5 worker max for each Step set with `max_step_workers=5` (there are 4 of them), but a maximum of 10 for the whole workflow, `max_workflow_workers=10`, so given that there are lots of samples, there should be 10 workers but changing from the first steps to the last as the samples are progressing into the workflow (logically, there should be relatively quickly 5 workers on step1, 5 on step2, and when all samples went through step1, the step1 workers moving to step3, etc.).
+- In the Workflow declaration:
+  - you can notice the worker.flavor use the `auto:...` syntax, with the `auto:cpu>=32:ram>=120:disk>=100` string: it means at least 32 vCores, at least 120Gb of RAM memory and 100Gb of disk.
+  - you will find the recruitment rules specified as described: 5 worker max for each Step set with `max_step_workers=5` (there are 4 of them), but a maximum of 10 for the whole workflow, `max_workflow_workers=10`, 
+  - so given that there are lots of samples, there should be 10 workers but changing from the first steps to the last as the samples are progressing into the workflow (logically, there should be relatively quickly 5 workers on step1, 5 on step2, and when all samples went through step1, the step1 workers moving to step3, etc.).
 - You see also that the level of concurrency is quite different between step1 and step2/3, which tell us that the workers will spent a significant amount of time for step2/3, compared to step1 (and maybe it would make sense to lower the maximum_worker setting for step1).
 - Last, you see that step4 is a single step out of the for loop (1 iteration), that will synthetize all the iterations of step3. This uses the gather method for the step4 requirements: its required_tasks is set to `step3.gather()`, that is all the different iterations of step3. You can also see the use of `step3.gather('output')` for step4 input.
 
 Last while step1/2/3 are iterated a certain number of times (1 of each per sample) and step4 is unique (1 iteration for all the samples), the appearance of the workflow code remains clear and easy to read. When defining step4 requirement, the use of gather() method bypasses the fact that, technically, the `step3` that is designated here out of loop is just the last of all step3: gather() result does not depend on which iteration of the step3 it is called.
-
-Last the result of the step4 is downloaded by the final `wf.clean()` (which download STDOUT for all tasks). 
