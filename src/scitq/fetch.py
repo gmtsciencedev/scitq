@@ -1,4 +1,3 @@
-import botocore.exceptions
 from ftplib import FTP
 import re
 import logging as log
@@ -16,15 +15,10 @@ import argparse
 import datetime
 import pytz
 import io
-from azure.storage.blob import BlobServiceClient, BlobBlock, BlobClient, ContentSettings
-import uuid
-import azure.core.exceptions
 from .constants import DEFAULT_WORKER_CONF, DEFAULT_RCLONE_CONF
-import dotenv
 from tabulate import tabulate 
 from fnmatch import fnmatch
 import hashlib
-import multiprocessing
 import json
 import tempfile
 from rclone_python import rclone
@@ -1307,7 +1301,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
         if args.md5:
             headers.append('md5')
         print(tabulate(
-            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri, 
+            [[ if_is_not_None(getattr(item,attribute,None),'-') for attribute in headers  ] for item in list_content(uri, 
                                                                                                         no_rec=args.not_recursive,
                                                                                                         md5=args.md5)],
             headers=headers,
@@ -1325,7 +1319,7 @@ one of them must be a file URI (starts with file://... or be a simple path)''')
         if args.md5:
             headers.append('md5')
         print(tabulate(
-            [[ if_is_not_None(getattr(item,attribute),'-') for attribute in headers  ] for item in list_content(uri,
+            [[ if_is_not_None(getattr(item,attribute,None),'-') for attribute in headers  ] for item in list_content(uri,
                                                                                                                 no_rec=args.not_recursive,
                                                                                                                 md5=args.md5)],
             headers=headers,
