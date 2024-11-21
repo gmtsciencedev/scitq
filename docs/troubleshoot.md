@@ -1,5 +1,18 @@
 # troubleshooting
 
+## debugging tasks
+
+**New in v1.3** If you use Workflow, use `debug=True` in the Workflow and run it normally (`Workflow.run()` is mandatory in that case). This mode was meant to be intuitive and user friendly. You do not need more information than that to use it.
+
+In more detail, it uses a text flow, and stop at each task, asking a question. Each answer is designated by a letter between brackets `[x]` with the first answer in capital, meaning it is the default answer. Just press the letter corresponding to the action you want (or nothing if the default choice is good for you) and press Enter.
+
+Each task is done one at a time, displaying as much detail as possible on what is happening in scitq.
+
+Each time a task is done, failed or succeeded, the question returns, what to do next? You can continue in debug mode as long as you wish, or you can quit, stoping all tasks, or you can exit to normal mode.
+
+!!! note
+    Contrarily to the old debug system below, tasks are executed normally, in a worker, they register in the database, so a task done in the new debug mode is not different from a task done in normal mode. For this reason, it is compatible with all other options, like automated worker recruitment or the `use_cache` option - this last option maybe particularly useful if the task to debug is somewhere in the middle of your workflow and you do not want to redo previous tasks each time you relaunch.
+
 ## troubleshooting a specific scitq task
 
 Sometime a task might not behave in your docker like it should: switching from interactive to queued task is always a source of (joy and) surprises in any queuing system due to context issues (see [docker context](usage.md#docker--d) for instance). The execution can, however, be closely mimicked on any worker node using `scitq-manage debug run` command. It will run a command as closely as possible to scitq usual execution context, except it will be run locally and interactively (docker is run with `-d` flag in normal scitq execution, here it will be run with `-it`). For this to work, you need some queued task(s) in a batch. Having the batch in pause is advised (but not mandatory).
@@ -23,7 +36,7 @@ One important thing with `scitq-manage debug run` is that it never send the resu
 Obviously scitq should be installed. Then if your task use docker, docker should be installed. 
 
 Some configuration may also be needed (it should not be needed on a normal worker when used as root as these are part of normal requirements of a worker).
-Docker credentials should be set if you use a private registry (in `~/.docker/config.json`). Then if your task has some input either s3 or azure, then s3 access should be configured locally where you run the command (using classical aws authentication `~/.aws/credentials` - and maybe `~/.aws/config` which is likely if your s3 storage is not plain AWS), or scitq azure storage config should be activated, which suppose special variables `SCITQ_AZURE_ACCOUNT` and `SCITQ_AZURE_KEY` to be set and exported (or defined in `/etc/scitq-worker.conf` as it should be in a correctly deployed worker) (see [azure storage](specific.md#azure-storage) for details).
+Docker credentials should be set if you use a private registry (in `~/.docker/config.json`). Then if your task has some input from a cloud storage, you should install rclone (`apt install rclone`) and copy rclone configuration locally : `scitq-manage config rclone --install`.
 
 To sum it up, the requirement are the same than for a normally deployed worker except scitq-worker service is not required to be installed and running.
 
@@ -60,6 +73,12 @@ ansible-playbook deploy_one_vm.yaml --extra-vars "nodename=node5 concurrency=1 s
 The first line is loading OpenStack credentials (this file is provided by your cloud provider).
 The second line put you in the standard place where Ansible playbooks should be when you have done the [install](install.md).
 The third line is the deploying command, the same that scitq-server is using. The `target` variable is the FQDN of your scitq server. The other variables are usual variable for a worker.
+
+NB calling manually ansible requires the presence of the worker object in database (this will be the case if the automatic ansible fails). If you need to do it manually also, connect to the database and create a worker like that:
+
+```sql
+INSERT INTO worker (name,hostname,flavor,provider,status,concurrency,prefetch,batch,region) VALUES ('node5','node5','c2-180','ovh','offline',1,0,'mybatch','GRA7');
+```
 
 #### Passing a specific command to a worker or a group of worker
 

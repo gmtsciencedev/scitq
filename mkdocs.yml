@@ -10,6 +10,7 @@ nav:
   - using the GUI: gui.md
   - manage: manage.md
   - model and API: model.md
+  - workflow: workflow.md
   - specific settings: specific.md
   - troubleshooting: troubleshoot.md
 plugins:
