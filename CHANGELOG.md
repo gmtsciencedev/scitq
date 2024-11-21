@@ -1,3 +1,7 @@
+# v1.3.1 (2024-11-21)
+
+A small bug fix release above v1.3 that fix some unnecessary imports in scitq.fetch and an MD5 bug when the protocol is not MD5 capable.
+
 <!-- CHANGELOG SPLIT MARKER -->
 
 # v1.3 (2024-11-21)

@@ -1,6 +1,6 @@
 #!/bin/sh
 NAME=scitq-server
-TAG=1.2
+TAG=1.3.1
 
 docker build -t gmtscience/${NAME}:${TAG} .
 docker push gmtscience/${NAME}:${TAG}

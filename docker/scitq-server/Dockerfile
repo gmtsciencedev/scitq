@@ -1,14 +1,16 @@
 FROM alpine:3.17
 
-RUN apk add --no-cache python3 wget  gcc python3-dev libc-dev linux-headers ansible supervisor uwsgi && \
+RUN apk add --no-cache python3 wget  gcc python3-dev py3-pandas libc-dev linux-headers ansible supervisor uwsgi rclone && \
     wget https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py && \
-    pip install scitq==1.2 openstacksdk==0.61 pyuwsgi && \
-    ansible-galaxy install rolehippie.mdadm && \
-    ansible-galaxy collection install openstack.cloud:1.8.0 && \
-    ansible-galaxy collection install azure.azcollection && \
+    pip install scitq==1.3.1 openstacksdk==0.61 pyuwsgi && \
     apk del gcc python3-dev libc-dev linux-headers wget && \
     rm get-pip.py
+
+RUN ansible-galaxy install rolehippie.mdadm && \
+    ansible-galaxy collection install openstack.cloud:1.8.0 && \
+    ansible-galaxy collection install azure.azcollection && \
+    pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
 
 RUN scitq-manage ansible install
 RUN mkdir /var/lib/scitq
