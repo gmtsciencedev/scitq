@@ -793,3 +793,10 @@ input       | {task.input}
                         elif answer=='x':
                             return self.switch_to_non_debug(tasks_to_go=tasks_to_go)
         print('''That's all folks! No more tasks to debug''')
+    
+    @property
+    def previous_step(self):
+        """A small syntax addon that makes workflow writing more flexible"""
+        if not self.__steps__:
+            raise WorkflowException('Workflow contain no steps yet so cannot find any previous step')
+        return self.__steps__[-1]

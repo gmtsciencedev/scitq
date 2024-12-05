@@ -765,25 +765,34 @@ we already have {workers} workers')
 
 
             change = False
-            task1 = aliased(Task)
-            task2 = aliased(Task)
-            active_requirements = session.query(task1,task2.status).\
-                                    join(task1,Requirement.task).filter(task1.status == 'waiting').\
-                                    join(task2,Requirement.other_task)
-            candidate_tasks = []
-            failed_requirements = []
-            for task,status in list(active_requirements):
-                if status=='succeeded' and task not in candidate_tasks:
-                    candidate_tasks.append(task)
-                if status!='succeeded' and task not in failed_requirements:
-                    failed_requirements.append(task)
-            for task in candidate_tasks:
-                if task not in failed_requirements:
-                    task.status='pending'
-                    session.add(task)
-                    change = True
-            if change:
-                session.commit()
+            #task1 = aliased(Task)
+            #task2 = aliased(Task)
+            #active_requirements = session.query(task1,task2.status).\
+            #                        join(task1,Requirement.task).filter(task1.status == 'waiting').\
+            #                        join(task2,Requirement.other_task).groupby(task1.id)
+            session.execute('''
+WITH TaskProgress AS (
+    SELECT 
+        t1.task_id,
+        COUNT(t2.task_id) AS success,
+        COUNT(r.other_task_id) AS total
+    FROM 
+        task t1
+    JOIN 
+        requirement r ON r.task_id = t1.task_id AND t1.status = 'waiting'
+    LEFT JOIN 
+        task t2 ON r.other_task_id = t2.task_id AND t2.status = 'succeeded'
+    GROUP BY 
+        t1.task_id
+)
+UPDATE task
+SET status = 'pending'
+WHERE task_id IN (
+    SELECT task_id
+    FROM TaskProgress
+    WHERE success = total
+)''')
+            session.commit()
 
 
 

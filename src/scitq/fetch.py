@@ -273,12 +273,12 @@ class RcloneClient:
         os.system(f'rclone ncdu {_uri}')
 
     def sync(self, source, destination, show_progress=False, args=[]):
-        """Small wrapper above rclone.sync"""
+        """Small wrapper above rclone.copy to avoid deleting (but this time we know that these are folder, so no copy to)"""
         if not self.is_installed:
             raise FetchErrorNoRepeat('rclone is not installed')
         destination=self._uri(destination)
         source=self._uri(source)
-        rclone.sync(source, destination, show_progress=show_progress, args=args)
+        rclone.copy(source, destination, show_progress=show_progress, args=args)
 
 # work as a singleton
 rclone_client = RcloneClient()
