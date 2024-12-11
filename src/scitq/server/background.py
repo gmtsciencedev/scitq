@@ -248,9 +248,17 @@ def background(app):
                                               command=complete_task.command, container=complete_task.container,
                                               container_options=complete_task.container_options, input=complete_task.input,
                                               output_folder=complete_task.output, resource=complete_task.resource)
-                        hash = execution.get_input_hash()
+                        #hash = execution.get_input_hash()
+                        input_pattern = ' '.join([f"%/{os.path.split(item)[1]}" for item in execution.input.split(' ')])
+                        resource_pattern = ' '.join([f"%/{os.path.split(item)[1]}" for item in execution.resource.split(' ')])
                         for other_execution in session.query(Execution).filter(
-                                Execution.input_hash==hash, Execution.status=='succeeded', Execution.output_hash!=None
+                                Execution.command==execution.command, 
+                                Execution.container==execution.container,
+                                Execution.container_options==execution.container_options,
+                                Execution.input.like(input_pattern),
+                                Execution.resource.like(resource_pattern),
+                                Execution.status=='succeeded', 
+                                Execution.output_hash!=None
                                 ).order_by(Execution.output_folder!=execution.output_folder):
                             if not other_execution.check_output():
                                 log.warning(f'Cannot use cached execution {other_execution.execution_id} for {task.task_id}: output seems corrupted')
@@ -260,6 +268,10 @@ def background(app):
                                 changed=False
                                 continue
                             else:
+                                hash = execution.get_input_hash()
+                                if other_execution.input_hash != hash:
+                                    log.warning(f'Execution {other_execution.execution_id} is nearly the same as task {execution.task_id} but inputs diverge in hash')
+                                    continue
                                 if other_execution.output_folder!=execution.output_folder:
                                     try:
                                         copy(other_execution.output_folder,execution.output_folder, file_list=other_execution.output_files.split(' '))

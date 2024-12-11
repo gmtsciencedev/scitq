@@ -443,8 +443,8 @@ class Server:
             status = 'waiting' if required_task_ids else 'pending'
         if shell:
             shell='sh' if shell is True else shell
-            if "'" in command:
-                log.warning(f'''This command ({command}) contains quote(s) (') and is unlikely to work''')
+            if "'" in command and not "''" in command:
+                command=command.replace("'","''")
             command = f"{shell} -c '{command}'"
         if type(input)==list:
             input=' '.join(input)

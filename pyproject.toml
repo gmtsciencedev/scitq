@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitq"
-version = "1.3.2"
+version = "1.3.3rc1"
 authors = [
   { name="Raynald de Lahondès" },
   { name="Rémi Tan" }
@@ -37,6 +37,7 @@ scitq-fetch = "scitq.fetch:main"
 scitq-inventory = "scitq.server:ansible_inventory"
 scitq-azure-updater = "scitq.providers.azure.update:run"
 scitq-ovh-updater = "scitq.providers.ovh.update:run"
+scitq-remote = "scitq.remote:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

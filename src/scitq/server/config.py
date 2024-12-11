@@ -72,6 +72,8 @@ OS_PROJECT_ID         = _('OS_PROJECT_ID')
 EVICTION_ACTION=_('EVICTION_ACTION')
 EVICTION_COST_MARGIN=_num('EVICTION_COST_MARGIN', default=10)
 
+REMOTE_URI=_('REMOTE_URI')
+
 def get_quotas(provider=None):
     if provider=='ovh':
         return dict(zip(OVH_REGIONS.split(),map(int,OVH_CPUQUOTAS.split())))

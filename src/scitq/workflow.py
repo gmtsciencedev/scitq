@@ -139,11 +139,13 @@ class Step:
         self.map_attributes()
 
     def gather(self, attribute='step'):
-        """Return all the steps that belongs to this batch"""
+        """Return all the steps that belongs to this batch or all its output"""
         if attribute == 'step':
             return self.__steps__
         elif attribute == 'output':
             return [s.output for s in self.__steps__]
+        elif attribute.startswith('output/'):
+            return [s.output+attribute[6:] for s in self.__steps__]
     
     def get_output(self):
         """Return task output stream if there is one"""
