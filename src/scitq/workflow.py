@@ -1,5 +1,5 @@
 from .lib import Server, HTTPException
-from .fetch import get
+from .fetch import get, copy
 from typing import Optional, Union, List
 from time import sleep
 import os
@@ -10,6 +10,8 @@ import logging as log
 from .constants import DEFAULT_SERVER
 from .path import URI
 from .util import colors
+import hashlib
+import tempfile
 
 DEFAULT_REFRESH=30
 DEBUG_INTERVAL=2
@@ -793,6 +795,7 @@ input       | {task.input}
                         elif answer=='q':
                             return False
                         elif answer=='x':
+                            del[tasks_to_go[task.task_id]]
                             return self.switch_to_non_debug(tasks_to_go=tasks_to_go)
         print('''That's all folks! No more tasks to debug''')
     
@@ -802,3 +805,42 @@ input       | {task.input}
         if not self.__steps__:
             raise WorkflowException('Workflow contain no steps yet so cannot find any previous step')
         return self.__steps__[-1]
+
+class shell_code:
+    """A small helper function to copy a shell code remotely"""
+
+    def __init__(self,code_string):
+        self.__code__ = code_string
+        self.__hash__ = self.compute_hash()
+        self.__copied__ = False
+        self.__URI__ = None
+    
+    def compute_hash(self):
+        """Compute hash for the code"""
+        blake2s = hashlib.blake2s()
+        blake2s.update(self.__code__.encode('utf-8'))
+        return blake2s.hexdigest()
+
+    def write_to_resource(self):
+        """Create a tempfile, copy it to resource"""
+        if not self.__copied__:
+            from .server.config import REMOTE_URI
+            try:
+                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                    temp_file_name = temp_file.name  # Store the temp file's name
+                    temp_file.write(self.__code__.encode('utf-8'))
+                self.__URI__ = os.path.join(REMOTE_URI,self.__hash__)
+                copy(temp_file_name, self.__URI__)
+            finally:
+                if os.path.exists(temp_file_name):
+                    os.remove(temp_file_name)
+            self.__copied__ = True
+
+    def resource(self):
+        """Provide the resource name"""
+        self.write_to_resource()
+        return self.__URI__
+
+    def command(self, shell="sh", container=True):
+        return f'{shell} /resource/{self.__hash__}' if container else f'{shell} $RESOURCE/{self.__hash__}'
+
