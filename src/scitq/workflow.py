@@ -1,5 +1,5 @@
 from .lib import Server, HTTPException
-from .fetch import get, copy
+from .fetch import get, copy, delete
 from typing import Optional, Union, List
 from time import sleep
 import os
@@ -837,10 +837,14 @@ class shell_code:
             self.__copied__ = True
 
     def resource(self):
-        """Provide the resource name"""
+        """Provide the resource name for a task"""
         self.write_to_resource()
         return self.__URI__
 
     def command(self, shell="sh", container=True):
+        """Provide the command for a task"""
         return f'{shell} /resource/{self.__hash__}' if container else f'{shell} $RESOURCE/{self.__hash__}'
 
+    def delete(self):
+        """Delete the script in the end"""
+        delete(self.__URI__)

@@ -10,6 +10,7 @@ three'
 ''')
     wf.step('multiline shell', command=mycode.command(), resource=mycode.resource(), concurrency=1, container='alpine:latest')
     wf.run()
+    mycode.delete()
 
 if __name__=='__main__':
     launch()
