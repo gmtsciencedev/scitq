@@ -594,6 +594,10 @@ class Server:
         """Provide the content of current rclone file"""
         return self.get(f'/config/rclone')
     
+    def config_remote(self):
+        """Provide remote resources base URI"""
+        return self.get(f'/config/remote')
+    
     def join(self, task_list, retry=1, check=False):
         """Wait for a certain list of tasks to succeed. In case of failure, relaunch tasks
         a limited number of time (retry). If check is True, then join will fail if

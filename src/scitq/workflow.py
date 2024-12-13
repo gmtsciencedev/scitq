@@ -12,6 +12,7 @@ from .path import URI
 from .util import colors
 import hashlib
 import tempfile
+from . import remote
 
 DEFAULT_REFRESH=30
 DEBUG_INTERVAL=2
@@ -257,6 +258,7 @@ class Workflow:
         self.debug = debug
         if region and provider and not max_workflow_workers:
             raise WorkflowException('For security, set the "max_workflow_workers" parameter if provider and region are set')
+        self.__shell_codes__ = []
     
     def step(self, batch: str, command: str, concurrency: Optional[int]=None, prefetch: Optional[int]=Unset, 
              provider: Optional[str]=Unset, region: Optional[str]=Unset, flavor: Optional[str]=Unset, 
@@ -267,7 +269,8 @@ class Workflow:
              required_tasks: Optional[Union[int,object,List[int],List[object]]]=None, 
              container: Optional[str]=Unset, container_options: Optional[str]=Unset, 
              retry: Optional[int]=Unset, download_timeout: Optional[int]=Unset, 
-             run_timeout: Optional[int]=Unset, use_cache: Optional[bool]=Unset):
+             run_timeout: Optional[int]=Unset, use_cache: Optional[bool]=Unset,
+             args: Optional[dict]=None):
         """Add a step to workflow
         - batch: batch for this step (all the different tasks and workers for this step will be grouped into that batch)
                 NB batch is mandatory and is defined by at least concurrency and flavor (either at workflow or step level) 
@@ -281,7 +284,10 @@ class Workflow:
         region = coalesce(region, self.region)
         flavor = coalesce(flavor, self.flavor)
         rounds = coalesce(rounds, self.rounds)
+        shell = coalesce(shell, self.shell)
         use_cache = coalesce(use_cache, self.use_cache)
+        if args is None:
+            args={}
         maximum_workers = coalesce(maximum_workers, self.max_step_workers)
         if maximum_workers is None and batch not in self.__batch__:
             raise WorkflowException(f'maximum_workers is mandatory if workflow.max_step_workers is unset and batch {batch} is not already defined')
@@ -352,6 +358,24 @@ class Workflow:
         if output and not output.endswith('/'):
             output += '/'
 
+        if type(command)==shell_code:
+            code = command
+            in_container = coalesce(container, self.container) is not None
+            command = code.command(container=in_container, shell=shell if shell else None)
+            shell=None
+            resource = resource or '' + ' ' + code.resource(self.server)
+            self.__shell_codes__.append(code)
+        elif callable(command):
+            f = command
+            if not remote.is_remote(f):
+                raise WorkflowException(f'Function {f} cannot be used as a command as it was not decorated')
+            in_container = coalesce(container, self.container) is not None
+            command = remote.command(f, container=in_container, args=args)
+            resource = resource or '' + ' ' + remote.resource(self.server)
+            if not in_container and not shell:
+                # if not in a container we need the sell to interpret %RESOURCE
+                shell=True
+        
 
         task = self.server.task_create(
             command = command,
@@ -362,7 +386,7 @@ class Workflow:
             container = coalesce(container, self.container),
             container_options = coalesce(container_options, self.container_options),
             resource = resource,
-            shell=coalesce(shell, self.shell),
+            shell=shell,
             retry=coalesce(retry, self.retry),
             download_timeout=coalesce(download_timeout, self.download_timeout),
             run_timeout=coalesce(run_timeout, self.run_timeout),
@@ -516,6 +540,8 @@ class Workflow:
         query_loop_thread.start()
         loop.run()
 
+        for code in self.__shell_codes__:
+            code.delete()
         if self.ui_state in ['quit','destroy']:
             raise RuntimeError(f'Workflow.run() was interrupted because of app was in {self.ui_state} state')
 
@@ -821,29 +847,31 @@ class shell_code:
         blake2s.update(self.__code__.encode('utf-8'))
         return blake2s.hexdigest()
 
-    def write_to_resource(self):
+    def write_to_resource(self, server):
         """Create a tempfile, copy it to resource"""
         if not self.__copied__:
-            from .server.config import REMOTE_URI
+            remote_uri = server.config_remote()
             try:
                 with tempfile.NamedTemporaryFile(delete=False) as temp_file:
                     temp_file_name = temp_file.name  # Store the temp file's name
                     temp_file.write(self.__code__.encode('utf-8'))
-                self.__URI__ = os.path.join(REMOTE_URI,self.__hash__)
+                self.__URI__ = os.path.join(remote_uri,self.__hash__)
                 copy(temp_file_name, self.__URI__)
             finally:
                 if os.path.exists(temp_file_name):
                     os.remove(temp_file_name)
             self.__copied__ = True
 
-    def resource(self):
+    def resource(self, server):
         """Provide the resource name for a task"""
-        self.write_to_resource()
+        self.write_to_resource(server)
         return self.__URI__
 
-    def command(self, shell="sh", container=True):
+    def command(self, shell=None, container=True):
         """Provide the command for a task"""
-        return f'{shell} /resource/{self.__hash__}' if container else f'{shell} $RESOURCE/{self.__hash__}'
+        if shell is None:
+            shell="sh"
+        return f'{shell} /resource/{self.__hash__}' if container else f"{shell} -c '. $RESOURCE/{self.__hash__}'"
 
     def delete(self):
         """Delete the script in the end"""

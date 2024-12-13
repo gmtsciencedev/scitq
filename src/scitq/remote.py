@@ -3,12 +3,12 @@ import sys
 import os
 import inspect
 
-from .server.config import REMOTE_URI
 from .fetch import copy
 
 __remote_functions__ = {}
 __reverse__ = {}
 __copied__ = False
+__resource__ = None
 
 def get_importing_file():
     # Get the current stack trace
@@ -16,7 +16,6 @@ def get_importing_file():
     
     # Find the frame of the caller
     # Frame [1] is the importer, [0] is the current function
-    print(stack)
     importing_frame = stack[-1]
     
     # Get the filename of the importer
@@ -39,17 +38,24 @@ def remote(f, remote_name=None):
 
     return f
 
-def resource():
+def resource(server):
     """Provide the task resource for the function"""
-    global __copied__
+    global __copied__ 
+    global __resource__
     if not __copied__:
-        if REMOTE_URI is None:
+        remote_uri = server.config_remote()
+        if not remote_uri:
             raise RemoteException('You must declare a REMOTE_URI in your /etc/scitq.conf for remotes to work.')
-        copy(f"file://{__script_path__}/{__script_name__}",os.path.join(REMOTE_URI,__script_name__))
+        copy(f"file://{__script_path__}/{__script_name__}",os.path.join(remote_uri,__script_name__))
+        __resource__ = os.path.join(remote_uri,__script_name__)
         __copied__ = True
-    return os.path.join(REMOTE_URI,__script_name__)
+    return __resource__
 
-def command(f, container=True, **args):
+def is_remote(f):
+    """Answer True if f was decorated with @remote"""
+    return f in __reverse__
+
+def command(f, container=True, args={}):
     """Provide the command for the function with its args"""
     if f not in __reverse__:
         raise RemoteException(f'Cannot find function {f.__name__} in remotes, did you decorate it?')
