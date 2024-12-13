@@ -363,7 +363,7 @@ class Workflow:
             in_container = coalesce(container, self.container) is not None
             command = code.command(container=in_container, shell=shell if shell else None)
             shell=None
-            resource = resource or '' + ' ' + code.resource(self.server)
+            resource = (resource or '') + ' ' + code.resource(self.server)
             self.__shell_codes__.append(code)
         elif callable(command):
             f = command
@@ -371,7 +371,7 @@ class Workflow:
                 raise WorkflowException(f'Function {f} cannot be used as a command as it was not decorated')
             in_container = coalesce(container, self.container) is not None
             command = remote.command(f, container=in_container, args=args)
-            resource = resource or '' + ' ' + remote.resource(self.server)
+            resource = (resource or '') + ' ' + remote.resource(self.server)
             if not in_container and not shell:
                 # if not in a container we need the sell to interpret %RESOURCE
                 shell=True
