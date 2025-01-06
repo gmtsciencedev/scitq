@@ -307,7 +307,8 @@ class WorkerObjectFreeze(WorkerObject):
             setattr(execution, 'output_folder' if attr=='output' else attr, 
                     getattr(task, attr))
 
-        execution.input_hash = execution.get_input_hash()
+        if task.use_cache:
+            execution.input_hash = execution.get_input_hash()
 
         db.session.commit()
         return task
@@ -596,7 +597,7 @@ class ExecutionDAO(BaseDAO):
             else:
                 raise Exception('Error: {} has no attribute {}'.format(
                     execution.__class__.__name__, attr))
-        if freeze and execution.status=='succeeded':
+        if freeze and execution.status=='succeeded' and execution.input_hash:
             execution.output_hash = execution.get_output_hash()
             modified=True
         if modified:

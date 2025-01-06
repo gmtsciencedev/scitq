@@ -405,7 +405,8 @@ def ftp_list(uri, no_rec=False):
                         rel_name=obj[FTP_DIR_NAME_POSITION]+'/',
                         size=0,
                         creation_date = obj_date,
-                        modification_date=obj_date
+                        modification_date=obj_date,
+                        md5=None
                     ))
                 else:
                     dir_name = obj[FTP_DIR_NAME_POSITION]
@@ -424,7 +425,8 @@ def ftp_list(uri, no_rec=False):
                     rel_name=obj[FTP_DIR_NAME_POSITION],
                     size=obj[FTP_DIR_SIZE_POSITION],
                     creation_date=obj_date, 
-                    modification_date=obj_date))
+                    modification_date=obj_date,
+                    md5=None))
 
     return answer
 
@@ -745,7 +747,7 @@ def file_info(uri, md5=False):
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
 
 
-def file_list(uri, no_rec=False):
+def file_list(uri, no_rec=False, md5=False):
     """List recursively the content of a local folder expressed as file://... 
     Not recursively if no_rec is True"""
     log.info(f'FILE getting info for {uri}')
@@ -760,21 +762,25 @@ def file_list(uri, no_rec=False):
                     file+='/'
                     complete_file+='/'
                 stat = os.stat(complete_file)
+                file_md5 = get_md5(complete_file) if md5 else None
                 answer.append(argparse.Namespace(name=f'file://{complete_file}',
                                 rel_name=file,
                                 size=stat.st_size, 
                                 creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
-                                modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc)))
+                                modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc),
+                                md5=file_md5))
         else:
             for dir_path,_,files in os.walk(complete_path):
                 for file in files:
                     complete_file = os.path.join(dir_path,file)
                     stat = os.stat(complete_file)
+                    file_md5 = get_md5(complete_file) if md5 else None
                     answer.append(argparse.Namespace(name=f'file://{complete_file}',
                                     rel_name=os.path.relpath(complete_file,complete_path),
                                     size=stat.st_size, 
                                     creation_date=datetime.datetime.utcfromtimestamp(stat.st_ctime).replace(tzinfo=pytz.utc),
-                                    modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc)))
+                                    modification_date=datetime.datetime.utcfromtimestamp(stat.st_mtime).replace(tzinfo=pytz.utc),
+                                    md5=file_md5))
         return answer
     else:
         raise FetchError(f"Local URL did not match file://<path> pattern {uri}")
@@ -1016,9 +1022,9 @@ def list_content(uri, no_rec=False, md5=False):
         #elif m['proto']=='azure':
         #    return AzureClient().list(source, no_rec=no_rec, md5=md5) 
         if m['proto']=='ftp':
-            return ftp_list(source, no_rec=no_rec)
+            return ftp_list(source, no_rec=no_rec,md5=md5)
         elif m['proto']=='file':
-            return file_list(source, no_rec=no_rec) 
+            return file_list(source, no_rec=no_rec,md5=md5) 
         #elif m['proto']=='fasp':
         #    fasp_get(source, destination)
         #elif m['proto']=='run+fastq':

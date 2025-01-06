@@ -196,14 +196,16 @@ container_options:{self.container_options}
 
     def get_output_hash(self):
         """Return an MD5 that guarrantees that the output of the step is untouched"""
-        output_files=[]
+        output_files_md5=[]
         try: 
             if self.output_files:
-                for of in self.output_files.split(' '):
-                    of_info=info(os.path.join(self.output_folder, of), md5=True)
-                    md5=None if of_info is None else of_info.md5
-                    output_files.append(f'{of}:{md5}')
-            h = hashlib.md5(f'output:{",".join(output_files)}'.encode('utf-8'))
+                output_files = self.output_files.split(' ')
+                output_files.sort()
+                present_files = { item.rel_name:item.md5 for item in list_content(self.output_folder, md5=True) }
+                for file_name in output_files:
+                    if file_name in present_files:
+                        output_files_md5.append(f'{file_name}:{present_files[file_name]}')
+            h = hashlib.md5(f'output:{",".join(output_files_md5)}'.encode('utf-8'))
             return h.hexdigest()
         except FetchError:
             return None
