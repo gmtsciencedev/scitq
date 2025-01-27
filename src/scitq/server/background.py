@@ -249,14 +249,14 @@ def background(app):
                                               container_options=complete_task.container_options, input=complete_task.input,
                                               output_folder=complete_task.output, resource=complete_task.resource)
                         #hash = execution.get_input_hash()
-                        input_pattern = ' '.join([f"%/{os.path.split(item)[1]}" for item in execution.input.split(' ')])
-                        resource_pattern = ' '.join([f"%/{os.path.split(item)[1]}" for item in execution.resource.split(' ')])
+                        input_pattern = ' '.join([f"%/{os.path.split(item)[1]}" for item in execution.input.split(' ')]) if execution.input is not None else None
+                        resource_pattern = ' '.join([f"%/{os.path.split(item)[1]}" for item in execution.resource.split(' ')]) if execution.resource is not None else None
                         for other_execution in session.query(Execution).filter(
                                 Execution.command==execution.command, 
                                 Execution.container==execution.container,
                                 Execution.container_options==execution.container_options,
-                                Execution.input.like(input_pattern),
-                                Execution.resource.like(resource_pattern),
+                                Execution.input.like(input_pattern) if input_pattern is not None else Execution.input.is_(None),
+                                Execution.resource.like(resource_pattern) if resource_pattern is not None else Execution.resource.is_(None),
                                 Execution.status=='succeeded', 
                                 Execution.output_hash!=None
                                 ).order_by(Execution.output_folder!=execution.output_folder):
