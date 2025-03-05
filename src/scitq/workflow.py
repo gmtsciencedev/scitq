@@ -835,11 +835,12 @@ input       | {task.input}
 class shell_code:
     """A small helper function to copy a shell code remotely"""
 
-    def __init__(self,code_string):
+    def __init__(self, code_string:str ,server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER)):
         self.__code__ = code_string
         self.__hash__ = self.compute_hash()
         self.__copied__ = False
         self.__URI__ = None
+        self.server = Server(server, style='object')
     
     def compute_hash(self):
         """Compute hash for the code"""
@@ -847,10 +848,10 @@ class shell_code:
         blake2s.update(self.__code__.encode('utf-8'))
         return blake2s.hexdigest()
 
-    def write_to_resource(self, server):
+    def write_to_resource(self):
         """Create a tempfile, copy it to resource"""
         if not self.__copied__:
-            remote_uri = server.config_remote()
+            remote_uri = self.server.config_remote()
             try:
                 with tempfile.NamedTemporaryFile(delete=False) as temp_file:
                     temp_file_name = temp_file.name  # Store the temp file's name
@@ -862,9 +863,9 @@ class shell_code:
                     os.remove(temp_file_name)
             self.__copied__ = True
 
-    def resource(self, server):
+    def resource(self):
         """Provide the resource name for a task"""
-        self.write_to_resource(server)
+        self.write_to_resource()
         return self.__URI__
 
     def command(self, shell=None, container=True):
