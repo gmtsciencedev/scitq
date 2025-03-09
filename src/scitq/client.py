@@ -43,12 +43,13 @@ BASE_WORKDIR = os.environ.get("BASE_WORKDIR",
 if not os.path.exists(BASE_WORKDIR):
     os.makedirs(BASE_WORKDIR)
 BASE_RESOURCE_DIR = os.path.join(BASE_WORKDIR,'resource')
+DOCKER_DIR = os.path.join(BASE_WORKDIR, "docker")
 RESOURCE_FILES_SUBDIR = 'files'
 RESOURCE_FILE = os.path.join(BASE_RESOURCE_DIR, 'resource.json')
 MAXIMUM_PARALLEL_UPLOAD = 5
 RETRY_UPLOAD = 5
 RETRY_DOWNLOAD = 2
-DEFAULT_AUTOCLEAN = 95
+DEFAULT_AUTOCLEAN = 90
 RESOURCE_VERSION = 2
 try:
     SCITQ_PERMANENT_WORKER = bool(int(os.environ.get("SCITQ_PERMANENT_WORKER", '1')))
@@ -57,6 +58,7 @@ except:
 
 if not os.path.exists(BASE_RESOURCE_DIR):
     os.mkdir(BASE_RESOURCE_DIR)
+    os.chmod(BASE_RESOURCE_DIR, 0o777)
 
 DEFAULT_INPUT_DIR = '/input'
 DEFAULT_OUTPUT_DIR = '/output'
@@ -227,6 +229,7 @@ def _get(data, folder, data_info=None, timeout=None, execution_queue=None):
             timeout = math.ceil(data_size / 1024**3) * DOWNLOAD_TIMEOUT_SEC_PER_GB
     if timeout < DOWNLOAD_TIMEOUT_SEC_PER_GB:
         timeout = DOWNLOAD_TIMEOUT_SEC_PER_GB
+    log.info(f"Timeout is {timeout}s")
     p = PropagatingProcess(target=get, args=[data,folder])
     p.start()
     start_time = time()
@@ -259,7 +262,7 @@ class Executor:
     server.
     It performs now preparation tasks and post operation tasks."""
 
-    def __init__(self, server, execution_id, task_id, command, input, output, 
+    def __init__(self, server, execution_id, task_id, task, command, input, output, 
                 container, container_options, execution_queue,
                 cpu, resource_dir, resource, resources_db, #run_slots, #run_slots_semaphore,
                 worker_id, status, working_dirs, client_status,
@@ -270,6 +273,7 @@ class Executor:
         self.worker_id = worker_id
         self.execution_id = execution_id
         self.task_id = task_id
+        self.task = task
         self.command = command
         self.input = input
         if output and not output.endswith('/'):
@@ -316,7 +320,7 @@ class Executor:
 
 
     @classmethod
-    def from_docker_container(cls, server, execution_id, task_id, input, output, command,
+    def from_docker_container(cls, server, task, execution_id, task_id, input, output, command,
                 container, container_options, execution_queue,
                 cpu, resource_dir, resource, resources_db, #run_slots, #run_slots_semaphore, 
                 worker_id, status, working_dirs,
@@ -343,7 +347,7 @@ class Executor:
             worker_id=worker_id,
             status=status, working_dirs=working_dirs, recover=True, input_dir=input_dir, output_dir=output_dir,
             temp_dir=temp_dir, workdir=workdir, task_resource_dir=task_resource_dir,
-            container_id=container_id, client_status=client_status)
+            container_id=container_id, client_status=client_status, task=task)
 
     @property
     def status(self):
@@ -556,8 +560,8 @@ class Executor:
         retry=RETRY_DOWNLOAD
         while True:
             try:
-                log.warning(f'Downloading resource {data}...')
-                _get(data, current_resource_dir, data_info=data_info, execution_queue=self.execution_queue)
+                log.warning(f'Downloading resource {data}{(" with timeout "+str(self.task.download_timeout)+"s") if self.task.download_timeout else ""}...')
+                _get(data, current_resource_dir, data_info=data_info, execution_queue=self.execution_queue, timeout=self.task.download_timeout)
                 if data_info is not None:
                     log.warning(f'Modification date is {repr(data_info.modification_date)}')
                     self.resources_db[data]={'status':'loaded',
@@ -593,10 +597,10 @@ class Executor:
     def download(self, input=None, resource=None):
         """Do the downloading part, before launching, getting all input URIs into input_dir"""
         if self.status != STATUS_RUNNING:
-            log.warning('Downloading input data...')
+            log.warning(f'Downloading input data{(" with timeout "+str(self.task.download_timeout)+"s") if self.task.download_timeout else ""}...')
             self.status = STATUS_DOWNLOADING
         else:
-            log.warning('Checking previous downloads...')
+            log.warning(f'Checking previous downloads{(" with timeout "+str(self.task.download_timeout)+"s") if self.task.download_timeout else ""}...')
         if input is None:
             input = self.input.split() if self.input else []
         if resource is None:
@@ -608,7 +612,7 @@ class Executor:
             failed_input = []
             for data in current_input:
                 try:
-                    _get(data, self.input_dir, execution_queue=self.execution_queue)
+                    _get(data, self.input_dir, execution_queue=self.execution_queue, timeout=self.task.download_timeout)
                 except Exception as e:
                     log.exception(e)
                     last_exception=e
@@ -636,6 +640,8 @@ class Executor:
                 if data not in self.resources_db or self.resources_db[data]['status']=='failed' or (
                             self.resources_db[data]['status']=='loaded' and 
                             ( data_info is not None and (
+                                    self.resources_db[data]['size'] or data_info.size
+                                ) and (
                                     self.resources_db[data]['date'] is None or 
                                     data_info.modification_date > self.resources_db[data]['date'] or
                                     data_info.size != self.resources_db[data]['size'] )
@@ -947,6 +953,7 @@ class Client:
         self.resource_dir = os.path.join(BASE_RESOURCE_DIR, RESOURCE_FILES_SUBDIR)
         if not os.path.exists(self.resource_dir):
             os.makedirs(self.resource_dir)
+            os.chmod(self.resource_dir,0o777)
         #self.run_slots = multiprocessing.Value('i', concurrency)
         self.shared_status = multiprocessing.Value('i', client_status_code(DEFAULT_WORKER_STATUS))
         #self.run_slots_semaphore = multiprocessing.BoundedSemaphore()
@@ -984,7 +991,7 @@ class Client:
         log.warning(f'Working_dirs are {self.working_dirs.values()}')
         for dir in os.listdir(BASE_WORKDIR):
             full_dir = os.path.join(BASE_WORKDIR, dir)
-            if full_dir==BASE_RESOURCE_DIR:
+            if full_dir==BASE_RESOURCE_DIR or full_dir==DOCKER_DIR:
                 continue
             for working_dir in self.working_dirs.values():
                 if full_dir==working_dir:
@@ -1002,7 +1009,7 @@ class Client:
         dirs.sort(reverse=True)
         log.warning(f'Dirs are {dirs}')
         for _,full_dir in dirs:
-            if full_dir==BASE_RESOURCE_DIR:
+            if full_dir==BASE_RESOURCE_DIR or full_dir==DOCKER_DIR:
                 continue
             for working_dir in self.working_dirs.values():
                 if full_dir==working_dir:
@@ -1153,6 +1160,7 @@ class Client:
                                     'server': self.server,
                                     'execution_id': execution.execution_id,
                                     'task_id': task.task_id,
+                                    'task': task,
                                     'command': task.command,
                                     'input': task.input,
                                     'output': task.output,
@@ -1254,6 +1262,7 @@ class Client:
                                             'server': self.server,
                                             'execution_id': execution.execution_id,
                                             'task_id': task.task_id,
+                                            'task': task,
                                             'command': task.command,
                                             'input': task.input,
                                             'output': task.output,

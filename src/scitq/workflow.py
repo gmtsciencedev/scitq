@@ -213,7 +213,7 @@ def padding_update(padding, widget):
 class Workflow:
     """A class to write workflow in a way close to Nextflow logic"""
     def __init__(self, name: str, max_step_workers=None, 
-                 server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER), 
+                 server: str = None, 
                  provider: Optional[str] =None, region: str ='auto',
                  flavor: Optional[str] =None, shell: Union[bool,str]=False, 
                  max_workflow_workers: Optional[int]=None, 
@@ -227,7 +227,9 @@ class Workflow:
         - name [str]: name of workflow
         - maximum_workers [int]: How many workers will be recruited by default for each step (default to 1)
         - total_workers 
+        - server default to SCITQ_SERVER if None
         """
+        server = os.environ.get('SCITQ_SERVER',DEFAULT_SERVER) if server is None else server
         self.name = name
         self.server = Server(server, style='object')
         self.provider = provider
@@ -361,9 +363,9 @@ class Workflow:
         if type(command)==shell_code:
             code = command
             in_container = coalesce(container, self.container) is not None
-            command = code.command(container=in_container, shell=shell if shell else None)
+            command = code.__command__(container=in_container, shell=shell if shell else None)
             shell=None
-            resource = (resource or '') + ' ' + code.resource(self.server)
+            resource = (resource or '') + ' ' + code.__resource__(self.server)
             self.__shell_codes__.append(code)
         elif callable(command):
             f = command
@@ -541,7 +543,7 @@ class Workflow:
         loop.run()
 
         for code in self.__shell_codes__:
-            code.delete()
+            code.__delete__()
         if self.ui_state in ['quit','destroy']:
             raise RuntimeError(f'Workflow.run() was interrupted because of app was in {self.ui_state} state')
 
@@ -835,23 +837,23 @@ input       | {task.input}
 class shell_code:
     """A small helper function to copy a shell code remotely"""
 
-    def __init__(self, code_string:str ,server: str =os.environ.get('SCITQ_SERVER',DEFAULT_SERVER)):
+    def __init__(self, code_string:str, shell:str=None):
         self.__code__ = code_string
-        self.__hash__ = self.compute_hash()
+        self.__hash__ = self.__compute_hash__()
         self.__copied__ = False
         self.__URI__ = None
-        self.server = Server(server, style='object')
+        self.__shell__=shell
     
-    def compute_hash(self):
+    def __compute_hash__(self):
         """Compute hash for the code"""
         blake2s = hashlib.blake2s()
         blake2s.update(self.__code__.encode('utf-8'))
         return blake2s.hexdigest()
 
-    def write_to_resource(self):
+    def __write_to_resource__(self, server: Server):
         """Create a tempfile, copy it to resource"""
         if not self.__copied__:
-            remote_uri = self.server.config_remote()
+            remote_uri = server.config_remote()
             try:
                 with tempfile.NamedTemporaryFile(delete=False) as temp_file:
                     temp_file_name = temp_file.name  # Store the temp file's name
@@ -863,17 +865,19 @@ class shell_code:
                     os.remove(temp_file_name)
             self.__copied__ = True
 
-    def resource(self):
+    def __resource__(self, server: Server):
         """Provide the resource name for a task"""
-        self.write_to_resource()
+        self.__write_to_resource__(server)
         return self.__URI__
 
-    def command(self, shell=None, container=True):
+    def __command__(self, shell=None, container=True):
         """Provide the command for a task"""
-        if shell is None:
+        if self.__shell__ is not None:
+            shell=self.__shell__
+        if shell is True:
             shell="sh"
         return f'{shell} /resource/{self.__hash__}' if container else f"{shell} -c '. $RESOURCE/{self.__hash__}'"
 
-    def delete(self):
+    def __delete__(self):
         """Delete the script in the end"""
         delete(self.__URI__)

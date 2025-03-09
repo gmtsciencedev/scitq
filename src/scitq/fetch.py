@@ -516,7 +516,7 @@ def fastq_sra_get(run_accession, destination, filter_r1=False):
         aria2 = False
         log.warning(f'aria2 download of {run_accession} failed, trying with prefetch')
         subprocess.run(f'docker run --rm -v {destination}:/destination ncbi/sra-tools \
-            sh -c "cd /destination && prefetch {run_accession} && fasterq-dump -f --split-files {run_accession}"',
+            sh -c "cd /destination && prefetch -X 9999999999999 {run_accession} && fasterq-dump -f --split-files {run_accession}"',
             shell=True,
             check=True)
     current_fastq = glob.glob(os.path.join(destination, '*.fastq'))
@@ -530,13 +530,13 @@ def fastq_sra_get(run_accession, destination, filter_r1=False):
             else:
                 log.info(f'Removing read as it is not r1: {fastq}')
                 os.remove(fastq)
-    log.info(f'Pigziping fastqs ({fastqs})')
-    subprocess.run(['pigz','-f']+fastqs,
-        check=True)
     if aria2:
         os.remove(os.path.join(destination, run_accession+'.sra'))
     elif os.path.isdir(os.path.join(destination, run_accession)):
         shutil.rmtree(os.path.join(destination, run_accession))
+    log.info(f'Pigziping fastqs ({fastqs})')
+    subprocess.run(['pigz','-f']+fastqs,
+        check=True)
     
 
 def _my_fastq_download(method, url, md5, destination):
@@ -627,6 +627,8 @@ fastq_ftp,sra_md5,sra_ftp&format=json&download=true&limit=0", timeout=30)
                 except:
                     log.exception(f'EBI failed with method {method}')
                     continue
+            else:
+                log.exception(f'missing method {method} in run {source} : {run.keys()}')
         raise FetchError(f'Could not fetch {source}')
     else:
         log.exception('EBI response does not include a fastq_ftp field')
