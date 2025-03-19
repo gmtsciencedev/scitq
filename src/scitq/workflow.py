@@ -830,9 +830,7 @@ input       | {task.input}
     @property
     def previous_step(self):
         """A small syntax addon that makes workflow writing more flexible"""
-        if not self.__steps__:
-            raise WorkflowException('Workflow contain no steps yet so cannot find any previous step')
-        return self.__steps__[-1]
+        return self.__steps__[-1] if self.__steps__ else None
 
 class shell_code:
     """A small helper function to copy a shell code remotely"""
