@@ -19,10 +19,11 @@ def ena_get_samples(bioproject:str, library_layout:Optional[str]=None, library_s
     """Get a list of runs grouped by sample, optionally filtered by library_layout (PAIRED/SINGLE for instance) 
     and or by library_strategy (WGS/AMPLICON for instance)
     The run objects listed have a uri attribute that can conveniently be used as input in scitq tasks"""
-    ena_query=f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={bioproject}&\
-result=read_run&fields=all&format=json&download=true&limit=0"
+    ena_query=f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={bioproject}&result=read_run&fields=study_accession,sample_accession,run_accession,tax_id,instrument_platform,instrument_model,library_layout,library_strategy,read_count,fastq_md5,fastq_ftp,fastq_aspera,submitted_ftp,sra_bytes,sra_ftp,sra_aspera,bam_ftp&format=json&download=true&limit=0"
     samples = {}
     for item in requests.get(ena_query).json():
+        if type(item)==str:
+            raise BioException(f'Unexpected answer from EBI ENA when querying {bioproject}: {item}')
         run = Namespace(**item)
         if library_strategy and run.library_strategy!=library_strategy:
             continue
