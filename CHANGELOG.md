@@ -1,3 +1,37 @@
+# v1.3.3 (2025-03-20)
+
+Adding Workflow.shell_code object that enable multiline (i.e. real shell script), the use is very simple:
+
+```python
+from scitq.workflow import Workflow,shell_code
+
+wf = Workflow(name='myworkflow')
+
+wf.step(command=shell_code("""set -e
+
+unpigz /input/*.gz
+mdsum /input/*
+
+for f in /input/*
+do
+  wc -l $f
+done
+"""),
+  container='gmtscience/mamba',
+  input='run+fastq://SAMEA6513017')
+```
+
+This transparently creates a file, moves it to the worker and imports it in the docker before launching it.
+
+Also we have more ready made docker using our [mkdocker](https://github.com/gmtsciencedev/mkdocker) (the public dockers are in https://hub.docker.com/u/gmtscience). These dockers systematically include bash, parallel, curl, pigz for easy scripting. This requires the presence of REMOTE_URI in `/etc/scitq.conf` (ours is like this: `REMOTE_URI="azure://rnd/resource/remote"`)
+
+Beta: We are also working on an experimental concept of python script with remotely executed functions (with a decoration) (code in scitq.remote).
+
+Several bug fixes are included also. Notably two API changes: 
+
+- one by Azure (which remain unsolved, eviction information is now missing in Azure Resource Graph so there is no way to have this info, we have a stupid hack of setting 5 (percent) for all instances but that is not optimal at all, it remains unclear if this Azure change impacts everyone, so the previously working query is still tried anyway), 
+- the other one by the EMBL, the EBI ENA API was changed last night, marginally, the patch was easy.
+
 # v1.3.1 (2024-11-21)
 
 A small bug fix release above v1.3 that fix some unnecessary imports in scitq.fetch and an MD5 bug when the protocol is not MD5 capable.
