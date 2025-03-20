@@ -65,6 +65,7 @@ class Azure(GenericProvider):
             try:
                 for flavor in self.compute_client.virtual_machine_sizes.list(location=region):
                     # the flavor name must contain a small s to be compatible with premium storage
+                    #self.push(f'[{flavor.name}]')
                     m=FLAVOR_NAME_RE.match(flavor.name)
                     if not m:
                         # we know that basic are not accepted no need to shout for such
@@ -73,10 +74,10 @@ class Azure(GenericProvider):
                         continue
                     options=m.groupdict()['option']
                     if options is None or 's' not in options:
-                        # no premium storage
+                        #self.push(f'<give up on {flavor.name}, premium storage is needed>')
                         continue
                     if 'p' in options:
-                        # arm64 not supported yet
+                        #self.push(f'<give up on {flavor.name}, arm64 not supported yet>')
                         continue
                     if flavor.name not in seen_flavors:
                         try:
@@ -120,17 +121,21 @@ class Azure(GenericProvider):
             self.push('.')
             data = requests.get(query).json()
             for item in data['Items']:
+                #print(f'----> {item}')
                 flavor = item['armSkuName']
                 region = item['armRegionName']
                 price = item['unitPrice']
 
                 if (flavor,region) in self.__flavor_metrics__:
+                    #self.push(f'<[{flavor},{region}] ok>')
                     retain_metrics.append( (flavor,region) )
                     metrics = self.__flavor_metrics__[flavor, region]
                     try:
                         metrics.cost = price
                     except:
                         self.push('!')
+                #else:
+                    #self.push(f'<[{flavor},{region}] not found!')
 
 
             query=data.get('NextPageLink',None)
@@ -173,7 +178,15 @@ class Azure(GenericProvider):
 
             skip_token=query_response.skip_token
 
-        full_metrics = [flavors_lower[fmpk] for fmpk in full_metric_pkeys]
+        if full_metric_pkeys:
+            full_metrics = [flavors_lower[fmpk] for fmpk in full_metric_pkeys]
+        else:
+            self.push(f'\n')
+            self.push(f'No eviction info from azure setting some default value...')
+            full_metrics = list(flavors_lower.values())
+            for flavor in full_metrics:
+                flavor.eviction = 5
+        #self.push(f'\n\n***** full metrics *****\n{full_metrics}')
         self.update_flavor_metrics(metrics=full_metrics)
         self.push('\n')
 
