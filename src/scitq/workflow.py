@@ -267,7 +267,7 @@ class Workflow:
              name: Optional[str]=None, tasks_per_worker: Optional[int]=None, rounds: Optional[int]=None, 
              shell: Optional[Union[bool,str]]=Unset, maximum_workers: Optional[int]=Unset, 
              input: Optional[Union[str,URI,List[str],List[URI]]]=None, output: Optional[Union[str,URI]]=None, 
-             resource: Optional[Union[str,URI,List[str],List[URI]]]=None, rel_output: Optional[str]=None,
+             resource: Optional[Union[str,URI,List[str],List[URI]]]=None, rel_output: Optional[str]=None, rel_input: Optional[str]=None,
              required_tasks: Optional[Union[int,object,List[int],List[object]]]=None, 
              container: Optional[str]=Unset, container_options: Optional[str]=Unset, 
              retry: Optional[int]=Unset, download_timeout: Optional[int]=Unset, 
@@ -338,6 +338,8 @@ class Workflow:
             input = ' '.join(map(str,input))
         elif type(input)==URI:
             input = str(input)
+        elif input is None and rel_input:
+            input = str(self.base_storage / rel_input)
 
         if type(resource)==list:
             resource = ' '.join(map(str,resource))
