@@ -1,3 +1,7 @@
+# v1.3.4 (2025-03-20)
+
+Fix include options in fetch.sync() and fetch.delete()
+
 # v1.3.3 (2025-03-20)
 
 Adding Workflow.shell_code object that enable multiline (i.e. real shell script), the use is very simple:
