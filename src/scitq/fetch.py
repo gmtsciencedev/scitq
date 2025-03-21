@@ -261,9 +261,11 @@ class RcloneClient:
             rclone.copyto(source, destination, show_progress=show_progress, args=args)
 
 
-    def delete(self, uri):
+    def delete(self, uri, include=[]):
         _uri=self._uri(uri)
-        rclone.delete(_uri)
+        if include:
+            args=[f'--include "{i}"' for i in include]
+        rclone.delete(_uri, args=args)
 
     def has_source(self, source):
         return source in self.remotes
@@ -272,12 +274,14 @@ class RcloneClient:
         _uri=self._uri(uri)
         os.system(f'rclone ncdu {_uri}')
 
-    def sync(self, source, destination, show_progress=False, args=[]):
+    def sync(self, source, destination, show_progress=False, include=[], args=[]):
         """Small wrapper above rclone.copy to avoid deleting (but this time we know that these are folder, so no copy to)"""
         if not self.is_installed:
             raise FetchErrorNoRepeat('rclone is not installed')
         destination=self._uri(destination)
         source=self._uri(source)
+        if include:
+            args.extend([f'--include "{i}"' for i in include])
         rclone.copy(source, destination, show_progress=show_progress, args=args)
 
 # work as a singleton
@@ -1085,7 +1089,7 @@ def ncdu(uri, output_file):
                 top_folder.ncdu_object()],
               output_file)
 
-def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC, show_progress=False):
+def sync(uri1, uri2, include=[], process=MAX_PARALLEL_SYNC, show_progress=False):
     """Sync two URI, one must be local
     Identity of the files is assessed only with name and size
     """
@@ -1101,7 +1105,7 @@ def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC, show_progress=Fals
             if local_uri is None:
                 raise UnsupportedError(f'uri2 appears to be neither locale nor proper: {uri2}')
             else:
-                rclone_client.sync(uri1, uri2, show_progress=show_progress)
+                rclone_client.sync(uri1, uri2, show_progress=show_progress, include=include)
                 #command=get
                 #remote=uri1 if ':' in uri1 else f'file://{uri1}'
     else:
@@ -1117,16 +1121,16 @@ def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC, show_progress=Fals
             except FetchError:
                 raise UnsupportedError(f'Destination URI seems illdefined: {uri2}') 
             if rclone_client.has_source(proto2) and rclone_client.has_source(proto1):
-                return rclone_client.sync(uri1, uri2, show_progress=show_progress)                
+                return rclone_client.sync(uri1, uri2, show_progress=show_progress, include=include)                
             else:
                 raise UnsupportedError('Neither URI seems to be local nor supported remotes, unsupported yet')
         else:
-            return rclone_client.sync(uri1, uri2, show_progress=show_progress)
+            return rclone_client.sync(uri1, uri2, show_progress=show_progress, include=include)
         #command=get
         #remote=uri1
     
     if rclone_client.has_source(remote_proto):
-        return rclone_client.sync(uri1, uri2, show_progress=show_progress)
+        return rclone_client.sync(uri1, uri2, show_progress=show_progress, include=include)
     else:
         full_local_uri=f"file://{local_uri}"
         if not os.path.exists(local_uri):
@@ -1176,7 +1180,7 @@ def sync(uri1, uri2, include=None, process=MAX_PARALLEL_SYNC, show_progress=Fals
         if failed:
             raise FetchError('At least some objects could not be synchronized')
 
-def recursive_delete(uri, include=None, dryrun=False):
+def recursive_delete(uri, include=[], dryrun=False):
     """Works the same way than sync, recursively deleting some objects from uri"""
     try:
         proto=check_uri(uri)
@@ -1186,7 +1190,7 @@ def recursive_delete(uri, include=None, dryrun=False):
         else:
             proto='file'
     if proto=='file' or rclone_client.has_source(proto):
-        rclone_client.delete(uri)
+        rclone_client.delete(uri, include=include)
     else:
         jobs = {}
         with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_PARALLEL_SYNC) as executor:
