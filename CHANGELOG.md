@@ -1,3 +1,7 @@
+# v1.3.5 (2025-03-21)
+
+Fix fetch.delete() and mv| action in fetch.copy() (and thus in task.input/task.resource)
+
 # v1.3.4 (2025-03-20)
 
 Fix include options in fetch.sync() and fetch.delete()
