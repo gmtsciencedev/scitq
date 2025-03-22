@@ -263,6 +263,7 @@ class RcloneClient:
 
     def delete(self, uri, include=[]):
         _uri=self._uri(uri)
+        args=[]
         if include:
             args=[f'--include "{i}"' for i in include]
         rclone.delete(_uri, args=args)
@@ -833,7 +834,7 @@ def get(uri, destination, parallel=None, show_progress=False):
     if m:
         m = m.groupdict()
         
-        if m['action'] and m['action'].startswith('mv '):
+        if m['action'] and m['action'].startswith('mv'):
             destination=os.path.join(destination, m['action'][3:])
         
         source = f"{m['proto']}://{m['resource']}"
@@ -894,7 +895,7 @@ def get(uri, destination, parallel=None, show_progress=False):
                 rclone_client.copy(source, destination, show_progress=show_progress)
             else:
                 raise FetchError(f"This URI protocol is not supported: {m['proto']}")        
-        if m['action'] and m['action'].startswith('mv '):
+        if m['action'] and m['action'].startswith('mv'):
             pass
         elif m['action']=='gunzip':
             gunzip(complete_destination)
