@@ -141,14 +141,16 @@ class Step:
         self.__task__ = self.server.task_get(self.__task__.task_id)
         self.map_attributes()
 
-    def gather(self, attribute='step'):
-        """Return all the steps that belongs to this batch or all its output"""
+    def gather(self, attribute: str='step',action: Optional[str]=None):
+        """Return all the steps that belongs to this batch or all its output.
+        - action is an optional string used only for output that could be '|mv:destination' or '|untar' for instance"""
         if attribute == 'step':
             return self.__steps__
         elif attribute == 'output':
-            return [s.output for s in self.__steps__]
+            return [s.output+('' if action is None else action) for s in self.__steps__]
         elif attribute.startswith('output/'):
-            return [s.output+attribute[6:] for s in self.__steps__]
+            return [s.output+(attribute[6:] if s.output.endswith('/') else attribute[7:])+('' if action is None else action)
+                     for s in self.__steps__]
     
     def get_output(self):
         """Return task output stream if there is one"""
