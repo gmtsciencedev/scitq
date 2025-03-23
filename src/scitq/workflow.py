@@ -141,16 +141,24 @@ class Step:
         self.__task__ = self.server.task_get(self.__task__.task_id)
         self.map_attributes()
 
-    def gather(self, attribute: str='step',action: Optional[str]=None):
+    def gather(self, attribute: str='step'):
         """Return all the steps that belongs to this batch or all its output.
-        - action is an optional string used only for output that could be '|mv:destination' or '|untar' for instance"""
+        
+        One can also use step.gather('/output/subfolder') to gather a specific subfolder or the tasks output,
+        in which case a common pattern is to move the subfolder to its initial position like this:
+        step.gather('/output/subfolder|mv:subfolder') 
+        this pattern is equivalent in this case to a simple filter for files in the subfolder (without the mv the content of the subfolder would be in the main input folder)
+        
+        """
         if attribute == 'step':
             return self.__steps__
         elif attribute == 'output':
-            return [s.output+('' if action is None else action) for s in self.__steps__]
+            return [s.output for s in self.__steps__]
         elif attribute.startswith('output/'):
-            return [s.output+(attribute[6:] if s.output.endswith('/') else attribute[7:])+('' if action is None else action)
+            return [s.output+(attribute[6:] if s.output.endswith('/') else attribute[7:])
                      for s in self.__steps__]
+        elif attribute.startswith('output|'):
+            return [s.output+(attribute[6:]) for s in self.__steps__]
     
     def get_output(self):
         """Return task output stream if there is one"""
