@@ -22,4 +22,4 @@ azure-storage-blob >= 12
 pandas<2.2
 ovh
 lxml
-rclone_python
+rclone_python==0.1.21
