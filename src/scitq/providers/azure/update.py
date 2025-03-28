@@ -149,6 +149,7 @@ class Azure(GenericProvider):
 
         skip_token = True
         full_metric_pkeys = []
+        region_names = ",".join([f"'{region}'" for region in self.regions])
         while skip_token:
             self.push('.')
             if skip_token is True:
@@ -156,17 +157,17 @@ class Azure(GenericProvider):
             else:
                 options=QueryRequestOptions(skip_token=skip_token)
             query = QueryRequest(
-                    query="spotresources \
-        | where type == 'microsoft.compute/skuspotevictionrate/location' \
-        | project skuName=tostring(sku.name), location, evictionRate=properties.evictionRate, price=properties.unitPrice \
-        | order by skuName", options=options
+                    query=f"SpotResources \
+| where type =~ 'microsoft.compute/skuspotevictionrate/location' and location in ({region_names})\
+| project skuName = tostring(sku.name), location, spotEvictionRate = tostring(properties.evictionRate) \
+| order by skuName asc", options=options
                 )
             query_response = self.resourcegraph_client.resources(query, )
 
 
             for item in query_response.data:
                 if (item['skuName'],item['location']) in flavors_lower:
-                    evictionRate=item['evictionRate'].split('-')[-1].strip('+')
+                    evictionRate=item['spotEvictionRate'].split('-')[-1].strip('+')
                     eviction=int(evictionRate)
                     try:
                         flavors_lower[(item['skuName'],item['location'])].eviction=eviction
