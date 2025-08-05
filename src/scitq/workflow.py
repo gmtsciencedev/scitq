@@ -155,7 +155,7 @@ class Step:
         elif attribute == 'output':
             return [s.output for s in self.__steps__]
         elif attribute.startswith('output/'):
-            return [s.output+(attribute[6:] if s.output.endswith('/') else attribute[7:])
+            return [s.output+(attribute[7:] if s.output.endswith('/') else attribute[6:])
                      for s in self.__steps__]
         elif attribute.startswith('output|'):
             return [s.output+(attribute[6:]) for s in self.__steps__]
@@ -890,4 +890,4 @@ class shell_code:
 
     def __delete__(self):
         """Delete the script in the end"""
-        delete(self.__URI__)
+        #delete(self.__URI__)

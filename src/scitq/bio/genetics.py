@@ -146,7 +146,7 @@ def uri_get_samples(uri: str, ending: str='.fastq.gz', alternate_endings: List[s
 
     final_samples = {}
     for sample, files in samples.items():
-        if len(files)%2==0 and count(files,f'2{ending}')==count(files,f'1{ending}'):
+        if count(files,f'2{ending}')==count(files,f'1{ending}'):
             library_layout = 'PAIRED'
         else:
             library_layout = 'SINGLE'

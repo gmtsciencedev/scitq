@@ -60,3 +60,29 @@
     enabled: yes
     state: started
   become: true
+
+- name: Check if scitq-worker service is running
+  command: systemctl is-active scitq-worker
+  register: scitq_status
+  failed_when: false
+  changed_when: false
+  become: true
+
+- name: Remove immutable flag from /scratch if scitq-worker failed
+  command: chattr -i /scratch
+  when: scitq_status.stdout != "active"
+  become: true
+
+- name: Reset permissions on /scratch if scitq-worker failed
+  file:
+    path: /scratch
+    mode: 'a+rwx'
+  when: scitq_status.stdout != "active"
+  become: true
+
+- name: Restart scitq-worker if it failed initially
+  systemd:
+    name: scitq-worker
+    state: restarted
+  when: scitq_status.stdout != "active"
+  become: true

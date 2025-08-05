@@ -97,7 +97,9 @@
   when: 
     - mnt_big is defined
     - mnt_big.stdout is defined
-    - mnt_big.stdout
-- name: Changing perm of /scratch, all+rwx
-  file: dest=/scratch mode=a+rwx
+    - mnt_big.stdout   
+- name: Set mode a+rwx on /scratch
   become: yes
+  file:
+    path: /scratch
+    mode: 'a+rwx'

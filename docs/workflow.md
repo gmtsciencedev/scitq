@@ -121,6 +121,42 @@ for sample in my_sample_list:
 step3 = wf.step(command='...',input=step2.gather('output'), required_tasks=step2.gather())
 ```
 
+#### Step.gather() refinements and |mv: processing action
+
+In the previous example, let's pretend the compiling step also need a subpart of step1 which has some interesting stats that were not processed during step2. How would we write that?
+
+First, there is no need to change the required_tasks attribute, step2 already depends on step1 so when steps 2 are ready, steps 1 are necessarily done.
+
+So we only need to gather the additionnal input, changing this:
+```python
+step3 = wf.step(command='...',input=step2.gather('output'), required_tasks=step2.gather())
+```
+
+to this:
+```python
+step3 = wf.step(command='...',input=step2.gather('output')+step1.gather('output'), required_tasks=step2.gather())
+```
+NB this works because Step.gather() output is always a list. 
+
+Now let us say that step1 output is large and we need only a subpart of it, a subpart which is located in the `/output/stats` folder of step1. In this case the gathering can be refined to only include the really required part:
+```python
+step3 = wf.step(command='...',input=step2.gather('output')+step1.gather('output/stats'), required_tasks=step2.gather())
+```
+
+Which is nice. Now let us suppose that we are very consistent in our patterns, we always have the main output which is directly in `/output/` and the stats part always in `/output/stats`. Now the instruction above commands the workflow to gather step2 main output and step1 stats output and put that into our compile step `/input`. So we have step2 stats output in `/input/stats` and step1 stats output in `/input`, which is probably not what we want. 
+Chances are we want to keep all stats in the stats subfolder. Now if you remember, scitq URIs can be completed with one processing action, which is rather common for resources: `s3://resource/chm13.tgz|untar`, and we have this specific action `|mv:...`. Action are mainly for resource, but in fact they can be used in any context with scitq.fetch. So we can use that action conveniently here:
+
+```python
+step3 = wf.step(command='...',input=step2.gather('output')+step1.gather('output/stats|mv:stats'), required_tasks=step2.gather())
+```
+
+Thus in our compile steps, we have the main steps 2 output in `/input` and all things related to stats, wether from steps 1 or steps 2, are in `/input/stats`.
+
+NB: `|mv:...` is more subtle than it seems. Under the hood, `scitq.copy(source_uri+'|mv:subfolder', dest_uri)` is transformed into `scitq.copy(source_uri, dest_uri+'/subfolder')`, thus in fact the sell `mv` command itself is never called, files are put directly into the desired subfolder, and thus there is no risk of overwriting a file called the same way in the destination before the move, like it would if `mv` was really called.
+
+NB2: For this reason, never move to an absolute folder like this `|mv:/subfolder`, depending on the remote treatment of URI (s3 or azure or ...) the behavior is impredictible. Do not use also `.` or `..`, while it should work for local destination URIs, the behavior is hard to predict on remote URIs. Remember also that processing actions are specified in the source URI but really occurs at the destination.
+
+
 ## Worker recruitment
 
 One of the benefits of the Workflow system is a more dynamic Worker allocation system. This new system inherits from all v1.0 scitq system and add a new low level object called a Recruiter, but before explaining this low level object, let's keep the big picture and see how it works.

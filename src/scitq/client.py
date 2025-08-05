@@ -409,6 +409,8 @@ class Executor:
         #    sleep(POLLING_TIME)
         #    self.run_slots_semaphore.acquire()
 
+        log.warning(f'Execution {execution_id} command: {self.command}')
+
         self.process = None
         if not self.container:
             try:
@@ -788,6 +790,7 @@ class Executor:
                 log.warning(f'Execution {self.execution_id} is now running')
 
                 task = self.s.task_freeze(self.task_id, self.execution_id)
+                log.warning(f'Task {self.task_id} is frozen')
 
                 # let check our command
                 self.command = task.command

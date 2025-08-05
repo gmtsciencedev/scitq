@@ -295,6 +295,8 @@ class WorkerObjectFreeze(WorkerObject):
         task = db.session.query(Task).get(id)
         execution = db.session.query(Execution).get(execution_id)
 
+        if task is None or execution is None:
+            api.abort(404, "Task {} or Execution {} doesn't exist".format(id,execution_id))
         if execution.task_id!=task.task_id:
             api.abort(404, f"Execution {execution_id} is not linked to Task {id}")
 

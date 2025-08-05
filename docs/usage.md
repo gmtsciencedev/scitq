@@ -145,7 +145,7 @@ Resources are very much like above inputs (and like them you may specify several
 
 - they are shared between tasks. If you specify the same resource for several tasks it will be downloaded once per worker (not the case with input, they are downloaded separately for each task),
 - they can be processed, unlike inputs which are downloaded as they are, either adding `|gunzip` or adding `|untar` to the URI, in which case the downloaded file will be un-zipped (the `.gz` file will be replaced by its gunzipped version of itself without `.gz` extension) or untarred (unlike `tar x` and like `gunzip` the tar archive will be deleted after extraction, to save space). `|untar` process any file of `.tar`, `.tar.gz` or `.tgz` extension.
-- (new in v1.2.2) you can add `|unzip` to for `.zip` files or `|mv <somefolder>` to move the resource content in subfolder. Note that action cannot be combined (you cannot say `|untar|mv ...`).
+- (new in v1.2.2) you can add `|unzip` to for `.zip` files or `|mv:<somefolder>` to move the resource content in subfolder. Note that action cannot be combined (you cannot say `|untar|mv:...`).
 
 The optional processing does not change the rule that a resource is always downloaded once per worker. The initial URI with its optional processing is the only thing that count (hence if the file at the other end of the URI did change, this will not be updated).
 

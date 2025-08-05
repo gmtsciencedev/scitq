@@ -1,3 +1,14 @@
+# v1.3.7 (2025-08-05)
+
+Added version in [tool.setuptools_scm] in pyproject.toml because of newer setuptools requirements.
+
+# v1.3.6 (2025-03-22)
+
+Fix scitq.workflow.Worklow.Step.gather() when using the `gather('output/subfolder')` pattern that filter a subfolder of the output.
+
+When mixing complete output (`gather('output')`) and such filtered output, this subpattern is convenient: `gather('output/subfolder|mv:subfolder')` so that the filtered subfolder retains its original position. 
+
+
 # v1.3.5 (2025-03-21)
 
 Fix fetch.delete() and mv| action in fetch.copy() (and thus in task.input/task.resource)
