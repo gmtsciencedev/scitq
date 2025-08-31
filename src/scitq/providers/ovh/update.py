@@ -76,7 +76,7 @@ You may have to visit the following website to create them:
                         name=flavor.name,
                         provider=self.provider,
                         cpu=flavor.vcpus,
-                        ram=flavor.ram/1000,
+                        ram=flavor.ram,
                         disk=flavor.disk,
                         bandwidth=flavor.inboundBandwidth/1000,
                         tags=tags)

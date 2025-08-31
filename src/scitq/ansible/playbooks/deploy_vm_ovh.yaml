@@ -1,7 +1,7 @@
 - name: Launch a VM
   environment: "{{ proxy_env }}"
   openstack.cloud.server:
-          image: "{{ 'Baremetal - Ubuntu 20.04' if flavor.startswith('bm') else 'NVIDIA GPU Cloud (NGC)' if 'G' in tags else 'Ubuntu 20.04' }}"
+          image: "{{ 'Baremetal - Ubuntu 22.04' if flavor.startswith('bm') else 'NVIDIA GPU Cloud (NGC)' if 'G' in tags else 'Ubuntu 22.04' }}"
           name: "{{ nodename }}"
           key_name: "{{ keyname }}"
           availability_zone: nova
