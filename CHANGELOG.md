@@ -1,3 +1,7 @@
+# v1.3.8 (2025-08-31)
+
+Fix Ubuntu version on image for OVH and OVH updater (RAM is now in Gb not in Mb)
+
 # v1.3.7 (2025-08-05)
 
 Added version in [tool.setuptools_scm] in pyproject.toml because of newer setuptools requirements.
